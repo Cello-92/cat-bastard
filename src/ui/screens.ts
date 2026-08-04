@@ -1,19 +1,18 @@
 import { RULES } from '@game/config';
 
 /**
- * Schermate e battute: tutto il DOM sopra il canvas vive qui.
+ * Battuta dopo la morte e schermata di fine livello.
  *
- * Il resto del gioco non tocca mai `document`: chiede a questa classe. Così
- * cambiare la UI non richiede di aprire un solo file di gameplay.
+ * Il menu ha una classe sua (`ui/menu.ts`) perché è navigabile e ha uno stato;
+ * qui restano le due cose che il gioco si limita a mostrare. Come tutto lo
+ * strato `ui/`, è l'unico posto che tocca `document`.
  */
 
 export interface ScreensCallbacks {
-  onStart(): void;
   onContinue(): void;
 }
 
 export class Screens {
-  private readonly title: HTMLElement | null;
   private readonly win: HTMLElement | null;
   private readonly winStats: HTMLElement | null;
   private readonly winTitle: HTMLElement | null;
@@ -23,25 +22,17 @@ export class Screens {
   private tauntTimer: number | undefined;
 
   constructor(root: ParentNode, callbacks: ScreensCallbacks) {
-    this.title = root.querySelector('[data-screen="title"]');
     this.win = root.querySelector('[data-screen="win"]');
     this.winStats = root.querySelector('[data-win="stats"]');
     this.winTitle = this.win?.querySelector('.logo') ?? null;
     this.continueButton = root.querySelector('[data-act="again"]');
     this.taunt = root.querySelector('#taunt');
 
-    root.querySelector('[data-act="start"]')?.addEventListener('click', () => callbacks.onStart());
     this.continueButton?.addEventListener('click', () => callbacks.onContinue());
   }
 
   hideAll(): void {
-    this.title?.classList.add('is-hidden');
     this.win?.classList.add('is-hidden');
-  }
-
-  showTitle(): void {
-    this.win?.classList.add('is-hidden');
-    this.title?.classList.remove('is-hidden');
   }
 
   /**
@@ -59,7 +50,6 @@ export class Screens {
     }
     if (this.winStats) this.winStats.textContent = options.stats;
     if (this.continueButton) this.continueButton.textContent = options.buttonLabel;
-    this.title?.classList.add('is-hidden');
     this.win?.classList.remove('is-hidden');
   }
 

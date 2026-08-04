@@ -3,8 +3,17 @@ import { GameLoop } from '@core/loop';
 import { Input, type Action } from '@core/input';
 import { Canvas2DRenderer } from '@engine/render/canvas2d';
 import type { Renderer } from '@engine/render/renderer';
-import { loadProgress, recordClear, type Progress } from '@core/storage';
+import {
+  loadProgress,
+  loadSettings,
+  recordClear,
+  resetProgress,
+  saveSettings,
+  type Progress,
+  type Settings,
+} from '@core/storage';
 import { Hud } from '@ui/hud';
+import { Menu, type MenuItem } from '@ui/menu';
 import { Screens } from '@ui/screens';
 import { formatTicks, plural } from '@ui/format';
 import { VIEW_HEIGHT, VIEW_WIDTH } from './config';
@@ -17,9 +26,13 @@ import { World, type RunStats } from './world';
  * È l'unico file che conosce tutti i pezzi. Ogni altro modulo dipende solo da
  * ciò che gli serve, ed è questo che tiene il progetto scalabile: aggiungere un
  * sistema significa istanziarlo qui, non cablarlo ovunque.
+ *
+ * Le fasi sono tre e si escludono: nel menu la simulazione è ferma ma il mondo
+ * continua a disegnarsi dietro le voci (fa da fondale vivo); in gioco corre;
+ * tra un livello e l'altro resta congelata sulla schermata di fine livello.
  */
 
-type Phase = 'title' | 'playing' | 'between';
+type Phase = 'menu' | 'playing' | 'between';
 
 export class Game {
   private readonly renderer: Renderer;
@@ -27,12 +40,14 @@ export class Game {
   private readonly audio = new Audio();
   private readonly hud: Hud;
   private readonly screens: Screens;
+  private readonly menu: Menu;
   private readonly loop: GameLoop;
 
   private world: World;
   private levelIndex = 0;
-  private phase: Phase = 'title';
+  private phase: Phase = 'menu';
   private progress: Progress;
+  private settings: Settings;
 
   constructor(root: Document | HTMLElement = document) {
     const canvas = root.querySelector<HTMLCanvasElement>('#stage');
@@ -42,10 +57,19 @@ export class Game {
     this.input = new Input();
     this.hud = new Hud(root);
     this.progress = loadProgress();
+    this.settings = loadSettings();
+    this.audio.setEnabled(this.settings.audio);
 
     this.screens = new Screens(root, {
-      onStart: () => this.startRun(),
       onContinue: () => this.continueAfterWin(),
+    });
+
+    const panel = root.querySelector<HTMLElement>('[data-screen="menu"]');
+    if (!panel) throw new Error('Pannello del menu non trovato');
+    this.menu = new Menu(panel, {
+      onMove: () => this.audio.play('bump'),
+      onChoose: () => this.audio.play('ui'),
+      onPauseRequest: () => this.pause(),
     });
 
     this.world = this.createWorld(0);
@@ -58,7 +82,7 @@ export class Game {
   }
 
   start(): void {
-    this.screens.showTitle();
+    this.openMenu();
     this.loop.start();
   }
 
@@ -74,17 +98,187 @@ export class Game {
   private bindTouchControls(root: ParentNode): void {
     if (matchMedia('(hover: none)').matches) document.body.classList.add('is-touch');
     for (const el of root.querySelectorAll<HTMLElement>('[data-action]')) {
-      const action = el.dataset.action as Action | undefined;
+      const action = el.dataset['action'] as Action | undefined;
       if (action) this.input.bindTouch(el, action);
     }
+    // Su touch non esiste Esc: la pausa ha bisogno di un tasto suo.
+    root.querySelector('[data-act="pause"]')?.addEventListener('click', () => this.pause());
+  }
+
+  // ---------------------------------------------------------------- menu
+  /** Livello da cui riprende "CONTINUA": il primo non ancora superato. */
+  private get resumeIndex(): number {
+    const next = LEVELS.findIndex((level) => !this.progress.levels[level.id]?.cleared);
+    return next < 0 ? 0 : next;
+  }
+
+  /** Un livello è giocabile se è il primo o se il precedente è stato superato. */
+  private isUnlocked(index: number): boolean {
+    if (index === 0) return true;
+    const previous = LEVELS[index - 1];
+    return previous ? (this.progress.levels[previous.id]?.cleared ?? false) : false;
+  }
+
+  private openMenu(): void {
+    this.phase = 'menu';
+    this.screens.hideAll();
+    this.screens.clearTaunt();
+    this.input.releaseAll();
+    this.showRootMenu();
+  }
+
+  private showRootMenu(): void {
+    const resume = this.resumeIndex;
+    const started = resume > 0 || this.progress.totalDeaths > 0;
+    const cleared = LEVELS.filter((level) => this.progress.levels[level.id]?.cleared).length;
+
+    this.menu.show({
+      title: started
+        ? `${cleared} livelli su ${LEVELS.length} · ${plural(this.progress.totalDeaths, 'morte', 'morti')} in totale`
+        : 'Un platform che ti odia. Ogni blocco è sospetto, ogni fungo è una trappola, la bandiera potrebbe non essere la bandiera.',
+      items: [
+        {
+          label: cleared > 0 ? 'CONTINUA' : 'GIOCA',
+          value: LEVELS[resume]?.name ?? '',
+          hint: LEVELS[resume]?.title ?? '',
+          onSelect: () => this.startLevel(resume),
+        },
+        {
+          label: 'LIVELLI',
+          hint: 'Rigioca quello che hai già sofferto, e guarda i record',
+          onSelect: () => this.showLevelsMenu(),
+        },
+        {
+          label: 'AUDIO',
+          value: this.settings.audio ? 'ON' : 'OFF',
+          hint: 'Suoni sintetizzati, nessun file: si spengono e si riaccendono qui',
+          onSelect: () => this.toggleAudio(),
+        },
+        {
+          label: 'COMANDI',
+          hint: 'Come si muove il gatto, e cosa non è colpa dei comandi',
+          onSelect: () => this.showHelpMenu(),
+        },
+        {
+          label: 'AZZERA PROGRESSI',
+          hint: 'Cancella record, morti e livelli sbloccati. Non si torna indietro',
+          onSelect: () => this.showResetMenu(),
+        },
+      ],
+    });
+  }
+
+  private showLevelsMenu(): void {
+    const items: MenuItem[] = LEVELS.map((level, index) => {
+      const record = this.progress.levels[level.id];
+      const unlocked = this.isUnlocked(index);
+
+      return {
+        label: `${level.name}   ${level.title}`,
+        value: record?.cleared
+          ? `${plural(record.bestDeaths, 'morte', 'morti')} · ${formatTicks(record.bestTicks)}`
+          : unlocked
+            ? 'MAI FINITO'
+            : 'BLOCCATO',
+        hint: unlocked
+          ? record?.cleared
+            ? `Record: ${plural(record.bestDeaths, 'morte', 'morti')}, ${formatTicks(record.bestTicks)}, ${plural(record.bestCoins, 'moneta', 'monete')}`
+            : 'Mai superato. Prima o poi.'
+          : `Finisci ${LEVELS[index - 1]?.name ?? ''} per sbloccarlo`,
+        locked: !unlocked,
+        onSelect: () => this.startLevel(index),
+      };
+    });
+
+    items.push({ label: 'INDIETRO', onSelect: () => this.showRootMenu() });
+
+    this.menu.show({
+      title: 'LIVELLI',
+      items,
+      onBack: () => this.showRootMenu(),
+    });
+  }
+
+  private showHelpMenu(): void {
+    this.menu.show({
+      title: 'COMANDI',
+      body: [
+        'A D  oppure  ← →     muoversi',
+        'SPAZIO / W / ↑     saltare, e più lo tieni premuto più salti in alto',
+        'R     ricominciare il livello da capo',
+        'ESC     pausa',
+        'I comandi non tradiscono mai: niente ritardi, niente tasti invertiti. Se sei morto è colpa del livello, ed era voluto.',
+      ],
+      items: [{ label: 'INDIETRO', onSelect: () => this.showRootMenu() }],
+      onBack: () => this.showRootMenu(),
+    });
+  }
+
+  private showResetMenu(): void {
+    this.menu.show({
+      compact: true,
+      title: 'AZZERARE TUTTO?',
+      body: ['Record, morti totali e livelli sbloccati: sparisce tutto.'],
+      items: [
+        { label: 'NO, LASCIA STARE', onSelect: () => this.showRootMenu() },
+        {
+          label: 'SÌ, CANCELLA',
+          hint: 'Si riparte da 1-1 come il primo giorno',
+          onSelect: () => {
+            this.progress = resetProgress();
+            this.showRootMenu();
+          },
+        },
+      ],
+      onBack: () => this.showRootMenu(),
+    });
+  }
+
+  private toggleAudio(): void {
+    this.settings = { ...this.settings, audio: !this.settings.audio };
+    this.audio.setEnabled(this.settings.audio);
+    saveSettings(this.settings);
+    if (this.settings.audio) this.audio.play('ui');
+    // La voce mostra il proprio stato: va ridisegnata dopo averlo cambiato.
+    this.showRootMenu();
+  }
+
+  /** Pausa: esiste solo durante il gioco. */
+  private pause(): void {
+    if (this.phase !== 'playing') return;
+    this.phase = 'menu';
+    this.input.releaseAll();
+    this.menu.show({
+      compact: true,
+      title: `PAUSA · ${this.world.level.name} — ${this.world.level.title}`,
+      items: [
+        { label: 'RIPRENDI', onSelect: () => this.resume() },
+        {
+          label: 'RICOMINCIA IL LIVELLO',
+          hint: 'Azzera anche le morti di questo tentativo',
+          onSelect: () => {
+            this.world.restart();
+            this.resume();
+          },
+        },
+        { label: 'MENU PRINCIPALE', onSelect: () => this.openMenu() },
+      ],
+      onBack: () => this.resume(),
+    });
+  }
+
+  private resume(): void {
+    this.menu.hide();
+    this.screens.hideAll();
+    this.phase = 'playing';
   }
 
   // ---------------------------------------------------------------- flusso
-  private startRun(): void {
+  private startLevel(index: number): void {
     this.audio.unlock();
-    this.audio.play('ui');
-    this.levelIndex = 0;
-    this.world = this.createWorld(this.levelIndex);
+    this.levelIndex = index;
+    this.world = this.createWorld(index);
+    this.menu.hide();
     this.screens.hideAll();
     this.screens.clearTaunt();
     this.phase = 'playing';
@@ -102,7 +296,7 @@ export class Game {
         heading: 'SEI ARRIVATO',
         sub: 'DAVVERO',
         stats: `Hai finito tutti i livelli. ${summary}`,
-        buttonLabel: 'ANCORA',
+        buttonLabel: 'TORNA AL MENU',
       });
     } else {
       const next = LEVELS[this.levelIndex + 1];
@@ -117,12 +311,13 @@ export class Game {
 
   private continueAfterWin(): void {
     this.audio.play('ui');
-    const isLast = this.levelIndex >= LEVELS.length - 1;
-    this.levelIndex = isLast ? 0 : this.levelIndex + 1;
-    this.world = this.createWorld(this.levelIndex);
-    this.screens.hideAll();
-    this.screens.clearTaunt();
-    this.phase = 'playing';
+    // Finito l'ultimo livello si torna al menu: è lì che si vedono i record,
+    // ed è l'unico momento in cui il gioco smette di spingere avanti.
+    if (this.levelIndex >= LEVELS.length - 1) {
+      this.openMenu();
+      return;
+    }
+    this.startLevel(this.levelIndex + 1);
   }
 
   // ---------------------------------------------------------------- ciclo
@@ -141,6 +336,8 @@ export class Game {
   }
 
   private render(): void {
+    // Il mondo si disegna anche dietro al menu: fa da fondale, e mostra subito
+    // di che gioco si tratta senza dover premere niente.
     this.world.draw(this.renderer, this.loop.tick);
     this.hud.update({
       deaths: this.world.deaths,

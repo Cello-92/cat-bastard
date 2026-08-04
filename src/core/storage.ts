@@ -4,6 +4,7 @@
  */
 
 const KEY = 'cat-bastard/progress/v1';
+const SETTINGS_KEY = 'cat-bastard/settings/v1';
 
 export interface LevelRecord {
   cleared: boolean;
@@ -31,6 +32,42 @@ export function loadProgress(): Progress {
   } catch {
     return emptyProgress();
   }
+}
+
+/** Preferenze del giocatore. Poche, e tutte con un default sensato. */
+export interface Settings {
+  audio: boolean;
+}
+
+const defaultSettings = (): Settings => ({ audio: true });
+
+export function loadSettings(): Settings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return defaultSettings();
+    const parsed = JSON.parse(raw) as Partial<Settings>;
+    return { audio: parsed.audio ?? true };
+  } catch {
+    return defaultSettings();
+  }
+}
+
+export function saveSettings(settings: Settings): void {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  } catch {
+    // Come sopra: senza salvataggio si gioca lo stesso.
+  }
+}
+
+/** Cancella tutto: record, livelli sbloccati, morti accumulate. */
+export function resetProgress(): Progress {
+  try {
+    localStorage.removeItem(KEY);
+  } catch {
+    // Se non si può cancellare, almeno la sessione riparte pulita.
+  }
+  return emptyProgress();
 }
 
 export function saveProgress(progress: Progress): void {

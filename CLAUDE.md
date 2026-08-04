@@ -6,8 +6,10 @@ Un **rage game** platform 2D nello stile di *Super Mario Bros.* / *Syobon Action
 sembra un platform classico e onesto, ma ogni elemento familiare è una trappola. Si gioca nel
 browser aprendo un link pubblico — niente installazione, niente account.
 
-Il gioco è strutturato **a livelli**. Il protagonista è un gatto. Il tono è ironico e cattivo:
-il gioco ti prende in giro mentre muori. I testi in-game sono **in italiano**.
+Il gioco è strutturato **a livelli**, con un menu di avvio navigabile (gioca, selezione livelli
+con i record, audio, comandi, azzeramento progressi) e la pausa su `ESC`. Il protagonista è un
+gatto. Il tono è ironico e cattivo: il gioco ti prende in giro mentre muori. I testi in-game
+sono **in italiano**.
 
 Link pubblico: <https://diamond26.github.io/cat-bastard/>
 Repo: <https://github.com/Diamond26/cat-bastard> (pubblica)
@@ -52,7 +54,11 @@ Un rage game funziona solo se è *ingiusto ma leale*. Ogni trappola deve rispett
   (Vite, TypeScript, @types/node). Se serve una libreria, prima chiedersi perché.
 - **Rendering su Canvas 2D dietro l'interfaccia `Renderer`** (`engine/render/renderer.ts`).
   Il gioco non tocca **mai** il contesto canvas direttamente: disegna solo via `Renderer`.
-  È il punto di sostituzione per un futuro backend WebGL.
+  È il punto di sostituzione per un futuro backend WebGL. Le primitive comprendono gradienti
+  lineari e radiali, curve chiuse raccordate, tratti, ritaglio, ombre morbide e fusione
+  additiva/moltiplicativa: sono quelle che rendono possibile disegnare materiali e luce.
+- **La risoluzione logica resta 800×480** — fisica e mappe sono tarate su quella — ma il canvas
+  rasterizza fino a 2× e nasconde la scala in una trasformazione di base.
 - **Nessun asset binario.** Grafica disegnata via codice, audio sintetizzato con WebAudio.
 - **Path relativi** (`base: './'` in vite.config): il sito vive in una sottocartella.
 - **60fps su hardware modesto**, e deve funzionare su mobile (pad touch già presente).
@@ -72,10 +78,10 @@ src/
   game/       config (costanti), theme (palette), tiles (vocabolario),
               taunts, effects (particelle/juice), world.ts (orchestratore),
               game.ts (composition root)
-    entities/ player, walker, shroom, falling-spike
+    entities/ player, walker, shroom, falling-spike, diver
     levels/   level.ts (helper) + un file per livello + index.ts (registro)
     render/   background.ts (parallasse), tiles.ts (disegno dei tile)
-  ui/         hud.ts, screens.ts, format.ts — l'unico codice che tocca il DOM
+  ui/         hud.ts, menu.ts, screens.ts, format.ts — l'unico codice che tocca il DOM
 tests/        smoke test headless, gira in CI
 legacy/       prototipo originale single-file, solo come riferimento
 ```
@@ -90,6 +96,25 @@ Punti fermi:
   Il rendering gira a frame liberi. Su un monitor a 144Hz il gatto non salta più in alto.
 - **Colori solo in `theme.ts`**, mai hardcoded nel codice di disegno (i valori UI sono duplicati in
   `src/style.css`: vanno tenuti allineati a mano).
+
+### Le trappole
+
+Ogni trappola sfrutta un'abitudine del giocatore, e ognuna ha il suo taunt in `taunts.ts`:
+
+| Tile | Cosa sembra | Cosa fa |
+|---|---|---|
+| `B` | blocco premio | sputa un fungo che ti insegue |
+| `Q` | blocco premio | dà davvero una moneta — esiste per rendere credibile `B` |
+| `I` | niente | compare quando ci sbatti la testa, di solito a mezzo salto sul vuoto |
+| `T` | mattone | fa cadere una stalattite quando ci passi sotto |
+| `D` | piattaforma | si sbriciola poco dopo che ci sali (trema prima) |
+| `V` | terreno normalissimo | sparisce sotto le zampe |
+| `A` | pavimento con una feritoia | spuntoni che escono quando ti avvicini |
+| `Y` | soffitto | spuntoni: puniscono il salto pieno |
+| `M` | molla | ti lancia in alto, dove di solito c'è `Y` |
+| `F` | l'arrivo | uccide |
+| `J` | il nemico normale (identico) | ha le punte sotto: schiacciarlo uccide |
+| `Z` | ombra sul soffitto | si tuffa quando le passi sotto |
 
 ### Aggiungere roba
 
@@ -113,8 +138,14 @@ Neo-retro: forme leggibili da pixel art, resa curata e contemporanea. Non "retr�
 - **Parallasse su cinque piani**: più un piano è lontano, più è lento, più è desaturato.
 - **Juice ovunque**: squash & stretch, screen shake, hit-stop di pochi tick, particelle,
   polvere all'atterraggio, scie in corsa, flash, testi fluttuanti. Sta tutto in `effects.ts`.
-- **Ogni tile ha luce in alto, ombra in basso a destra, e un dettaglio che ne racconta la funzione.**
-  Le texture sono deterministiche (derivate da riga/colonna): il mondo non sfarfalla mai.
+- **Materiali, non tinte.** Ogni superficie in `theme.ts` dichiara faccia illuminata, colore
+  proprio, faccia in ombra, fondo delle fessure e riflesso speculare; il disegno applica sempre
+  la stessa logica. La luce viene dall'alto a sinistra, sempre.
+- **Prospettiva aerea**: più una cosa è lontana, più sbiadisce verso il colore della foschia.
+  È quello che dà la profondità, molto più della parallasse.
+- Le texture sono deterministiche (derivate da riga/colonna): il mondo non sfarfalla mai. Il
+  disegno di un tile conosce i lati liberi della cella, così l'erba nasce solo dove il suolo vede
+  il cielo e le facce unite non hanno cuciture.
 - **HUD e schermate in DOM**, non su canvas: testo nitido, accessibile, gratis per il renderer.
 - Coerenza prima di tutto: meglio uno stile semplice ovunque che effetti belli scoordinati.
 
@@ -143,7 +174,6 @@ e allegare uno zip offline: non servono a ospitare la pagina.
 1. ~~Riscrittura in TypeScript e riordino del progetto~~ ✅
 2. ~~Sistema multi-livello + checkpoint + salvataggio progressi~~ ✅
 3. ~~Deploy automatico su Pages~~ ✅
-4. Schermata di selezione livelli, che mostri record e morti per livello
-   (i dati sono già salvati da `core/storage.ts`, manca solo la UI).
-5. Più trappole e più nemici; un secondo mondo con un tileset diverso.
+4. ~~Schermata di selezione livelli con record e morti~~ ✅ (dentro il menu)
+5. ~~Più trappole e più nemici~~ ✅ — resta il secondo mondo con un tileset davvero diverso
 6. Un boss finale che ovviamente bara.

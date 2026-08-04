@@ -3,7 +3,7 @@ import type { Input } from '@core/input';
 import { TILE_SIZE } from '@game/config';
 import { LEVELS } from '@game/levels';
 import { SEGMENT_COLS, LEVEL_ROWS } from '@game/config';
-import { TILE } from '@game/tiles';
+import { TILE, isSolid } from '@game/tiles';
 import { World } from '@game/world';
 import { NullRenderer } from './null-renderer';
 
@@ -16,6 +16,14 @@ import { NullRenderer } from './null-renderer';
  *
  * Gira in CI prima del deploy: se questo passa, il gioco almeno si avvia.
  */
+
+/**
+ * Colonne di vuoto che il gatto riesce a scavalcare.
+ * Con l'impulso di salto e la velocità massima di config.ts la gittata reale
+ * è poco sopra le sei colonne: cinque è il limite che ci si concede, così un
+ * livello resta difficile senza diventare impossibile.
+ */
+const MAX_GAP = 5;
 
 let failures = 0;
 
@@ -60,6 +68,34 @@ for (const level of LEVELS) {
   check(
     spawnRow?.[level.spawn.c] === TILE.EMPTY,
     `${level.name}: lo spawn non è dentro un muro`,
+  );
+
+  // Il gatto salta al massimo MAX_GAP colonne (vedi PHYSICS): un vuoto più
+  // largo rende il livello impossibile, e un livello impossibile non è
+  // "difficile", è rotto. È l'unico limite che le trappole non possono violare.
+  const cols = rows[0]?.length ?? 0;
+  let void_ = 0;
+  let worstGap = 0;
+  let gapAt = -1;
+  for (let c = 0; c < cols; c++) {
+    let hasFloor = false;
+    for (let r = 0; r < LEVEL_ROWS; r++) {
+      const tile = rows[r]?.[c] ?? TILE.EMPTY;
+      // Il terreno finto sparisce, quindi come appoggio non conta.
+      if (tile !== TILE.EMPTY && tile !== TILE.FAKE_GROUND && isSolid(tile)) {
+        hasFloor = true;
+        break;
+      }
+    }
+    void_ = hasFloor ? 0 : void_ + 1;
+    if (void_ > worstGap) {
+      worstGap = void_;
+      gapAt = c - void_ + 1;
+    }
+  }
+  check(
+    worstGap <= MAX_GAP,
+    `${level.name}: nessun vuoto più largo di ${MAX_GAP} colonne (max ${worstGap}${gapAt >= 0 ? ` alla colonna ${gapAt}` : ''})`,
   );
 }
 

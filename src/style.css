@@ -1,22 +1,28 @@
 /* Palette condivisa con src/game/theme.ts — tenerle allineate. */
 :root {
-  --ink: #14101c;
-  --ink-soft: #241b30;
-  --paper: #f6efe2;
+  --ink: #0b0d14;
+  --ink-soft: #161a26;
+  --paper: #f4f1ea;
   --hot: #ff2e88;
   --hot-deep: #7a0d3f;
   --gold: #f2c94c;
 
-  --ui-font: ui-monospace, "SF Mono", "Courier New", monospace;
-  --radius: 4px;
+  /* Il testo dell'interfaccia usa lo stesso stack del testo sul canvas. */
+  --ui-font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono-font: ui-monospace, "SF Mono", "Courier New", monospace;
+  --radius: 10px;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+/* `display: flex` batte l'attributo `hidden`: senza questa riga i blocchi
+   nascosti del menu continuerebbero a occupare spazio come cornici vuote. */
+[hidden] { display: none !important; }
 html, body { height: 100%; }
 
 body {
   background:
-    radial-gradient(120% 90% at 50% 0%, var(--ink-soft) 0%, var(--ink) 70%);
+    radial-gradient(120% 80% at 50% -10%, #1d2333 0%, var(--ink) 62%),
+    var(--ink);
   color: var(--paper);
   font-family: var(--ui-font);
   display: flex;
@@ -29,7 +35,7 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-#app { width: 100%; max-width: 960px; padding: 10px; }
+#app { width: 100%; max-width: 1000px; padding: 12px; }
 
 #frame {
   position: relative;
@@ -38,10 +44,13 @@ body {
   overflow: hidden;
   border-radius: var(--radius);
   background: #000;
+  /* Un bordo sottile e un'ombra profonda: lo schermo sembra acceso, non
+     incollato sulla pagina. */
   box-shadow:
-    0 0 0 2px var(--hot),
-    0 0 44px -6px rgba(255, 46, 136, 0.45),
-    0 24px 60px -20px rgba(0, 0, 0, 0.9);
+    0 0 0 1px rgba(255, 255, 255, 0.09),
+    0 0 0 4px rgba(0, 0, 0, 0.55),
+    0 40px 80px -30px rgba(0, 0, 0, 0.95),
+    0 0 90px -30px rgba(255, 46, 136, 0.35);
 }
 
 canvas {
@@ -55,30 +64,40 @@ canvas {
   position: absolute;
   inset: 0 0 auto 0;
   display: flex;
-  gap: 16px;
-  padding: 10px 14px;
-  font-size: clamp(10px, 2.1vw, 14px);
-  font-weight: 700;
-  letter-spacing: 1.5px;
-  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55);
+  gap: 8px;
+  padding: 12px 14px;
+  font-size: clamp(9px, 1.7vw, 12px);
+  font-weight: 600;
+  letter-spacing: 1.6px;
   pointer-events: none;
 }
-.hud__item { opacity: 0.9; }
+.hud__item {
+  padding: 5px 10px;
+  border-radius: 999px;
+  color: rgba(244, 241, 234, 0.86);
+  background: rgba(8, 10, 16, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  backdrop-filter: blur(6px);
+}
 .hud__item--right { margin-left: auto; color: var(--hot); }
-.hud b { color: var(--hot); font-variant-numeric: tabular-nums; }
+.hud b {
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--mono-font);
+}
 
 /* ---------------------------------------------------------------- taunt */
 .taunt {
   position: absolute;
-  left: 0; right: 0; top: 36%;
+  left: 0; right: 0; top: 34%;
   padding: 0 20px;
-  font-size: clamp(15px, 3.4vw, 26px);
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  text-shadow: 0 3px 0 #000, 0 0 24px rgba(255, 46, 136, 0.6);
+  font-size: clamp(16px, 3.6vw, 30px);
+  font-weight: 800;
+  letter-spacing: -0.2px;
+  text-shadow: 0 4px 18px rgba(0, 0, 0, 0.9), 0 0 30px rgba(255, 46, 136, 0.55);
   text-align: center;
   opacity: 0;
-  transform: translateY(6px) scale(0.96);
+  transform: translateY(8px) scale(0.97);
   transition: opacity 0.14s ease, transform 0.14s ease;
   pointer-events: none;
 }
@@ -92,53 +111,154 @@ canvas {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  padding: 24px;
+  gap: 14px;
+  padding: 22px;
   text-align: center;
-  background: linear-gradient(180deg, rgba(20, 16, 28, 0.94), rgba(20, 16, 28, 0.98));
-  backdrop-filter: blur(3px);
-  animation: fade-in 0.22s ease both;
+  /* Il gioco resta visibile dietro: il menu è un velo, non un muro. */
+  background:
+    radial-gradient(90% 70% at 50% 40%, rgba(11, 13, 20, 0.6), rgba(6, 7, 12, 0.9));
+  backdrop-filter: blur(6px) saturate(0.9);
+  animation: fade-in 0.2s ease both;
+  overflow-y: auto;
 }
 .screen.is-hidden { display: none !important; }
 
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 
 .logo {
-  font-size: clamp(26px, 6.4vw, 52px);
+  font-size: clamp(24px, 5.6vw, 46px);
+  font-weight: 800;
   line-height: 0.92;
-  letter-spacing: -1px;
-  text-shadow: 0 4px 0 rgba(0, 0, 0, 0.5);
+  letter-spacing: -1.5px;
+  text-shadow: 0 6px 30px rgba(0, 0, 0, 0.8);
 }
 .logo span {
   display: block;
   color: var(--hot);
-  font-size: 0.52em;
-  letter-spacing: 7px;
-  text-shadow: 0 0 22px rgba(255, 46, 136, 0.7);
+  font-size: 0.54em;
+  letter-spacing: 9px;
+  text-shadow: 0 0 26px rgba(255, 46, 136, 0.75);
 }
 
 .screen p {
-  font-size: clamp(11px, 2.3vw, 15px);
-  line-height: 1.65;
-  max-width: 46ch;
-  opacity: 0.82;
+  font-size: clamp(11px, 2.2vw, 14px);
+  line-height: 1.6;
+  max-width: 52ch;
+  opacity: 0.78;
 }
-.keys { opacity: 0.55 !important; font-size: clamp(10px, 2vw, 13px) !important; }
+.tagline { max-width: 46ch; }
+.keys {
+  opacity: 0.4 !important;
+  font-size: clamp(9px, 1.8vw, 11px) !important;
+  letter-spacing: 1.2px;
+}
 
+/* Pagine di servizio: il logo lascia il posto alle voci. */
+.screen--menu.is-compact .logo { display: none; }
+.screen--menu.is-compact .tagline {
+  font-size: clamp(13px, 2.6vw, 18px) !important;
+  font-weight: 700;
+  letter-spacing: 2px;
+  opacity: 1;
+  color: var(--hot);
+}
+
+/* ---------------------------------------------------------------- menu */
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: min(560px, 92%);
+}
+
+.menu__item {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  width: 100%;
+  padding: 9px 16px 9px 30px;
+  font: inherit;
+  font-size: clamp(12px, 2.3vw, 16px);
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-align: left;
+  color: rgba(244, 241, 234, 0.72);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  position: relative;
+  transition: color 0.1s ease, background-color 0.1s ease, transform 0.1s ease;
+}
+
+/* Il cursore del menu: un triangolo che compare solo sulla voce corrente. */
+.menu__item::before {
+  content: '▸';
+  position: absolute;
+  left: 10px;
+  color: var(--hot);
+  opacity: 0;
+  transform: translateX(-6px);
+  transition: opacity 0.1s ease, transform 0.1s ease;
+}
+.menu__item.is-current {
+  color: #fff;
+  background: linear-gradient(90deg, rgba(255, 46, 136, 0.22), rgba(255, 46, 136, 0.02));
+  transform: translateX(3px);
+}
+.menu__item.is-current::before { opacity: 1; transform: none; }
+.menu__item.is-locked { color: rgba(244, 241, 234, 0.26); cursor: not-allowed; }
+.menu__item:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
+
+.menu__label { flex: 1; }
+.menu__value {
+  font-family: var(--mono-font);
+  font-size: 0.78em;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--gold);
+  opacity: 0.85;
+}
+.menu__item.is-locked .menu__value { color: inherit; }
+
+.menu__hint {
+  min-height: 1.4em;
+  font-size: clamp(10px, 2vw, 13px) !important;
+  opacity: 0.6 !important;
+  color: var(--hot);
+}
+
+.menu__body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(560px, 92%);
+  padding: 14px 18px;
+  text-align: left;
+  font-family: var(--mono-font);
+  font-size: clamp(10px, 1.9vw, 12.5px);
+  line-height: 1.75;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+}
+.menu__body p { font-size: inherit !important; opacity: 0.8; max-width: none; }
+
+/* ---------------------------------------------------------------- bottoni */
 .btn {
   font: inherit;
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: 2.5px;
   color: #fff;
-  background: var(--hot);
+  background: linear-gradient(180deg, #ff4d9b, var(--hot));
   border: 0;
   padding: 13px 30px;
-  border-radius: var(--radius);
+  border-radius: 8px;
   cursor: pointer;
-  box-shadow: 0 4px 0 var(--hot-deep);
+  box-shadow: 0 4px 0 var(--hot-deep), 0 12px 30px -10px rgba(255, 46, 136, 0.8);
   transition: transform 0.08s ease, box-shadow 0.08s ease;
 }
-.btn:hover { transform: translateY(-1px); box-shadow: 0 5px 0 var(--hot-deep); }
+.btn:hover { transform: translateY(-1px); box-shadow: 0 5px 0 var(--hot-deep), 0 16px 34px -10px rgba(255, 46, 136, 0.9); }
 .btn:active { transform: translateY(4px); box-shadow: 0 0 0 var(--hot-deep); }
 .btn:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
 
@@ -149,9 +269,9 @@ canvas {
   display: none;
   justify-content: space-between;
   gap: 10px;
-  padding: 12px;
+  padding: 14px;
 }
-.pad__group { display: flex; gap: 12px; }
+.pad__group { display: flex; gap: 12px; align-items: center; }
 .pad__key {
   width: 66px; height: 66px;
   border-radius: 50%;
@@ -159,19 +279,20 @@ canvas {
   font-size: 24px;
   font-weight: 700;
   color: #fff;
-  background: rgba(246, 239, 226, 0.14);
-  border: 2px solid rgba(246, 239, 226, 0.42);
-  backdrop-filter: blur(2px);
+  background: rgba(244, 241, 234, 0.12);
+  border: 1.5px solid rgba(244, 241, 234, 0.34);
+  backdrop-filter: blur(4px);
 }
+.pad__key--menu { width: 46px; height: 46px; font-size: 15px; opacity: 0.7; }
 .pad__key:active { background: var(--hot); border-color: var(--hot); }
 body.is-touch .pad { display: flex; }
 
 .footer {
-  margin-top: 10px;
+  margin-top: 12px;
   font-size: 11px;
   letter-spacing: 1px;
   text-align: center;
-  opacity: 0.42;
+  opacity: 0.34;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-  <meta name="theme-color" content="#14101c">
+  <meta name="theme-color" content="#0b0d14">
   <meta name="description" content="Cat Bastard — un platform che ti odia. Rage game gratis nel browser.">
   <title>Cat Bastard</title>
 </head>
@@ -27,16 +27,19 @@
           <button class="pad__key" data-action="right" aria-label="Destra">▶</button>
         </div>
         <div class="pad__group">
+          <button class="pad__key pad__key--menu" data-act="pause" aria-label="Pausa">II</button>
           <button class="pad__key" data-action="jump" aria-label="Salta">▲</button>
         </div>
       </div>
 
-      <section class="screen" data-screen="title">
+      <!-- Menu: le voci sono generate da ui/menu.ts, qui c'è solo il guscio. -->
+      <section class="screen screen--menu is-hidden" data-screen="menu">
         <h1 class="logo">CAT<span>BASTARD</span></h1>
-        <p>Un platform che ti odia. Ogni blocco è sospetto, ogni fungo è una trappola,
-           la bandiera potrebbe non essere la bandiera.</p>
-        <p class="keys">A D o ← → muoviti · SPAZIO / W / ↑ salta (tieni premuto per saltare più in alto) · R ricomincia</p>
-        <button class="btn" data-act="start">GIOCA</button>
+        <p class="tagline" data-menu-title></p>
+        <div class="menu__body" data-menu-body hidden></div>
+        <nav class="menu" data-menu-list aria-label="Menu principale"></nav>
+        <p class="menu__hint" data-menu-hint></p>
+        <p class="keys">↑ ↓ scegli · INVIO conferma · ESC indietro</p>
       </section>
 
       <section class="screen is-hidden" data-screen="win">

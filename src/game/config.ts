@@ -45,7 +45,7 @@ export const RULES = {
   /** Tick che gli spuntoni a scatto impiegano a uscire: è il loro preavviso. */
   popSpikeChargeTicks: 11,
   /** Distanza orizzontale a cui gli spuntoni a scatto si attivano. */
-  popSpikeRange: 34,
+  popSpikeRange: 46,
   /** Quanto sotto il livello si muore. */
   fallDeathMargin: 160,
   /** Distanza verticale massima per considerare valido uno stomp. */

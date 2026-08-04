@@ -1,0 +1,180 @@
+/* Palette condivisa con src/game/theme.ts — tenerle allineate. */
+:root {
+  --ink: #14101c;
+  --ink-soft: #241b30;
+  --paper: #f6efe2;
+  --hot: #ff2e88;
+  --hot-deep: #7a0d3f;
+  --gold: #f2c94c;
+
+  --ui-font: ui-monospace, "SF Mono", "Courier New", monospace;
+  --radius: 4px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+
+body {
+  background:
+    radial-gradient(120% 90% at 50% 0%, var(--ink-soft) 0%, var(--ink) 70%);
+  color: var(--paper);
+  font-family: var(--ui-font);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#app { width: 100%; max-width: 960px; padding: 10px; }
+
+#frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 5 / 3;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: #000;
+  box-shadow:
+    0 0 0 2px var(--hot),
+    0 0 44px -6px rgba(255, 46, 136, 0.45),
+    0 24px 60px -20px rgba(0, 0, 0, 0.9);
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+/* ---------------------------------------------------------------- HUD */
+.hud {
+  position: absolute;
+  inset: 0 0 auto 0;
+  display: flex;
+  gap: 16px;
+  padding: 10px 14px;
+  font-size: clamp(10px, 2.1vw, 14px);
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+.hud__item { opacity: 0.9; }
+.hud__item--right { margin-left: auto; color: var(--hot); }
+.hud b { color: var(--hot); font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------------- taunt */
+.taunt {
+  position: absolute;
+  left: 0; right: 0; top: 36%;
+  padding: 0 20px;
+  font-size: clamp(15px, 3.4vw, 26px);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-shadow: 0 3px 0 #000, 0 0 24px rgba(255, 46, 136, 0.6);
+  text-align: center;
+  opacity: 0;
+  transform: translateY(6px) scale(0.96);
+  transition: opacity 0.14s ease, transform 0.14s ease;
+  pointer-events: none;
+}
+.taunt.is-on { opacity: 1; transform: none; }
+
+/* ---------------------------------------------------------------- schermate */
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px;
+  text-align: center;
+  background: linear-gradient(180deg, rgba(20, 16, 28, 0.94), rgba(20, 16, 28, 0.98));
+  backdrop-filter: blur(3px);
+  animation: fade-in 0.22s ease both;
+}
+.screen.is-hidden { display: none !important; }
+
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+.logo {
+  font-size: clamp(26px, 6.4vw, 52px);
+  line-height: 0.92;
+  letter-spacing: -1px;
+  text-shadow: 0 4px 0 rgba(0, 0, 0, 0.5);
+}
+.logo span {
+  display: block;
+  color: var(--hot);
+  font-size: 0.52em;
+  letter-spacing: 7px;
+  text-shadow: 0 0 22px rgba(255, 46, 136, 0.7);
+}
+
+.screen p {
+  font-size: clamp(11px, 2.3vw, 15px);
+  line-height: 1.65;
+  max-width: 46ch;
+  opacity: 0.82;
+}
+.keys { opacity: 0.55 !important; font-size: clamp(10px, 2vw, 13px) !important; }
+
+.btn {
+  font: inherit;
+  font-weight: 700;
+  letter-spacing: 2.5px;
+  color: #fff;
+  background: var(--hot);
+  border: 0;
+  padding: 13px 30px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  box-shadow: 0 4px 0 var(--hot-deep);
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+.btn:hover { transform: translateY(-1px); box-shadow: 0 5px 0 var(--hot-deep); }
+.btn:active { transform: translateY(4px); box-shadow: 0 0 0 var(--hot-deep); }
+.btn:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+
+/* ---------------------------------------------------------------- touch pad */
+.pad {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: none;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px;
+}
+.pad__group { display: flex; gap: 12px; }
+.pad__key {
+  width: 66px; height: 66px;
+  border-radius: 50%;
+  font: inherit;
+  font-size: 24px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(246, 239, 226, 0.14);
+  border: 2px solid rgba(246, 239, 226, 0.42);
+  backdrop-filter: blur(2px);
+}
+.pad__key:active { background: var(--hot); border-color: var(--hot); }
+body.is-touch .pad { display: flex; }
+
+.footer {
+  margin-top: 10px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-align: center;
+  opacity: 0.42;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

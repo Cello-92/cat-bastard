@@ -1,0 +1,19 @@
+{
+  "name": "cat-bastard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Un platform rage game che ti odia. Gira nel browser.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "esbuild tests/smoke.ts --bundle --platform=node --format=esm --alias:@core=./src/core --alias:@engine=./src/engine --alias:@game=./src/game --alias:@ui=./src/ui --outfile=.tmp/smoke.mjs --log-level=warning && node .tmp/smoke.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.9"
+  }
+}

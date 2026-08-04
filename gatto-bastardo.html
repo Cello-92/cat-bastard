@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Gatto Bastardo</title>
+<style>
+  :root{
+    --sky-top:#8fd3d8;
+    --sky-bot:#e8dcc0;
+    --dirt:#5c4033;
+    --grass:#4a9d5f;
+    --brick:#c96a3a;
+    --hot:#ff2e88;
+    --ink:#1b1420;
+    --paper:#f6efe2;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--ink);
+    color:var(--paper);
+    font-family:"Courier New",ui-monospace,monospace;
+    display:flex;align-items:center;justify-content:center;
+    overflow:hidden;
+    -webkit-user-select:none;user-select:none;
+    touch-action:manipulation;
+  }
+  #wrap{position:relative;width:100%;max-width:900px;padding:8px}
+  #frame{position:relative;width:100%;aspect-ratio:5/3;border:3px solid var(--hot);border-radius:2px;overflow:hidden;background:#000}
+  canvas{display:block;width:100%;height:100%;image-rendering:pixelated}
+  .layer{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;gap:14px}
+  #hud{
+    position:absolute;top:0;left:0;right:0;
+    display:flex;gap:16px;padding:8px 12px;
+    font-size:clamp(10px,2.2vw,15px);font-weight:700;letter-spacing:1px;
+    text-shadow:2px 2px 0 rgba(0,0,0,.6);pointer-events:none;
+  }
+  #hud b{color:var(--hot)}
+  #taunt{
+    position:absolute;left:0;right:0;top:38%;
+    font-size:clamp(14px,3.4vw,24px);font-weight:700;
+    text-shadow:3px 3px 0 #000;opacity:0;transition:opacity .12s;
+    padding:0 20px;
+  }
+  #taunt.on{opacity:1}
+  .screen{background:rgba(27,20,32,.92)}
+  .hide{display:none!important}
+  h1{font-size:clamp(24px,6vw,46px);letter-spacing:-1px;line-height:.95}
+  h1 span{color:var(--hot);display:block;font-size:.55em;letter-spacing:6px}
+  p{font-size:clamp(11px,2.4vw,15px);line-height:1.6;max-width:44ch;opacity:.85}
+  button{
+    font:inherit;font-weight:700;letter-spacing:2px;
+    background:var(--hot);color:#fff;border:0;
+    padding:12px 26px;cursor:pointer;border-radius:2px;
+    box-shadow:4px 4px 0 #7a0d3f;
+  }
+  button:active{transform:translate(2px,2px);box-shadow:2px 2px 0 #7a0d3f}
+  button:focus-visible{outline:3px solid #fff;outline-offset:3px}
+  #pad{position:absolute;inset:auto 0 0 0;display:none;justify-content:space-between;padding:10px;gap:10px}
+  #pad div{display:flex;gap:10px}
+  .key{
+    width:64px;height:64px;border-radius:50%;
+    background:rgba(246,239,226,.18);border:2px solid rgba(246,239,226,.5);
+    display:flex;align-items:center;justify-content:center;
+    font-size:24px;font-weight:700;color:#fff;
+  }
+  .key:active{background:var(--hot)}
+  body.touch #pad{display:flex}
+  footer{margin-top:8px;font-size:11px;opacity:.5;text-align:center;letter-spacing:1px}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="frame">
+    <canvas id="cv" width="800" height="480"></canvas>
+
+    <div id="hud">
+      <span>MORTI <b id="hDeaths">0</b></span>
+      <span>MONETE <b id="hCoins">0</b></span>
+      <span>TEMPO <b id="hTime">0:00</b></span>
+    </div>
+
+    <div id="taunt"></div>
+
+    <div id="pad">
+      <div>
+        <div class="key" data-k="left">◀</div>
+        <div class="key" data-k="right">▶</div>
+      </div>
+      <div>
+        <div class="key" data-k="jump">▲</div>
+      </div>
+    </div>
+
+    <div class="layer screen" id="start">
+      <h1>GATTO<span>BASTARDO</span></h1>
+      <p>Un platform che ti odia. Ogni blocco è sospetto, ogni fungo è una trappola, la bandiera potrebbe non essere la bandiera.</p>
+      <p>← → per muoverti · SPAZIO o ↑ per saltare (tieni premuto per saltare più in alto) · R per ricominciare</p>
+      <button id="btnStart">GIOCA</button>
+    </div>
+
+    <div class="layer screen hide" id="win">
+      <h1>SEI ARRIVATO<span>DAVVERO</span></h1>
+      <p id="winStats"></p>
+      <button id="btnAgain">ANCORA</button>
+    </div>
+  </div>
+  <footer>suggerimento: la seconda volta che muori nello stesso punto non è sfortuna</footer>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+// ---------------------------------------------------------------- costanti
+const TILE = 32, ROWS = 15, VW = 800, VH = 480;
+const GRAV = 0.55, JUMP = 11.6, JUMP_CUT = 0.42;
+const ACC = 0.72, MAXSP = 4.6, FRIC = 0.80, AIRFRIC = 0.94;
+const SOLID = '#IBQUDTP';
+
+// ---------------------------------------------------------------- livello
+const G20 = '#'.repeat(20);
+const pad = s => (s + ' '.repeat(20)).slice(0, 20);
+
+function seg(spec) {
+  const out = [];
+  for (let r = 0; r < ROWS; r++) {
+    let s = spec[r];
+    if (s === undefined && spec.ground && (r === 13 || r === 14)) s = G20;
+    out.push(pad(s || ''));
+  }
+  return out;
+}
+
+// Legenda: # muro · B blocco "premio" · Q blocco onesto · I blocco invisibile
+// D piattaforma che si sbriciola · T mattone-trappola · P tubo · X spuntoni
+// C moneta · G goomba · J goomba con la sorpresa · F bandiera finta · W arrivo
+const SEGMENTS = [
+  // 0 — respiro
+  seg({ ground: true }),
+  // 1 — tubo, primo blocco premio, primo nemico
+  seg({ ground: true,
+        8:  '      B      Q',
+        11: '   PP',
+        12: '   PP           G' }),
+  // 2 — il buco con l'ospite invisibile
+  seg({ 11: '            I',
+        13: '##########     #####',
+        14: '##########     #####' }),
+  // 3 — piattaforme che non ti vogliono bene
+  seg({ 11: ' DD    DD    DD   DD' }),
+  // 4 — mattone trappola sul soffitto
+  seg({ ground: true,
+        8:  '          T',
+        12: '     J        G' }),
+  // 5 — spuntoni e monete di consolazione
+  seg({ 8:  '   C  C  C',
+        13: '#####  #####   #####',
+        14: '#####XX#####XXX#####' }),
+  // 6 — la bandiera
+  seg({ ground: true,
+        8:  '          F',
+        9:  '          F',
+        10: '          F' }),
+  // 7 — salto lungo sopra il vuoto
+  seg({ 11: '   ###    DDD    ###' }),
+  // 8 — corridoio dei sospetti
+  seg({ ground: true,
+        8:  '  C C C',
+        12: '   G    J     G' }),
+  // 9 — arrivo
+  seg({ ground: true,
+        8:  '      Q',
+        12: '            W' })
+];
+
+const LEVEL = [];
+for (let r = 0; r < ROWS; r++) LEVEL.push(SEGMENTS.map(s => s[r]).join(''));
+const COLS = LEVEL[0].length;
+const LEVEL_W = COLS * TILE;
+
+// ---------------------------------------------------------------- stato
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+
+let grid, mobs, traps, revealed, crumbs, particles;
+let player, cam, deaths = 0, coins = 0, frames = 0, running = false, won = false;
+let deathLock = 0;
+
+const SPAWN = { c: 2, r: 12 };
+
+const TAUNTS = [
+  'ma dai.',
+  'era ovvio, dai.',
+  'ci sei cascato di nuovo',
+  'il blocco era lì apposta',
+  'nessuno ti obbligava a saltare',
+  'prova a non farlo',
+  'interessante scelta',
+  'la fisica funziona benissimo',
+  'quello sembrava sicuro, vero?',
+  'ci stai prendendo la mano (no)'
+];
+
+function resetLevel() {
+  grid = LEVEL.map(r => r.split(''));
+  mobs = []; traps = []; revealed = new Set(); crumbs = new Map(); particles = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const ch = grid[r][c];
+      if (ch === 'G' || ch === 'J') {
+        grid[r][c] = ' ';
+        mobs.push({ t: 'walker', evil: ch === 'J', x: c * TILE + 3, y: r * TILE + 6, w: 26, h: 26, vx: -0.95, vy: 0 });
+      } else if (ch === 'T') {
+        traps.push({ c, r, used: false });
+      }
+    }
+  }
+  player = { x: SPAWN.c * TILE + 5, y: SPAWN.r * TILE, w: 22, h: 28, vx: 0, vy: 0, ground: false, face: 1, blink: 0 };
+  cam = 0;
+}
+
+function hardReset() {
+  deaths = 0; coins = 0; frames = 0; won = false;
+  resetLevel();
+}
+
+// ---------------------------------------------------------------- audio
+let ac = null;
+function sfx(freq, dur, type = 'square', vol = 0.05) {
+  try {
+    if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + dur);
+    o.connect(g); g.connect(ac.destination);
+    o.start(); o.stop(ac.currentTime + dur);
+  } catch (e) { /* audio non disponibile, pazienza */ }
+}
+
+// ---------------------------------------------------------------- input
+const keys = { left: false, right: false, jump: false };
+let jumpHeld = false;
+
+const MAP = {
+  ArrowLeft: 'left', KeyA: 'left',
+  ArrowRight: 'right', KeyD: 'right',
+  ArrowUp: 'jump', KeyW: 'jump', Space: 'jump'
+};
+
+addEventListener('keydown', e => {
+  if (e.code === 'KeyR') { hardReset(); return; }
+  const k = MAP[e.code];
+  if (!k) return;
+  e.preventDefault();
+  keys[k] = true;
+});
+addEventListener('keyup', e => {
+  const k = MAP[e.code];
+  if (!k) return;
+  e.preventDefault();
+  keys[k] = false;
+});
+
+if (matchMedia('(hover: none)').matches) document.body.classList.add('touch');
+document.querySelectorAll('.key').forEach(el => {
+  const k = el.dataset.k;
+  const on = e => { e.preventDefault(); keys[k] = true; };
+  const off = e => { e.preventDefault(); keys[k] = false; };
+  el.addEventListener('pointerdown', on);
+  el.addEventListener('pointerup', off);
+  el.addEventListener('pointercancel', off);
+  el.addEventListener('pointerleave', off);
+});
+
+// ---------------------------------------------------------------- griglia
+function tileAt(c, r) {
+  if (c < 0 || c >= COLS) return '#';
+  if (r < 0 || r >= ROWS) return ' ';
+  return grid[r][c];
+}
+const isSolid = ch => SOLID.indexOf(ch) !== -1;
+
+function cellsOf(o) {
+  return {
+    c0: Math.floor(o.x / TILE), c1: Math.floor((o.x + o.w - 1) / TILE),
+    r0: Math.floor(o.y / TILE), r1: Math.floor((o.y + o.h - 1) / TILE)
+  };
+}
+
+function moveX(o) {
+  o.x += o.vx;
+  const { c0, c1, r0, r1 } = cellsOf(o);
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+    if (!isSolid(tileAt(c, r))) continue;
+    if (o.vx > 0) { o.x = c * TILE - o.w; o.hitWall = true; }
+    else if (o.vx < 0) { o.x = (c + 1) * TILE; o.hitWall = true; }
+    o.vx = 0;
+    return;
+  }
+}
+
+function moveY(o, isPlayer) {
+  o.y += o.vy;
+  o.ground = false;
+  const { c0, c1, r0, r1 } = cellsOf(o);
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+    if (!isSolid(tileAt(c, r))) continue;
+    if (o.vy > 0) {
+      o.y = r * TILE - o.h; o.ground = true;
+      if (isPlayer && grid[r][c] === 'I') { revealed.add(r + ',' + c); sfx(300, .1, 'square', .05); }
+    }
+    else if (o.vy < 0) { o.y = (r + 1) * TILE; if (isPlayer) bump(c, r); }
+    o.vy = 0;
+    return;
+  }
+}
+
+function bump(c, r) {
+  const ch = grid[r][c];
+  if (ch === 'I') {
+    revealed.add(r + ',' + c);
+    sfx(140, .18, 'square', .07);
+    puff(c * TILE + 16, r * TILE + 24, '#f6efe2', 8);
+  } else if (ch === 'B') {
+    grid[r][c] = 'U';
+    sfx(220, .1);
+    mobs.push({ t: 'shroom', x: c * TILE + 4, y: r * TILE - 26, w: 24, h: 24, vx: 0, vy: -4 });
+  } else if (ch === 'Q') {
+    grid[r][c] = 'U';
+    coins++; sfx(880, .09, 'triangle', .06);
+    puff(c * TILE + 16, r * TILE, '#f2c94c', 10);
+  } else {
+    sfx(90, .06, 'square', .04);
+  }
+}
+
+// ---------------------------------------------------------------- morte
+function die(msg) {
+  if (deathLock > 0 || won) return;
+  deaths++;
+  deathLock = 70;
+  sfx(300, .12, 'sawtooth', .07);
+  setTimeout(() => sfx(110, .35, 'sawtooth', .06), 130);
+  puff(player.x + 11, player.y + 14, '#ff2e88', 18);
+  showTaunt(msg || TAUNTS[Math.min(deaths - 1, TAUNTS.length - 1)]);
+}
+
+const tauntEl = document.getElementById('taunt');
+let tauntTimer = null;
+function showTaunt(t) {
+  tauntEl.textContent = t;
+  tauntEl.classList.add('on');
+  clearTimeout(tauntTimer);
+  tauntTimer = setTimeout(() => tauntEl.classList.remove('on'), 1100);
+}
+
+function puff(x, y, color, n) {
+  for (let i = 0; i < n; i++) particles.push({
+    x, y, color, life: 24 + Math.random() * 16,
+    vx: (Math.random() - .5) * 5, vy: -Math.random() * 4 - 1
+  });
+}
+
+// ---------------------------------------------------------------- update
+function hit(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function update() {
+  frames++;
+
+  if (deathLock > 0) {
+    deathLock--;
+    if (deathLock === 0) resetLevel();
+    stepParticles();
+    return;
+  }
+
+  const p = player;
+
+  // orizzontale
+  if (keys.left) { p.vx -= ACC; p.face = -1; }
+  if (keys.right) { p.vx += ACC; p.face = 1; }
+  if (!keys.left && !keys.right) p.vx *= p.ground ? FRIC : AIRFRIC;
+  p.vx = Math.max(-MAXSP, Math.min(MAXSP, p.vx));
+  if (Math.abs(p.vx) < 0.05) p.vx = 0;
+  moveX(p);
+
+  // salto ad altezza variabile
+  if (keys.jump && !jumpHeld && p.ground) {
+    p.vy = -JUMP; p.ground = false; sfx(520, .08, 'square', .045);
+  }
+  if (!keys.jump && p.vy < 0) p.vy *= JUMP_CUT;
+  jumpHeld = keys.jump;
+
+  p.vy = Math.min(p.vy + GRAV, 16);
+  moveY(p, true);
+
+  if (p.y > VH + 160) { die('il vuoto era vuoto'); return; }
+
+  // tile a contatto: monete, spuntoni, bandiere
+  const cs = cellsOf(p);
+  for (let r = cs.r0; r <= cs.r1; r++) for (let c = cs.c0; c <= cs.c1; c++) {
+    const ch = tileAt(c, r);
+    if (ch === 'C') { grid[r][c] = ' '; coins++; sfx(760, .08, 'triangle', .05); puff(c * TILE + 16, r * TILE + 16, '#f2c94c', 8); }
+    else if (ch === 'X') { die('spuntoni. chi poteva immaginarlo'); return; }
+    else if (ch === 'F') { die('la bandiera era finta, ovviamente'); return; }
+    else if (ch === 'W') { winGame(); return; }
+  }
+
+  // piattaforme che si sbriciolano
+  if (p.ground) {
+    const rf = Math.floor((p.y + p.h + 1) / TILE);
+    for (let c = cs.c0; c <= cs.c1; c++) {
+      if (tileAt(c, rf) === 'D') {
+        const key = rf + ',' + c;
+        if (!crumbs.has(key)) { crumbs.set(key, 22); sfx(200, .05, 'square', .03); }
+      }
+    }
+  }
+  for (const [key, t] of [...crumbs]) {
+    if (t > 0) { crumbs.set(key, t - 1); continue; }
+    const [r, c] = key.split(',').map(Number);
+    grid[r][c] = ' ';
+    crumbs.delete(key);
+    puff(c * TILE + 16, r * TILE + 16, '#8a6a4a', 8);
+  }
+
+  // mattoni trappola
+  const pc = Math.floor((p.x + p.w / 2) / TILE);
+  for (const t of traps) {
+    if (t.used || t.c !== pc || p.y < t.r * TILE) continue;
+    t.used = true;
+    grid[t.r][t.c] = ' ';
+    mobs.push({ t: 'spike', x: t.c * TILE + 4, y: t.r * TILE + 6, w: 24, h: 26, vx: 0, vy: 1 });
+    sfx(160, .12, 'sawtooth', .05);
+  }
+
+  // nemici
+  for (let i = mobs.length - 1; i >= 0; i--) {
+    const m = mobs[i];
+
+    if (m.t === 'walker') {
+      m.hitWall = false;
+      moveX(m);
+      if (m.hitWall) m.vx = -m.vx;
+      m.vy = Math.min(m.vy + GRAV, 14);
+      moveY(m, false);
+    } else if (m.t === 'shroom') {
+      const dir = (p.x > m.x) ? 1 : -1;
+      m.vx = dir * 3.1;
+      m.hitWall = false;
+      moveX(m);
+      if (m.hitWall && m.ground) m.vy = -8;
+      m.vy = Math.min(m.vy + GRAV, 14);
+      moveY(m, false);
+    } else if (m.t === 'spike') {
+      m.vy = Math.min(m.vy + GRAV * 0.9, 13);
+      m.y += m.vy;
+    }
+
+    if (m.y > VH + 200) { mobs.splice(i, 1); continue; }
+    if (!hit(p, m)) continue;
+
+    const stomp = p.vy > 0 && (p.y + p.h) - m.y < 16;
+    if (m.t === 'walker' && stomp && !m.evil) {
+      mobs.splice(i, 1);
+      p.vy = -7.4;
+      sfx(400, .07, 'square', .05);
+      puff(m.x + 13, m.y + 13, '#8a5a3a', 8);
+    } else if (m.t === 'walker' && stomp && m.evil) {
+      die('quello aveva le punte sotto la pelliccia'); return;
+    } else if (m.t === 'shroom') {
+      die('il fungo non era un potenziamento'); return;
+    } else {
+      die(m.t === 'spike' ? 'il soffitto ti voleva male' : 'toccato'); return;
+    }
+  }
+
+  stepParticles();
+
+  // camera
+  const target = p.x + p.w / 2 - VW * 0.4;
+  cam += (Math.max(0, Math.min(LEVEL_W - VW, target)) - cam) * 0.14;
+}
+
+function stepParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const q = particles[i];
+    q.x += q.vx; q.y += q.vy; q.vy += 0.28; q.life--;
+    if (q.life <= 0) particles.splice(i, 1);
+  }
+}
+
+function winGame() {
+  won = true; running = false;
+  sfx(660, .1, 'triangle', .07);
+  setTimeout(() => sfx(880, .3, 'triangle', .07), 140);
+  document.getElementById('winStats').textContent =
+    `${deaths} morti · ${coins} monete · ${fmtTime(frames)} di sofferenza`;
+  document.getElementById('win').classList.remove('hide');
+}
+
+const fmtTime = f => {
+  const s = Math.floor(f / 60);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
+
+// ---------------------------------------------------------------- disegno
+function draw() {
+  // cielo
+  const g = ctx.createLinearGradient(0, 0, 0, VH);
+  g.addColorStop(0, '#8fd3d8'); g.addColorStop(1, '#e8dcc0');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+
+  // colline lontane
+  ctx.fillStyle = 'rgba(74,157,95,.35)';
+  for (let i = 0; i < 14; i++) {
+    const hx = i * 260 - (cam * 0.25) % 260 - 130;
+    ctx.beginPath();
+    ctx.arc(hx, VH - 90, 120, Math.PI, 0);
+    ctx.fill();
+  }
+  // nuvole
+  ctx.fillStyle = 'rgba(255,255,255,.55)';
+  for (let i = 0; i < 10; i++) {
+    const cx = i * 340 - (cam * 0.5) % 340 - 100;
+    const cy = 50 + (i % 3) * 42;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 20, 0, 7); ctx.arc(cx + 22, cy - 8, 26, 0, 7); ctx.arc(cx + 48, cy, 18, 0, 7);
+    ctx.fill();
+  }
+
+  ctx.save();
+  ctx.translate(-Math.round(cam), 0);
+
+  const cA = Math.max(0, Math.floor(cam / TILE) - 1);
+  const cB = Math.min(COLS - 1, Math.ceil((cam + VW) / TILE) + 1);
+
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = cA; c <= cB; c++) {
+      const ch = grid[r][c];
+      if (ch === ' ') continue;
+      drawTile(ch, c * TILE, r * TILE, r, c);
+    }
+  }
+
+  for (const m of mobs) drawMob(m);
+  for (const q of particles) {
+    ctx.globalAlpha = Math.max(0, q.life / 34);
+    ctx.fillStyle = q.color;
+    ctx.fillRect(Math.round(q.x), Math.round(q.y), 5, 5);
+  }
+  ctx.globalAlpha = 1;
+
+  if (deathLock === 0) drawCat(player.x, player.y, player.face);
+
+  ctx.restore();
+
+  document.getElementById('hDeaths').textContent = deaths;
+  document.getElementById('hCoins').textContent = coins;
+  document.getElementById('hTime').textContent = fmtTime(frames);
+}
+
+function drawTile(ch, x, y, r, c) {
+  switch (ch) {
+    case '#':
+      ctx.fillStyle = '#5c4033'; ctx.fillRect(x, y, TILE, TILE);
+      ctx.fillStyle = '#4a9d5f'; ctx.fillRect(x, y, TILE, 7);
+      ctx.fillStyle = 'rgba(0,0,0,.18)';
+      ctx.fillRect(x, y + TILE - 3, TILE, 3); ctx.fillRect(x + TILE - 3, y + 7, 3, TILE - 7);
+      break;
+    case 'P':
+      ctx.fillStyle = '#2f8f52'; ctx.fillRect(x, y, TILE, TILE);
+      ctx.fillStyle = '#57c47c'; ctx.fillRect(x + 4, y, 7, TILE);
+      ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.fillRect(x + TILE - 6, y, 6, TILE);
+      break;
+    case 'B': case 'Q': {
+      const k = Math.floor(frames / 12) % 2;
+      ctx.fillStyle = '#f2c94c'; ctx.fillRect(x, y, TILE, TILE);
+      ctx.fillStyle = '#b8862a'; ctx.fillRect(x, y, TILE, 3); ctx.fillRect(x, y + TILE - 3, TILE, 3);
+      ctx.fillRect(x, y, 3, TILE); ctx.fillRect(x + TILE - 3, y, 3, TILE);
+      ctx.fillStyle = k ? '#7a4d10' : '#5c3a0a';
+      ctx.font = 'bold 20px "Courier New",monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('?', x + TILE / 2, y + TILE / 2 + 1);
+      break;
+    }
+    case 'U':
+      ctx.fillStyle = '#9a6a3a'; ctx.fillRect(x, y, TILE, TILE);
+      ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(x + 3, y + 3, TILE - 6, TILE - 6);
+      break;
+    case 'T':
+      ctx.fillStyle = '#c96a3a'; ctx.fillRect(x, y, TILE, TILE);
+      ctx.fillStyle = 'rgba(0,0,0,.2)';
+      ctx.fillRect(x, y + 14, TILE, 3); ctx.fillRect(x + 14, y, 3, 14); ctx.fillRect(x + 6, y + 17, 3, 15);
+      break;
+    case 'D': {
+      const key = r + ',' + c;
+      const shake = crumbs.has(key) ? (Math.floor(frames / 2) % 2 ? 1 : -1) : 0;
+      ctx.fillStyle = '#8a6a4a'; ctx.fillRect(x + shake, y, TILE, TILE - 8);
+      ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(x + shake, y + TILE - 12, TILE, 4);
+      break;
+    }
+    case 'I':
+      if (revealed.has(r + ',' + c)) {
+        ctx.fillStyle = '#f6efe2'; ctx.fillRect(x, y, TILE, TILE);
+        ctx.fillStyle = '#ff2e88'; ctx.fillRect(x + 4, y + 4, TILE - 8, TILE - 8);
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 16px "Courier New",monospace';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('!', x + TILE / 2, y + TILE / 2 + 1);
+      }
+      break;
+    case 'X':
+      ctx.fillStyle = '#cfd6dd';
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.moveTo(x + i * 11, y + TILE);
+        ctx.lineTo(x + i * 11 + 5.5, y + 6);
+        ctx.lineTo(x + i * 11 + 11, y + TILE);
+        ctx.fill();
+      }
+      break;
+    case 'C': {
+      const bob = Math.sin((frames + c * 9) / 12) * 3;
+      ctx.fillStyle = '#f2c94c';
+      ctx.beginPath(); ctx.ellipse(x + 16, y + 16 + bob, 8, 11, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = '#b8862a';
+      ctx.beginPath(); ctx.ellipse(x + 16, y + 16 + bob, 3, 6, 0, 0, 7); ctx.fill();
+      break;
+    }
+    case 'F': case 'W': {
+      const real = ch === 'W';
+      ctx.fillStyle = '#e8dcc0';
+      ctx.fillRect(x + 13, y, 6, real ? TILE : TILE + (r === 10 ? TILE * 2 : 0));
+      if (real || r === 8) {
+        ctx.fillStyle = real ? '#4a9d5f' : '#ff2e88';
+        const w = 26 + Math.sin(frames / 9) * 3;
+        ctx.beginPath();
+        ctx.moveTo(x + 19, y + 4); ctx.lineTo(x + 19 + w, y + 12); ctx.lineTo(x + 19, y + 20);
+        ctx.fill();
+      }
+      break;
+    }
+  }
+}
+
+function drawMob(m) {
+  const x = Math.round(m.x), y = Math.round(m.y);
+  if (m.t === 'walker') {
+    // il cattivo è identico all'altro. buona fortuna.
+    ctx.fillStyle = '#8a5a3a';
+    ctx.beginPath(); ctx.ellipse(x + 13, y + 14, 13, 12, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = '#3a2418';
+    ctx.fillRect(x + 6, y + 9, 4, 6); ctx.fillRect(x + 16, y + 9, 4, 6);
+    ctx.fillRect(x + 2, y + 24, 8, 4); ctx.fillRect(x + 16, y + 24, 8, 4);
+  } else if (m.t === 'shroom') {
+    ctx.fillStyle = '#e03c3c';
+    ctx.beginPath(); ctx.arc(x + 12, y + 12, 12, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = '#f6efe2';
+    ctx.fillRect(x + 4, y + 12, 16, 11);
+    ctx.beginPath(); ctx.arc(x + 6, y + 7, 3, 0, 7); ctx.arc(x + 18, y + 7, 3, 0, 7); ctx.fill();
+    ctx.fillStyle = '#1b1420';
+    ctx.fillRect(x + 8, y + 15, 3, 4); ctx.fillRect(x + 14, y + 15, 3, 4);
+  } else if (m.t === 'spike') {
+    ctx.fillStyle = '#cfd6dd';
+    ctx.beginPath();
+    ctx.moveTo(x, y); ctx.lineTo(x + 24, y); ctx.lineTo(x + 12, y + 26);
+    ctx.fill();
+    ctx.fillStyle = '#8d99a6'; ctx.fillRect(x, y, 24, 4);
+  }
+}
+
+function drawCat(px, py, face) {
+  const x = Math.round(px), y = Math.round(py);
+  const run = player.ground && Math.abs(player.vx) > 0.6 ? Math.floor(frames / 5) % 2 : 0;
+
+  // orecchie
+  ctx.fillStyle = '#f6efe2';
+  ctx.beginPath();
+  ctx.moveTo(x + 2, y + 8); ctx.lineTo(x + 5, y - 4); ctx.lineTo(x + 10, y + 6); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x + 12, y + 6); ctx.lineTo(x + 17, y - 4); ctx.lineTo(x + 20, y + 8); ctx.fill();
+  // corpo
+  ctx.fillRect(x, y + 4, 22, 20);
+  // zampe
+  ctx.fillRect(x + 2, y + 24, 7, 4 + run);
+  ctx.fillRect(x + 13, y + 24, 7, 4 - run);
+  // coda
+  ctx.fillRect(face > 0 ? x - 6 : x + 22, y + 10, 6, 4);
+  // faccia
+  ctx.fillStyle = '#1b1420';
+  const ex = face > 0 ? 4 : 0;
+  ctx.fillRect(x + 4 + ex, y + 10, 4, 5);
+  ctx.fillRect(x + 13 + ex, y + 10, 4, 5);
+  ctx.fillStyle = '#ff2e88';
+  ctx.fillRect(x + 9 + ex, y + 17, 5, 3);
+  ctx.fillStyle = 'rgba(255,46,136,.35)';
+  ctx.fillRect(x + 1 + ex, y + 16, 4, 3);
+  ctx.fillRect(x + 17 + ex, y + 16, 4, 3);
+}
+
+// ---------------------------------------------------------------- loop
+function loop() {
+  if (running) update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+document.getElementById('btnStart').addEventListener('click', () => {
+  document.getElementById('start').classList.add('hide');
+  hardReset();
+  running = true;
+  sfx(660, .06, 'square', .04);
+});
+
+document.getElementById('btnAgain').addEventListener('click', () => {
+  document.getElementById('win').classList.add('hide');
+  hardReset();
+  running = true;
+});
+
+hardReset();
+loop();
+
+})();
+</script>
+</body>
+</html>

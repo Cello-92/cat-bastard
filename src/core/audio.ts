@@ -17,7 +17,11 @@ export interface ToneSpec {
 
 export const SFX = {
   jump: [{ freq: 520, dur: 0.08, type: 'square', vol: 0.045 }],
-  land: [{ freq: 180, dur: 0.05, type: 'square', vol: 0.025 }],
+  land: [{ freq: 180, dur: 0.07, type: 'square', vol: 0.03 }],
+  // Passi: due tonalità alternate, molto brevi e a volume basso. Suonano una
+  // volta per falcata (guidata dalla distanza percorsa), mai a ogni tick.
+  step: [{ freq: 132, dur: 0.03, type: 'square', vol: 0.013 }],
+  stepAlt: [{ freq: 108, dur: 0.03, type: 'square', vol: 0.013 }],
   coin: [
     { freq: 760, dur: 0.06, type: 'triangle', vol: 0.05 },
     { freq: 1140, dur: 0.1, type: 'triangle', vol: 0.05, delay: 0.05 },

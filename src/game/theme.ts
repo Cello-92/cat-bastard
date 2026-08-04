@@ -17,6 +17,8 @@ export const PALETTE = {
 
   dirt: '#5c4033',
   dirtDark: '#3d2a22',
+  /** Polvere sollevata dai passi e dagli atterraggi. */
+  dust: '#cbbba4',
   grass: '#4a9d5f',
   grassLight: '#63bd7a',
   brick: '#c96a3a',

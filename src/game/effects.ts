@@ -116,23 +116,22 @@ export class Effects {
     });
   }
 
-  /** Scia dietro al giocatore quando corre forte. */
-  speedStreak(x: number, y: number, color: string, facing: number): void {
-    if (this.particles.length >= MAX_PARTICLES) return;
-    this.particles.push({
-      x,
-      y,
-      vx: -facing * randRange(0.6, 1.6),
-      vy: randRange(-0.3, 0.3),
-      life: 14,
-      maxLife: 14,
-      size: randRange(3, 6),
-      color,
-      shape: 'streak',
-      gravity: 0,
-      drag: 0.92,
-      angle: 0,
-      spin: 0,
+  /**
+   * Sbuffo di polvere sotto il piede che tocca terra.
+   * Poche particelle, lente e basse: deve leggersi come polvere, non come
+   * scintille. Ne esce una per falcata, non una per frame.
+   */
+  footstepDust(x: number, y: number, color: string, facing: number): void {
+    this.burst(x, y, color, {
+      count: randInt(2, 3),
+      speed: 1.1,
+      size: 3,
+      life: 18,
+      gravity: -0.02,
+      drag: 0.88,
+      shape: 'circle',
+      angle: facing > 0 ? Math.PI : 0,
+      spread: Math.PI * 0.55,
     });
   }
 

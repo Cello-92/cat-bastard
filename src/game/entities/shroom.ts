@@ -1,4 +1,4 @@
-import { applyGravity, moveX, moveY } from '@engine/physics';
+import { applyGravity, moveX, moveY, updateGrounded } from '@engine/physics';
 import type { Renderer } from '@engine/render/renderer';
 import { PHYSICS } from '../config';
 import { PALETTE } from '../theme';
@@ -33,6 +33,7 @@ export class Shroom extends Entity {
 
     applyGravity(this, PHYSICS.gravity, 14);
     moveY(this, world.map, isSolid);
+    updateGrounded(this, world.map, isSolid);
 
     if (this.y > world.map.heightPx + 200) this.expired = true;
   }

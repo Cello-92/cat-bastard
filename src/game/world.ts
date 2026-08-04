@@ -1,6 +1,7 @@
 import type { Audio } from '@core/audio';
 import type { Input } from '@core/input';
 import { Camera } from '@engine/camera';
+import { groundTiles } from '@engine/physics';
 import type { Renderer } from '@engine/render/renderer';
 import { TileMap } from '@engine/tilemap';
 import { overlaps } from '@engine/types';
@@ -147,6 +148,7 @@ export class World {
     this.handleTileContacts();
     if (this.state !== 'playing') return;
 
+    this.handleStandingTiles();
     this.handleCrumbling();
     this.handleTrapBricks();
     this.handleEntities();
@@ -192,15 +194,25 @@ export class World {
     this.effects.floatingText(c * TILE_SIZE + TILE_SIZE / 2, r * TILE_SIZE - 4, 'CHECKPOINT', PALETTE.hot, 11);
   }
 
-  /** Chiamato dalla fisica del giocatore quando atterra su un tile. */
-  onPlayerLand(c: number, r: number, tile: string): void {
-    if (tile === TILE.INVISIBLE) {
-      this.reveal(c, r);
-    } else if (tile === TILE.CRUMBLE) {
-      const key = TileMap.key(c, r);
-      if (!this.crumbling.has(key)) {
-        this.crumbling.set(key, RULES.crumbleDelayTicks);
-        this.audio.play('crumble');
+  /**
+   * Tile su cui il giocatore sta poggiando, controllati ogni tick.
+   *
+   * Deliberatamente NON è un evento di atterraggio: ci si arriva anche
+   * camminandoci sopra di lato, senza mai cadere. Le due azioni qui sotto sono
+   * idempotenti, quindi ripeterle a ogni tick non fa danni.
+   */
+  private handleStandingTiles(): void {
+    if (!this.player.onGround) return;
+
+    for (const { c, r, tile } of groundTiles(this.player, this.map)) {
+      if (tile === TILE.INVISIBLE) {
+        this.reveal(c, r);
+      } else if (tile === TILE.CRUMBLE) {
+        const key = TileMap.key(c, r);
+        if (!this.crumbling.has(key)) {
+          this.crumbling.set(key, RULES.crumbleDelayTicks);
+          this.audio.play('crumble');
+        }
       }
     }
   }

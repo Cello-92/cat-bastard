@@ -1,6 +1,6 @@
 import type { Input } from '@core/input';
-import { clamp, wave } from '@core/math';
-import { applyGravity, moveX, moveY } from '@engine/physics';
+import { clamp } from '@core/math';
+import { applyGravity, moveX, moveY, updateGrounded } from '@engine/physics';
 import type { Renderer } from '@engine/render/renderer';
 import type { Body } from '@engine/types';
 import { PHYSICS } from '../config';
@@ -18,6 +18,17 @@ import type { World } from '../world';
 
 const WIDTH = 22;
 const HEIGHT = 28;
+
+/**
+ * Pixel percorsi per ogni falcata.
+ *
+ * L'animazione della corsa è guidata dalla DISTANZA, non dal tempo: le zampe
+ * si muovono in proporzione alla velocità, i piedi non "pattinano" e passi e
+ * polvere restano sincronizzati con quello che si vede.
+ */
+const STRIDE = 30;
+/** Sotto questa velocità il gatto è fermo, non sta camminando piano. */
+const RUN_THRESHOLD = 0.6;
 
 export class Player implements Body {
   x = 0;
@@ -40,8 +51,10 @@ export class Player implements Body {
   private squashX = 1;
   private squashY = 1;
 
+  /** Distanza percorsa a terra, in pixel: è l'orologio dell'animazione di corsa. */
+  private runPhase = 0;
+  private stepParity = 0;
   private blinkTimer = 0;
-  private streakTimer = 0;
 
   reset(x: number, y: number): void {
     this.x = x;
@@ -56,7 +69,8 @@ export class Player implements Body {
     this.wasOnGround = false;
     this.squashX = 1;
     this.squashY = 1;
-    this.streakTimer = 0;
+    this.runPhase = 0;
+    this.stepParity = 0;
   }
 
   get centerX(): number {
@@ -67,6 +81,11 @@ export class Player implements Body {
     return this.y + this.h / 2;
   }
 
+  /** True se sta correndo davvero (serve anche al disegno). */
+  get isRunning(): boolean {
+    return this.onGround && Math.abs(this.vx) > RUN_THRESHOLD;
+  }
+
   update(world: World, input: Input): void {
     this.handleHorizontal(input);
     moveX(this, world.map, isSolid);
@@ -74,11 +93,16 @@ export class Player implements Body {
     this.handleJump(world, input);
     applyGravity(this, PHYSICS.gravity, PHYSICS.terminalVelocity);
     moveY(this, world.map, isSolid, {
-      onLand: (c, r, tile) => world.onPlayerLand(c, r, tile),
       onCeiling: (c, r, tile) => world.onPlayerHeadbutt(c, r, tile),
     });
 
+    // Lo stato "a terra" si sonda, non si deduce dalla collisione: vedi
+    // engine/physics.ts. Da questa riga dipendono attrito, salto, animazione,
+    // suono dei passi e polvere, quindi va aggiornato prima di tutto il resto.
+    updateGrounded(this, world.map, isSolid);
+
     this.updateTimers();
+    this.updateRunCycle(world);
     this.updateJuice(world);
   }
 
@@ -115,7 +139,7 @@ export class Player implements Body {
       this.squashX = 0.76;
       this.squashY = 1.3;
       world.audio.play('jump');
-      world.effects.landingDust(this.centerX, this.y + this.h, PALETTE.paper, 0.6);
+      world.effects.footstepDust(this.centerX, this.y + this.h, PALETTE.dust, this.facing);
     }
 
     // Salto ad altezza variabile: rilasciare taglia la salita.
@@ -130,14 +154,34 @@ export class Player implements Body {
     else if (Math.random() < 0.008) this.blinkTimer = 8;
   }
 
-  /** Deformazioni, polvere e scie: puro feedback visivo. */
+  /**
+   * Avanza il ciclo di corsa e fa scattare un passo ogni `STRIDE` pixel.
+   * Passo = un suono + uno sbuffo di polvere, sotto il piede che tocca terra.
+   */
+  private updateRunCycle(world: World): void {
+    if (!this.isRunning) return;
+
+    const previousStep = Math.floor(this.runPhase / STRIDE);
+    this.runPhase += Math.abs(this.vx);
+    if (Math.floor(this.runPhase / STRIDE) === previousStep) return;
+
+    this.stepParity ^= 1;
+    world.audio.play(this.stepParity ? 'step' : 'stepAlt');
+    world.effects.footstepDust(
+      this.centerX - this.facing * 6,
+      this.y + this.h,
+      PALETTE.dust,
+      this.facing,
+    );
+  }
+
+  /** Deformazioni e polvere all'atterraggio: puro feedback visivo. */
   private updateJuice(world: World): void {
-    const justLanded = this.onGround && !this.wasOnGround;
-    if (justLanded) {
+    if (this.onGround && !this.wasOnGround) {
       const impact = clamp(Math.abs(this.vy) + 6, 6, 16) / 16;
       this.squashX = 1 + 0.34 * impact;
       this.squashY = 1 - 0.3 * impact;
-      world.effects.landingDust(this.centerX, this.y + this.h, PALETTE.paper, impact);
+      world.effects.landingDust(this.centerX, this.y + this.h, PALETTE.dust, impact);
       world.audio.play('land');
     }
     this.wasOnGround = this.onGround;
@@ -152,23 +196,20 @@ export class Player implements Body {
       this.squashY += airStretch * 0.35;
       this.squashX -= airStretch * 0.25;
     }
-
-    if (this.onGround && Math.abs(this.vx) > PHYSICS.maxSpeed * 0.8) {
-      this.streakTimer++;
-      if (this.streakTimer % 3 === 0) {
-        world.effects.speedStreak(this.centerX, this.y + this.h - 4, PALETTE.paper, this.facing);
-      }
-    } else {
-      this.streakTimer = 0;
-    }
   }
 
   // ---------------------------------------------------------------- disegno
   draw(r: Renderer, tick: number): void {
     const cx = Math.round(this.centerX);
     const feet = Math.round(this.y + this.h);
-    const running = this.onGround && Math.abs(this.vx) > 0.6;
-    const step = running ? Math.floor(tick / 5) % 2 : 0;
+    const running = this.isRunning;
+    const speed = Math.abs(this.vx) / PHYSICS.maxSpeed;
+
+    // Fase del ciclo: mezzo giro per falcata, così le due zampe si alternano.
+    const cycle = (this.runPhase / STRIDE) * Math.PI;
+    const swing = running ? Math.sin(cycle) : 0;
+    // Il corpo rimbalza due volte per falcata, in controfase con le zampe.
+    const bodyBob = running ? -Math.abs(Math.cos(cycle)) * 1.6 * speed : 0;
 
     // Ombra: si stringe quando sei in aria, dà il senso dell'altezza.
     r.push();
@@ -183,12 +224,19 @@ export class Player implements Body {
     r.translate(-cx, -feet);
 
     const x = cx - this.w / 2;
-    const y = feet - this.h;
     const face = this.facing;
-    const eyeShift = face > 0 ? 4 : 0;
 
-    // Coda, animata a onda.
-    const tailWag = Math.sin(tick / 7) * 3;
+    // --- zampe: oscillano avanti/indietro e si alzano da terra a turno.
+    const frontSwing = swing;
+    const backSwing = -swing;
+    drawLeg(r, x + 12 + frontSwing * 3.2 * face, feet, Math.max(0, frontSwing) * 2.6);
+    drawLeg(r, x + 3 + backSwing * 3.2 * face, feet, Math.max(0, backSwing) * 2.6);
+
+    // --- corpo (rimbalza; le zampe no)
+    const y = feet - this.h + bodyBob;
+
+    // Coda: sferza più veloce quando corri.
+    const tailWag = Math.sin(tick / (running ? 4 : 9)) * (running ? 4 : 3);
     const tailX = face > 0 ? x - 7 : x + this.w + 1;
     r.rect(tailX, y + 9 + tailWag * 0.4, 7, 4, PALETTE.paper);
     r.rect(tailX + (face > 0 ? 0 : 4), y + 6 + tailWag, 3, 5, PALETTE.paper);
@@ -208,11 +256,8 @@ export class Player implements Body {
     r.rect(face > 0 ? x : x + this.w - 5, y + 5, 5, this.h - 9, '#000000');
     r.pop();
 
-    // Zampe alternate in corsa.
-    r.rect(x + 2, y + this.h - 5, 7, 5 + step, PALETTE.paper);
-    r.rect(x + 13, y + this.h - 5, 7, 5 - step, PALETTE.paper);
-
     // Occhi (chiusi quando sbatte le palpebre).
+    const eyeShift = face > 0 ? 4 : 0;
     if (this.blinkTimer > 0) {
       r.rect(x + 4 + eyeShift, y + 12, 4, 2, PALETTE.furDark);
       r.rect(x + 13 + eyeShift, y + 12, 4, 2, PALETTE.furDark);
@@ -242,12 +287,22 @@ export class Player implements Body {
 
     r.pop();
 
-    // Alone rosa quando corri al massimo: velocità leggibile a colpo d'occhio.
-    if (running && Math.abs(this.vx) > PHYSICS.maxSpeed * 0.9 && wave(tick, 8) > 0.5) {
+    // Linee di velocità dietro al gatto quando è lanciato: due trattini che
+    // seguono la falcata, molto più leggibili di una scia continua.
+    if (running && speed > 0.85) {
       r.push();
-      r.setAlpha(0.16);
-      r.ellipse(cx - face * 10, feet - this.h / 2, 14, 12, PALETTE.hot);
+      r.setAlpha(0.22 + Math.abs(swing) * 0.16);
+      const backX = cx - face * (this.w / 2 + 6);
+      r.rect(backX - face * 10, feet - 20, 10, 2, PALETTE.paper);
+      r.rect(backX - face * 7, feet - 13, 7, 2, PALETTE.paper);
       r.pop();
     }
   }
+}
+
+/** Una zampa: `lift` la stacca da terra durante la falcata. */
+function drawLeg(r: Renderer, x: number, feet: number, lift: number): void {
+  const height = 5 - lift;
+  if (height <= 0.5) return;
+  r.rect(x, feet - height, 7, height, PALETTE.paper);
 }

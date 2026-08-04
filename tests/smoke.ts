@@ -98,6 +98,14 @@ for (const level of LEVELS) {
   check(renderer.calls > 1000, `${level.name}: ha davvero disegnato qualcosa`);
 
   // Morte e respawn.
+  // Dopo 600 tick il gatto può trovarsi a metà di una morte, e `kill()`
+  // ignora di proposito le richieste in quello stato: si aspetta che il mondo
+  // sia tornato giocabile, altrimenti si starebbe testando il caso sbagliato.
+  for (let tick = 0; tick < 200 && world.state !== 'playing'; tick++) {
+    world.update(fakeInput(tick));
+  }
+  check(world.state === 'playing', `${level.name}: il mondo torna sempre giocabile`);
+
   const deathsBefore = world.deaths;
   world.kill();
   check(world.deaths === deathsBefore + 1, `${level.name}: kill() incrementa le morti`);

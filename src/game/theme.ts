@@ -1,74 +1,341 @@
+import type { Stop } from '@engine/render/renderer';
+
 /**
- * Palette del gioco: unico posto in cui esistono colori.
+ * Direzione artistica: l'unico posto in cui esistono colori.
  *
- * Regola (CLAUDE.md): mai colori hardcoded nel codice di disegno. Aggiungere
- * un colore qui è una decisione di direzione artistica, non un dettaglio.
+ * Non è più una lista di tinte piatte ma un insieme di **materiali**. Ogni
+ * superficie del gioco dichiara come reagisce alla luce — faccia illuminata,
+ * colore proprio, faccia in ombra, fondo delle fessure, riflesso speculare —
+ * e il codice di disegno si limita ad applicare sempre la stessa logica.
+ * È questo che tiene insieme la resa: una pietra e un metallo sono diversi
+ * perché hanno valori diversi, non perché sono disegnati con regole diverse.
+ *
+ * Regola (CLAUDE.md): mai colori hardcoded nel codice di disegno.
  * I valori UI sono duplicati in src/style.css — vanno tenuti allineati.
  */
 
+/**
+ * La luce del mondo arriva dall'alto a sinistra, sempre.
+ * Ogni ombra, ogni riflesso e ogni bordo illuminato del gioco discende da qui:
+ * cambiare questo vettore significa ridisegnare l'illuminazione di tutto.
+ */
+export const LIGHT = { x: -0.48, y: -0.88 } as const;
+
+export interface Material {
+  /** Colore proprio della superficie, in piena luce diffusa. */
+  base: string;
+  /** Faccia rivolta verso la luce. */
+  light: string;
+  /** Faccia in ombra, illuminata solo dal cielo. */
+  dark: string;
+  /** Fondo di fessure e incassi: occlusione quasi totale. */
+  deep: string;
+  /** Riflesso speculare: quanto più stretto e chiaro, tanto più lucido appare. */
+  spec: string;
+}
+
+const material = (base: string, light: string, dark: string, deep: string, spec: string): Material => ({
+  base,
+  light,
+  dark,
+  deep,
+  spec,
+});
+
+/**
+ * I materiali del gioco.
+ *
+ * I valori non sono scelti a occhio: per ogni materiale la faccia illuminata è
+ * più calda e desaturata, quella in ombra vira al blu del cielo. È la
+ * differenza tra "colore più chiaro / colore più scuro" e una superficie che
+ * sembra stare davvero sotto una luce.
+ */
+export const MATERIAL = {
+  /** Terra compatta: opaca, calda, quasi senza riflesso. */
+  soil: material('#5a4130', '#836043', '#38271b', '#1e150e', '#9c7a58'),
+  /** Roccia grigia da falesia. */
+  rock: material('#71737b', '#a9adb8', '#474950', '#26272c', '#c9cfda'),
+  /** Manto erboso. */
+  grass: material('#4b7a37', '#8cc257', '#2c4a26', '#16260f', '#b6e07f'),
+  /** Muschio sui bordi esposti. */
+  moss: material('#5c7a3a', '#8aa855', '#33461f', '#1b2611', '#a8c473'),
+  /** Oro lucido: riflesso stretto e caldo. */
+  gold: material('#c2912a', '#ffe9a0', '#714c0e', '#3b2705', '#fffdf0'),
+  /** Acciaio lucidato: riflesso quasi bianco. */
+  steel: material('#8d96a2', '#e3ebf4', '#3d434c', '#1f2228', '#ffffff'),
+  /** Ferro brunito: metallo sporco, riflesso spento. */
+  iron: material('#5e5a58', '#918c85', '#332f2d', '#1a1817', '#b9b3a8'),
+  /** Legno stagionato. */
+  wood: material('#7a5636', '#a97f4d', '#4a3420', '#291b10', '#c69a63'),
+  /** Laterizio cotto. */
+  brick: material('#9d5236', '#c67c56', '#5b2b1b', '#321609', '#d69a76'),
+  /** Metallo verniciato del tubo. */
+  enamel: material('#2f7d52', '#6ed49c', '#12402a', '#082517', '#dfffee'),
+  /** Pelo del gatto: crema caldo. */
+  fur: material('#ded3c0', '#fffaf0', '#a2947e', '#5b5245', '#ffffff'),
+  /** Pelo scuro della creatura. */
+  hide: material('#6b4a33', '#9d7450', '#3a2517', '#1d130c', '#c19a70'),
+  /** Cappello del fungo: lucido, quasi ceroso. */
+  cap: material('#b03129', '#e97a63', '#661714', '#360b09', '#ffd8ce'),
+  /** Pelle e naso. */
+  skin: material('#e08a97', '#f8bcc2', '#a94f61', '#6b2c3c', '#ffe3e6'),
+  /** Iride: l'unico materiale del gioco che emette un po' di luce sua. */
+  eye: material('#4f9e5c', '#95dd8a', '#1f4a2a', '#0c1f12', '#f0fff0'),
+  /** Membrana alare della bestia che si tuffa. */
+  membrane: material('#6b3550', '#a35f7a', '#3a1a2c', '#1d0d16', '#d69ab0'),
+} as const satisfies Record<string, Material>;
+
+export type MaterialName = keyof typeof MATERIAL;
+
+/**
+ * Accenti dell'interfaccia e colori "non fisici".
+ * Sono l'unica cosa nel gioco che non finge di essere un materiale: servono a
+ * segnalare (il rosa) e a raccogliere (l'oro delle particelle).
+ */
 export const PALETTE = {
-  ink: '#14101c',
-  inkSoft: '#241b30',
-  paper: '#f6efe2',
+  ink: '#0b0d14',
+  inkSoft: '#161a26',
+  paper: '#f4f1ea',
   hot: '#ff2e88',
   hotDeep: '#7a0d3f',
   gold: '#f2c94c',
-  goldDeep: '#b8862a',
-
-  dirt: '#5c4033',
-  dirtDark: '#3d2a22',
+  goldDeep: '#8a5f14',
   /** Polvere sollevata dai passi e dagli atterraggi. */
-  dust: '#cbbba4',
-  grass: '#4a9d5f',
-  grassLight: '#63bd7a',
-  brick: '#c96a3a',
-  wood: '#8a6a4a',
-  stone: '#cfd6dd',
-  stoneDark: '#8d99a6',
-  pipe: '#2f8f52',
-  pipeLight: '#57c47c',
-  fur: '#8a5a3a',
-  furDark: '#3a2418',
-  shroom: '#e03c3c',
-  used: '#9a6a3a',
+  dust: '#c8b79c',
+  wood: MATERIAL.wood.base,
+  brick: MATERIAL.brick.base,
+  shroom: MATERIAL.cap.base,
+  fur: MATERIAL.hide.base,
+  stone: MATERIAL.rock.light,
 } as const;
 
+// ---------------------------------------------------------------- atmosfera
 export interface SkyTheme {
-  top: string;
-  bottom: string;
-  hills: string;
-  clouds: string;
+  /** Gradiente del cielo, dallo zenit all'orizzonte. */
+  stops: readonly Stop[];
+  /** Posizione del corpo celeste, in frazione di schermo. */
+  sunX: number;
+  sunY: number;
+  sunRadius: number;
+  sunCore: string;
+  sunGlow: string;
+  /**
+   * Foschia atmosferica: colore verso cui sbiadisce tutto ciò che è lontano.
+   * È l'unico trucco che dà davvero la profondità — la prospettiva aerea.
+   */
+  fog: string;
+  /** Roccia delle creste lontane, prima che la foschia la mangi. */
+  ridge: string;
+  /** Vegetazione dei piani intermedi. */
+  canopy: string;
+  cloudLight: string;
+  cloudShade: string;
+  /** Tinta della luce diretta sul mondo giocabile. */
+  sunTint: string;
+  /** Quanto la luce diretta colora il mondo, in [0,1]. */
+  sunTintAmount: number;
+  /** Tinta del cielo dentro le ombre. */
+  ambient: string;
+  /** Quanto è densa la nebbia a terra. */
+  haze: number;
+  stars: boolean;
+  /** Raggi crepuscolari dal sole. */
+  rays: boolean;
 }
 
-/** Ogni mondo ha la sua identità visiva: cielo, colline, nuvole. */
+/** Ogni mondo ha la sua ora del giorno: cielo, luce, foschia, creste. */
 export const SKIES = {
+  /** Mattino limpido: cielo profondo in alto, caldo verso l'orizzonte. */
   day: {
-    top: '#8fd3d8',
-    bottom: '#e8dcc0',
-    hills: 'rgba(74,157,95,.35)',
-    clouds: 'rgba(255,255,255,.55)',
+    stops: [
+      { at: 0, color: '#1c5ea8' },
+      { at: 0.3, color: '#4e94cd' },
+      { at: 0.56, color: '#8fbfdd' },
+      { at: 0.78, color: '#c8dae0' },
+      { at: 1, color: '#eadfc4' },
+    ],
+    sunX: 0.76,
+    sunY: 0.15,
+    sunRadius: 34,
+    sunCore: '#fffdf2',
+    sunGlow: '#ffe9a8',
+    fog: '#c3d4dc',
+    ridge: '#5d6b80',
+    canopy: '#3f6b46',
+    cloudLight: '#fdfbf6',
+    cloudShade: '#9fb0c4',
+    sunTint: '#ffe6b8',
+    sunTintAmount: 0.1,
+    ambient: '#7fa6cc',
+    haze: 0.32,
+    stars: false,
+    rays: true,
   },
+  /** Tramonto: sole basso, ombre lunghe, tutto vira all'arancio. */
   sunset: {
-    top: '#f2884b',
-    bottom: '#ffd9a0',
-    hills: 'rgba(122,13,63,.32)',
-    clouds: 'rgba(255,236,214,.5)',
+    stops: [
+      { at: 0, color: '#221a4a' },
+      { at: 0.22, color: '#63356f' },
+      { at: 0.45, color: '#b8506a' },
+      { at: 0.66, color: '#e8825a' },
+      { at: 0.85, color: '#f9b271' },
+      { at: 1, color: '#ffd9a0' },
+    ],
+    sunX: 0.7,
+    sunY: 0.56,
+    sunRadius: 46,
+    sunCore: '#fff3d2',
+    sunGlow: '#ff9d52',
+    fog: '#d98f68',
+    ridge: '#6b4a63',
+    canopy: '#4a3a52',
+    cloudLight: '#ffd9ab',
+    cloudShade: '#8e5670',
+    sunTint: '#ffb070',
+    sunTintAmount: 0.2,
+    ambient: '#6a4a86',
+    haze: 0.45,
+    stars: false,
+    rays: true,
   },
+  /** Notte serena: luna alta, cielo che si schiarisce appena all'orizzonte. */
   night: {
-    top: '#1b2a5c',
-    bottom: '#4b3a72',
-    hills: 'rgba(12,10,30,.5)',
-    clouds: 'rgba(200,210,255,.28)',
+    stops: [
+      { at: 0, color: '#04060e' },
+      { at: 0.35, color: '#0b1330' },
+      { at: 0.68, color: '#182146' },
+      { at: 0.9, color: '#2b3260' },
+      { at: 1, color: '#3d4270' },
+    ],
+    sunX: 0.78,
+    sunY: 0.17,
+    sunRadius: 26,
+    sunCore: '#f2f6ff',
+    sunGlow: '#9fb6ee',
+    fog: '#2b3660',
+    ridge: '#2c3557',
+    canopy: '#1b2440',
+    cloudLight: '#7d8cbc',
+    cloudShade: '#242c4e',
+    sunTint: '#9db6f0',
+    sunTintAmount: 0.16,
+    ambient: '#31406e',
+    haze: 0.38,
+    stars: true,
+    rays: false,
   },
+  /** Grotta: nessun cielo, solo umidità e una luce che non si sa da dove venga. */
   cave: {
-    top: '#241b30',
-    bottom: '#3d2a3a',
-    hills: 'rgba(10,8,16,.55)',
-    clouds: 'rgba(255,46,136,.08)',
+    stops: [
+      { at: 0, color: '#05060a' },
+      { at: 0.45, color: '#100f18' },
+      { at: 0.8, color: '#1d1722' },
+      { at: 1, color: '#2a1f2e' },
+    ],
+    sunX: 0.5,
+    sunY: 0.1,
+    sunRadius: 14,
+    sunCore: '#ffd9a8',
+    sunGlow: '#ff8a3c',
+    fog: '#221a2c',
+    ridge: '#241e30',
+    canopy: '#181322',
+    cloudLight: '#3a2e44',
+    cloudShade: '#150f1c',
+    sunTint: '#ff9d52',
+    sunTintAmount: 0.14,
+    ambient: '#2a2038',
+    haze: 0.55,
+    stars: false,
+    rays: false,
   },
 } as const satisfies Record<string, SkyTheme>;
 
 export type SkyName = keyof typeof SKIES;
 
+// ---------------------------------------------------------------- colore
 /** Nero semitrasparente riutilizzabile per ombre e incassi. */
 export const shade = (alpha: number): string => `rgba(0,0,0,${alpha})`;
+
+/** Bianco semitrasparente: luci speculari e velature. */
+export const glare = (alpha: number): string => `rgba(255,255,255,${alpha})`;
+
+const hexCache = new Map<string, readonly [number, number, number]>();
+
+/**
+ * Scompone un colore nei tre canali.
+ *
+ * Accetta sia `#rgb`/`#rrggbb` sia la forma `rgb(...)`/`rgba(...)`, e questo
+ * non è un vezzo: `mix` restituisce `rgb(...)`, quindi senza saperlo rileggere
+ * ogni colore ottenuto da una miscela precedente collasserebbe a nero non
+ * appena lo si miscela di nuovo — ed è esattamente il caso della prospettiva
+ * aerea, che impila una miscela sull'altra.
+ *
+ * Memoizzata: si chiama a raffica.
+ */
+const channels = (color: string): readonly [number, number, number] => {
+  const cached = hexCache.get(color);
+  if (cached) return cached;
+
+  let r = 0;
+  let g = 0;
+  let b = 0;
+
+  if (color.startsWith('#')) {
+    if (color.length === 7) {
+      r = parseInt(color.slice(1, 3), 16);
+      g = parseInt(color.slice(3, 5), 16);
+      b = parseInt(color.slice(5, 7), 16);
+    } else if (color.length === 4) {
+      r = parseInt((color[1] ?? '0').repeat(2), 16);
+      g = parseInt((color[2] ?? '0').repeat(2), 16);
+      b = parseInt((color[3] ?? '0').repeat(2), 16);
+    }
+  } else {
+    const parts = color.slice(color.indexOf('(') + 1, color.lastIndexOf(')')).split(',');
+    r = Number(parts[0]);
+    g = Number(parts[1]);
+    b = Number(parts[2]);
+  }
+
+  const rgb = [
+    Number.isFinite(r) ? r : 0,
+    Number.isFinite(g) ? g : 0,
+    Number.isFinite(b) ? b : 0,
+  ] as const;
+  hexCache.set(color, rgb);
+  return rgb;
+};
+
+const mixCache = new Map<string, string>();
+
+/**
+ * Fonde due colori. È il motore della prospettiva aerea: ogni piano dello
+ * sfondo è il suo colore proprio miscelato con la foschia in proporzione alla
+ * distanza. Memoizzata perché le combinazioni utili sono poche decine.
+ */
+export const mix = (from: string, to: string, t: number): string => {
+  const amount = t < 0 ? 0 : t > 1 ? 1 : t;
+  const key = `${from}|${to}|${amount.toFixed(3)}`;
+  const cached = mixCache.get(key);
+  if (cached) return cached;
+
+  const [r1, g1, b1] = channels(from);
+  const [r2, g2, b2] = channels(to);
+  const r = Math.round(r1 + (r2 - r1) * amount);
+  const g = Math.round(g1 + (g2 - g1) * amount);
+  const b = Math.round(b1 + (b2 - b1) * amount);
+  const value = `rgb(${r},${g},${b})`;
+  mixCache.set(key, value);
+  return value;
+};
+
+/** Stesso colore, con trasparenza. */
+export const alpha = (hex: string, a: number): string => {
+  const [r, g, b] = channels(hex);
+  return `rgba(${r},${g},${b},${a})`;
+};
+
+/** Schiarisce (t > 0) o scurisce (t < 0) un colore. */
+export const shift = (hex: string, t: number): string =>
+  t >= 0 ? mix(hex, '#ffffff', t) : mix(hex, '#000000', -t);

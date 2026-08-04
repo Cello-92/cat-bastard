@@ -8,16 +8,17 @@ import { overlaps } from '@engine/types';
 import { FEEL, PHYSICS, RULES, TILE_SIZE, VIEW_HEIGHT, VIEW_WIDTH } from './config';
 import { Effects } from './effects';
 import { Entity } from './entities/entity';
+import { Diver } from './entities/diver';
 import { FallingSpike } from './entities/falling-spike';
 import { Player } from './entities/player';
 import { Shroom } from './entities/shroom';
 import { Walker } from './entities/walker';
 import type { LevelDef } from './levels';
 import { drawBackground } from './render/background';
-import { drawTile } from './render/tiles';
-import { PALETTE } from './theme';
+import { drawTile, type OpenSides } from './render/tiles';
+import { MATERIAL, PALETTE, SKIES, alpha } from './theme';
 import { DEATH_CAUSE, tauntFor, type DeathCause } from './taunts';
-import { TILE, isDeadly, isSpawner } from './tiles';
+import { TILE, isDeadly, isEarth, isSolid, isSpawner } from './tiles';
 
 /**
  * Il mondo di gioco: mappa, entità, regole, camera.
@@ -44,6 +45,20 @@ export interface WorldCallbacks {
   onWin(stats: RunStats): void;
 }
 
+/** Da quale tile letale è arrivata la morte: serve a scegliere la battuta. */
+const causeOfTile = (tile: string): DeathCause => {
+  switch (tile) {
+    case TILE.SPIKES:
+      return DEATH_CAUSE.spikes;
+    case TILE.CEILING_SPIKES:
+      return DEATH_CAUSE.ceilingSpikes;
+    case TILE.FAKE_FLAG:
+      return DEATH_CAUSE.fakeFlag;
+    default:
+      return DEATH_CAUSE.generic;
+  }
+};
+
 interface TrapBrick {
   c: number;
   r: number;
@@ -68,6 +83,16 @@ export class World {
   private revealed = new Set<string>();
   /** Piattaforme che stanno cedendo: chiave -> tick rimasti. */
   private crumbling = new Map<string, number>();
+  /**
+   * Trappole a tempo attive: chiave -> avanzamento in [0,1].
+   * Ci stanno dentro gli spuntoni a scatto (quanto sono usciti) e le molle
+   * (quanto sono compresse): entrambi hanno bisogno di un valore continuo
+   * perché il disegno possa mostrarli a metà corsa, che è tutto il preavviso
+   * che il giocatore riceve.
+   */
+  private extensions = new Map<string, number>();
+  /** Celle di spuntoni a scatto, raccolte una volta al caricamento. */
+  private popSpikes: { c: number; r: number }[] = [];
   private checkpoint: { c: number; r: number } | null = null;
   private deathTimer = 0;
 
@@ -96,6 +121,8 @@ export class World {
     this.trapBricks = [];
     this.revealed.clear();
     this.crumbling.clear();
+    this.extensions.clear();
+    this.popSpikes = [];
     this.effects.clear();
     this.state = 'playing';
     this.deathTimer = 0;
@@ -104,9 +131,15 @@ export class World {
     for (const { c, r, tile } of this.map.entries()) {
       if (isSpawner(tile)) {
         this.map.clear(c, r);
-        this.entities.push(new Walker(c * TILE_SIZE + 3, r * TILE_SIZE + 6, tile === TILE.EVIL_WALKER));
+        if (tile === TILE.DIVER) {
+          this.entities.push(new Diver(c * TILE_SIZE + 3, r * TILE_SIZE + 6));
+        } else {
+          this.entities.push(new Walker(c * TILE_SIZE + 3, r * TILE_SIZE + 6, tile === TILE.EVIL_WALKER));
+        }
       } else if (tile === TILE.TRAP_BRICK) {
         this.trapBricks.push({ c, r, fired: false });
+      } else if (tile === TILE.POP_SPIKES) {
+        this.popSpikes.push({ c, r });
       }
     }
 
@@ -150,6 +183,7 @@ export class World {
 
     this.handleStandingTiles();
     this.handleCrumbling();
+    this.handlePopSpikes();
     this.handleTrapBricks();
     this.handleEntities();
     if (this.state !== 'playing') return;
@@ -169,8 +203,16 @@ export class World {
       } else if (tile === TILE.GOAL) {
         this.win();
         return;
+      } else if (tile === TILE.SPRING) {
+        this.launch(c, r);
+      } else if (tile === TILE.POP_SPIKES) {
+        // Uccidono solo quando sono davvero fuori: mezzi usciti sono l'avviso.
+        if ((this.extensions.get(TileMap.key(c, r)) ?? 0) > 0.55) {
+          this.kill(DEATH_CAUSE.popSpikes);
+          return;
+        }
       } else if (isDeadly(tile)) {
-        this.kill(tile === TILE.SPIKES ? DEATH_CAUSE.spikes : DEATH_CAUSE.fakeFlag);
+        this.kill(causeOfTile(tile));
         return;
       }
     }
@@ -212,6 +254,20 @@ export class World {
         if (!this.crumbling.has(key)) {
           this.crumbling.set(key, RULES.crumbleDelayTicks);
           this.audio.play('crumble');
+        }
+      } else if (tile === TILE.FAKE_GROUND) {
+        // Il pavimento cede quasi subito: il tempo di accorgersene e sei già giù.
+        const key = TileMap.key(c, r);
+        if (!this.crumbling.has(key)) {
+          this.crumbling.set(key, RULES.fakeGroundDelayTicks);
+          this.audio.play('crumble');
+          this.effects.burst(c * TILE_SIZE + TILE_SIZE / 2, r * TILE_SIZE + 4, PALETTE.dust, {
+            count: 6,
+            speed: 1.6,
+            size: 3,
+            life: 20,
+            shape: 'circle',
+          });
         }
       }
     }
@@ -282,6 +338,68 @@ export class World {
         size: 5,
         gravity: 0.4,
       });
+    }
+  }
+
+  /**
+   * Molla: lancia il gatto molto più in alto di un salto, e senza dosaggio.
+   * Non è una trappola di per sé — lo diventa per via di quello che di solito
+   * c'è sopra.
+   */
+  private launch(c: number, r: number): void {
+    if (this.player.vy < 0) return;
+
+    this.player.vy = -PHYSICS.springImpulse;
+    this.player.onGround = false;
+    this.extensions.set(TileMap.key(c, r), 1);
+    this.audio.play('jump');
+    this.camera.shake(3);
+    this.effects.burst(c * TILE_SIZE + TILE_SIZE / 2, r * TILE_SIZE + TILE_SIZE - 8, PALETTE.dust, {
+      count: 8,
+      speed: 2.6,
+      size: 3,
+      life: 20,
+      shape: 'circle',
+      angle: -Math.PI / 2,
+      spread: Math.PI * 0.8,
+    });
+  }
+
+  /**
+   * Spuntoni a scatto: escono quando il gatto è vicino e rientrano quando se
+   * ne va. L'uscita non è istantanea — ci mette `popSpikeChargeTicks`, e quei
+   * pochi tick sono l'unico preavviso. Sono anche l'unico modo di passare.
+   */
+  private handlePopSpikes(): void {
+    const step = 1 / RULES.popSpikeChargeTicks;
+
+    for (const { c, r } of this.popSpikes) {
+      const key = TileMap.key(c, r);
+      const current = this.extensions.get(key) ?? 0;
+      const dx = Math.abs(this.player.centerX - (c * TILE_SIZE + TILE_SIZE / 2));
+      const near = dx < RULES.popSpikeRange;
+
+      const next = near ? Math.min(1, current + step) : Math.max(0, current - step * 0.6);
+      if (next === current) continue;
+
+      // Al primo scatto fanno rumore e polvere: il giocatore deve poterli sentire.
+      if (current === 0 && next > 0) {
+        this.audio.play('trap');
+        this.effects.burst(c * TILE_SIZE + TILE_SIZE / 2, r * TILE_SIZE + TILE_SIZE - 4, PALETTE.dust, {
+          count: 5,
+          speed: 1.8,
+          size: 2.5,
+          life: 16,
+          shape: 'circle',
+        });
+      }
+      this.extensions.set(key, next);
+    }
+
+    // Le molle si riaprono da sole dopo essere state schiacciate.
+    for (const [key, value] of this.extensions) {
+      if (this.map.get(Number(key.split(',')[0]), Number(key.split(',')[1])) !== TILE.SPRING) continue;
+      if (value > 0) this.extensions.set(key, Math.max(0, value - 0.12));
     }
   }
 
@@ -382,9 +500,46 @@ export class World {
 
     r.pop();
 
+    this.drawLighting(r);
     this.effects.drawOverlay(r);
     r.vignette(FEEL.vignetteStrength);
     r.end();
+  }
+
+  /**
+   * Passata di luce, in coordinate schermo.
+   *
+   * Tile, nemici e sfondo sono disegnati da funzioni diverse che non si
+   * parlano: se ognuna si illuminasse per conto suo, il risultato sarebbe un
+   * collage. Questa passata li mette tutti sotto la stessa luce — la tinta
+   * calda del sole dall'alto, il colore del cielo nelle ombre in basso, e un
+   * velo di foschia che aumenta con la profondità — ed è ciò che fa sembrare
+   * l'immagine una scena sola, ripresa in un momento preciso della giornata.
+   */
+  private drawLighting(r: Renderer): void {
+    const sky = SKIES[this.level.sky];
+    const { width: W, height: H } = r;
+
+    // Luce diretta: scende dall'alto e si esaurisce a metà schermo.
+    r.push();
+    r.setBlend('add');
+    r.setAlpha(sky.sunTintAmount * 0.65);
+    r.gradientRect(0, 0, W, H * 0.7, [
+      { at: 0, color: alpha(sky.sunTint, 0.85) },
+      { at: 1, color: alpha(sky.sunTint, 0) },
+    ]);
+    r.pop();
+
+    // Ombra ambientale: in basso arriva solo la luce riflessa dal cielo, che
+    // è più fredda. Senza questo il terreno sembra illuminato da sotto.
+    r.push();
+    r.setBlend('multiply');
+    r.setAlpha(0.34);
+    r.gradientRect(0, H * 0.45, W, H * 0.55, [
+      { at: 0, color: alpha(MATERIAL.fur.light, 1) },
+      { at: 1, color: alpha(sky.ambient, 0.8) },
+    ]);
+    r.pop();
   }
 
   private drawTiles(r: Renderer, tick: number): void {
@@ -395,17 +550,41 @@ export class World {
         const tile = this.map.get(col, row);
         if (tile === TILE.EMPTY) continue;
 
+        const key = TileMap.key(col, row);
         const above = this.map.get(col, row - 1);
         drawTile(r, tile, col * TILE_SIZE, row * TILE_SIZE, {
           tick,
           col,
           row,
-          revealed: this.revealed.has(TileMap.key(col, row)),
-          crumbling: this.crumbling.has(TileMap.key(col, row)),
+          revealed: this.revealed.has(key),
+          crumbling: this.crumbling.has(key),
           checkpointActive: this.checkpoint?.c === col && this.checkpoint.r === row,
           hasFlagAbove: above === tile && (tile === TILE.FAKE_FLAG || tile === TILE.GOAL),
+          extension: this.extensions.get(key) ?? 0,
+          open: this.openSidesOf(col, row, tile),
         });
       }
     }
+  }
+
+  /**
+   * Quali facce della cella danno sul vuoto.
+   *
+   * È l'informazione da cui il disegno ricava l'erba, i bordi illuminati e
+   * l'occlusione ambientale: senza, una parete di terra sarebbe una griglia di
+   * quadrati tutti uguali invece di una massa continua di terreno.
+   */
+  private openSidesOf(c: number, r: number, tile: string): OpenSides {
+    // Il terreno si "salda" con l'altro terreno; gli altri solidi con i solidi.
+    const joins = isEarth(tile)
+      ? (other: string): boolean => isEarth(other)
+      : (other: string): boolean => isSolid(other);
+
+    return {
+      up: !joins(this.map.get(c, r - 1)),
+      down: !joins(this.map.get(c, r + 1)),
+      left: !joins(this.map.get(c - 1, r)),
+      right: !joins(this.map.get(c + 1, r)),
+    };
   }
 }

@@ -1,5 +1,6 @@
 import { randRange, randInt } from '@core/math';
 import type { Renderer } from '@engine/render/renderer';
+import { alpha, glare } from './theme';
 
 /**
  * Sistema di effetti: particelle, testi fluttuanti, flash e hit-stop.
@@ -24,6 +25,8 @@ interface Particle {
   drag: number;
   spin: number;
   angle: number;
+  /** Emette luce: si somma al fondo invece di coprirlo. */
+  light: boolean;
 }
 
 interface FloatingText {
@@ -49,6 +52,8 @@ export interface BurstOptions {
   angle?: number;
   /** Ampiezza del cono attorno ad `angle`, in radianti. */
   spread?: number;
+  /** Particelle luminose: scintille, schegge d'oro, scariche. */
+  light?: boolean;
 }
 
 const MAX_PARTICLES = 420;
@@ -76,6 +81,7 @@ export class Effects {
       shape = 'square',
       angle,
       spread = Math.PI * 2,
+      light = false,
     } = options;
 
     for (let i = 0; i < count; i++) {
@@ -97,6 +103,7 @@ export class Effects {
         drag,
         angle: randRange(0, Math.PI * 2),
         spin: randRange(-0.25, 0.25),
+        light,
       });
     }
   }
@@ -154,6 +161,7 @@ export class Effects {
         drag: 0.9,
         angle: 0,
         spin: 0,
+        light: true,
       });
     }
   }
@@ -217,27 +225,39 @@ export class Effects {
   }
 
   // ------------------------------------------------------------ disegno
-  /** Da chiamare dentro la trasformazione della camera. */
+  /**
+   * Da chiamare dentro la trasformazione della camera.
+   *
+   * Due passate separate: prima i detriti, che coprono ciò che sta sotto, poi
+   * le particelle luminose in fusione additiva. Tenerle divise evita di
+   * cambiare stato di fusione decine di volte per frame, e soprattutto fa sì
+   * che una scintilla si comporti da luce e una scheggia da materia.
+   */
   drawWorld(r: Renderer): void {
     for (const p of this.particles) {
-      const t = p.life / p.maxLife;
-      r.push();
-      r.setAlpha(Math.min(1, t * 1.4));
-      if (p.shape === 'circle') {
-        r.ellipse(p.x, p.y, p.size * t, p.size * t, p.color);
-      } else if (p.shape === 'streak') {
-        r.rect(Math.round(p.x), Math.round(p.y), p.size * t * 2.2, Math.max(1, p.size * t * 0.5), p.color);
-      } else {
-        const s = Math.max(1, p.size * t);
-        r.rect(Math.round(p.x - s / 2), Math.round(p.y - s / 2), s, s, p.color);
-      }
-      r.pop();
+      if (p.light) continue;
+      this.drawParticle(r, p);
     }
+
+    r.push();
+    r.setBlend('add');
+    for (const p of this.particles) {
+      if (!p.light) continue;
+      this.drawParticle(r, p);
+    }
+    r.pop();
 
     for (const t of this.texts) {
       const k = t.life / t.maxLife;
       r.push();
       r.setAlpha(Math.min(1, k * 1.6));
+      // Ombra portata: il testo resta leggibile su qualunque fondale.
+      r.text(t.value, Math.round(t.x), Math.round(t.y) + 1.5, {
+        color: 'rgba(0,0,0,0.55)',
+        size: t.size,
+        align: 'center',
+        baseline: 'middle',
+      });
       r.text(t.value, Math.round(t.x), Math.round(t.y), {
         color: t.color,
         size: t.size,
@@ -248,12 +268,63 @@ export class Effects {
     }
   }
 
+  /** Una particella: la forma dice di che materia è fatta. */
+  private drawParticle(r: Renderer, p: Particle): void {
+    const t = p.life / p.maxLife;
+    const fade = Math.min(1, t * 1.4);
+
+    if (p.shape === 'circle') {
+      // Polvere e fumo: bordo sfumato, mai un cerchio netto.
+      r.push();
+      r.setAlpha(fade * 0.85);
+      r.radial(p.x, p.y, p.size * (2 - t), p.size * (2 - t), [
+        { at: 0, color: alpha(p.color, 0.9) },
+        { at: 0.5, color: alpha(p.color, 0.45) },
+        { at: 1, color: alpha(p.color, 0) },
+      ]);
+      r.pop();
+      return;
+    }
+
+    if (p.shape === 'streak') {
+      // Scia: allungata nella direzione del moto.
+      const len = Math.max(2, p.size * t * 3.2);
+      r.push();
+      r.setAlpha(fade);
+      r.translate(p.x, p.y);
+      r.rotate(Math.atan2(p.vy, p.vx));
+      r.radial(0, 0, len, Math.max(0.6, p.size * t * 0.4), [
+        { at: 0, color: alpha(p.color, 0.95) },
+        { at: 1, color: alpha(p.color, 0) },
+      ]);
+      r.pop();
+      return;
+    }
+
+    // Scheggia: un frammento solido che ruota su sé stesso.
+    const s = Math.max(0.8, p.size * t);
+    r.push();
+    r.setAlpha(fade);
+    r.translate(p.x, p.y);
+    r.rotate(p.angle);
+    r.rect(-s / 2, -s / 2, s, s * 0.8, p.color);
+    r.setAlpha(fade * 0.5);
+    r.rect(-s / 2, -s / 2, s, s * 0.25, glare(0.7));
+    r.pop();
+  }
+
   /** Da chiamare in coordinate schermo, dopo il mondo. */
   drawOverlay(r: Renderer): void {
     if (this.flashAmount <= 0) return;
     r.push();
-    r.setAlpha(Math.min(0.85, this.flashAmount));
-    r.clear(this.flashColor);
+    r.setBlend('add');
+    r.setAlpha(Math.min(0.7, this.flashAmount));
+    // Il lampo è più intenso al centro: un rettangolo pieno acceca e basta.
+    r.radial(r.width / 2, r.height / 2, r.width * 0.75, r.height * 0.95, [
+      { at: 0, color: alpha(this.flashColor, 0.95) },
+      { at: 0.55, color: alpha(this.flashColor, 0.5) },
+      { at: 1, color: alpha(this.flashColor, 0.12) },
+    ]);
     r.pop();
   }
 }

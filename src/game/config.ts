@@ -29,15 +29,23 @@ export const PHYSICS = {
   jumpBufferTicks: 6,
   /** Rimbalzo dopo aver schiacciato un nemico. */
   stompBounce: 7.4,
+  /** Spinta della molla: molto più di un salto, e non si può dosare. */
+  springImpulse: 17.2,
 } as const;
 
 export const RULES = {
   /** Durata del fermo immagine dopo la morte, prima del respawn. */
-  deathFreezeTicks: 70,
+  deathFreezeTicks: 52,
   /** Quanto resta a schermo la battuta. */
   tauntDurationMs: 1200,
   /** Tick prima che una piattaforma toccata si sbricioli. */
-  crumbleDelayTicks: 22,
+  crumbleDelayTicks: 16,
+  /** Tick prima che il finto terreno sparisca sotto le zampe. */
+  fakeGroundDelayTicks: 7,
+  /** Tick che gli spuntoni a scatto impiegano a uscire: è il loro preavviso. */
+  popSpikeChargeTicks: 11,
+  /** Distanza orizzontale a cui gli spuntoni a scatto si attivano. */
+  popSpikeRange: 34,
   /** Quanto sotto il livello si muore. */
   fallDeathMargin: 160,
   /** Distanza verticale massima per considerare valido uno stomp. */

@@ -10,6 +10,13 @@ export const TILE = {
   EMPTY: ' ',
   /** Terreno solido. */
   GROUND: '#',
+  /** Roccia nuda: solida, senza manto erboso. */
+  ROCK: 'R',
+  /**
+   * Terreno identico a quello vero che sparisce sotto le zampe.
+   * Il tradimento più puro del genere: il pavimento.
+   */
+  FAKE_GROUND: 'V',
   /** Tubo: solido, decorativo. */
   PIPE: 'P',
   /** Blocco "?" che sembra un premio e sputa un fungo ostile. */
@@ -26,6 +33,12 @@ export const TILE = {
   CRUMBLE: 'D',
   /** Spuntoni: morte al contatto. */
   SPIKES: 'X',
+  /** Spuntoni appesi al soffitto: uccidono chi salta senza guardare in alto. */
+  CEILING_SPIKES: 'Y',
+  /** Spuntoni a scatto: escono dal pavimento quando ti avvicini. */
+  POP_SPIKES: 'A',
+  /** Molla: ti lancia molto più in alto di un salto. Di solito verso qualcosa. */
+  SPRING: 'M',
   /** Moneta raccoglibile. */
   COIN: 'C',
   /** Bandiera finta: uccide. */
@@ -40,6 +53,8 @@ export const TILE = {
   WALKER: 'G',
   /** Nemico identico al precedente ma con le punte sotto. Buona fortuna. */
   EVIL_WALKER: 'J',
+  /** Bestia appesa in alto che si tuffa quando le passi sotto. */
+  DIVER: 'Z',
 } as const;
 
 export type TileChar = (typeof TILE)[keyof typeof TILE];
@@ -47,6 +62,8 @@ export type TileChar = (typeof TILE)[keyof typeof TILE];
 /** Tile contro cui si collide. */
 const SOLID = new Set<string>([
   TILE.GROUND,
+  TILE.ROCK,
+  TILE.FAKE_GROUND,
   TILE.PIPE,
   TILE.PRIZE,
   TILE.HONEST,
@@ -56,15 +73,23 @@ const SOLID = new Set<string>([
   TILE.CRUMBLE,
 ]);
 
-/** Tile che al contatto uccidono. */
-const DEADLY = new Set<string>([TILE.SPIKES, TILE.FAKE_FLAG]);
+/** Tile che al contatto uccidono, sempre e comunque. */
+const DEADLY = new Set<string>([TILE.SPIKES, TILE.CEILING_SPIKES, TILE.FAKE_FLAG]);
 
 /** Tile che vengono convertiti in entità al caricamento del livello. */
-const SPAWNERS = new Set<string>([TILE.WALKER, TILE.EVIL_WALKER]);
+const SPAWNERS = new Set<string>([TILE.WALKER, TILE.EVIL_WALKER, TILE.DIVER]);
+
+/**
+ * Tile disegnati come massa di terreno.
+ * Serve al disegno per sapere dove il suolo continua e dove invece è esposto
+ * al cielo: l'erba e i bordi illuminati nascono da qui.
+ */
+const EARTH = new Set<string>([TILE.GROUND, TILE.ROCK, TILE.FAKE_GROUND]);
 
 export const isSolid = (tile: string): boolean => SOLID.has(tile);
 export const isDeadly = (tile: string): boolean => DEADLY.has(tile);
 export const isSpawner = (tile: string): boolean => SPAWNERS.has(tile);
+export const isEarth = (tile: string): boolean => EARTH.has(tile);
 
 /** Il blocco invisibile è solido ma va disegnato solo dopo essere stato scoperto. */
 export const isHiddenUntilTouched = (tile: string): boolean => tile === TILE.INVISIBLE;

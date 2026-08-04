@@ -1,7 +1,7 @@
 import { applyGravity, moveX, moveY, updateGrounded } from '@engine/physics';
 import type { Renderer } from '@engine/render/renderer';
 import { PHYSICS } from '../config';
-import { PALETTE } from '../theme';
+import { MATERIAL, PALETTE, alpha, glare, shade } from '../theme';
 import { isSolid } from '../tiles';
 import { DEATH_CAUSE } from '../taunts';
 import type { World } from '../world';
@@ -48,36 +48,86 @@ export class Shroom extends Entity {
     return false;
   }
 
+  /**
+   * Il fungo. Cappello lucido, gambo carnoso, lamelle sotto: sembra
+   * esattamente il potenziamento che ogni platform ti ha insegnato a
+   * raccogliere. La faccia si vede solo da vicino, ed è già tardi.
+   */
   draw(r: Renderer, tick: number): void {
-    const x = Math.round(this.x);
-    const y = Math.round(this.y);
+    const cap = MATERIAL.cap;
+    const flesh = MATERIAL.fur;
+    const x = this.x;
+    const y = this.y;
     const cx = x + 12;
-    const wobble = Math.sin(tick / 5) * 1.2;
+    // Corre, quindi il cappello oscilla e il gambo si piega di conseguenza.
+    const wobble = Math.sin(tick / 5) * 1.3;
+    const lean = wobble * 0.35;
 
-    this.drawShadow(r);
+    this.drawShadow(r, 0.3);
 
-    // Gambo.
-    r.rect(x + 4, y + 12, 16, 11, PALETTE.paper);
+    // Gambo: cilindro, più stretto in alto, con l'ombra del cappello sopra.
+    const stemTop = y + 12;
     r.push();
-    r.setAlpha(0.14);
-    r.rect(x + 15, y + 12, 5, 11, '#000000');
+    r.polygon([cx - 5 + lean, stemTop, cx + 5 + lean, stemTop, cx + 6.5, y + 23, cx - 6.5, y + 23], flesh.base);
+    r.pop();
+    r.push();
+    r.setAlpha(0.75);
+    r.radial(cx - 2 + lean, y + 17, 3.4, 6, [
+      { at: 0, color: alpha(flesh.light, 0.95) },
+      { at: 1, color: alpha(flesh.light, 0) },
+    ]);
+    r.setAlpha(0.6);
+    r.radial(cx + 4 + lean, y + 18, 3.4, 6, [
+      { at: 0, color: alpha(flesh.dark, 0.9) },
+      { at: 1, color: alpha(flesh.dark, 0) },
+    ]);
     r.pop();
 
-    // Cappello.
-    r.dome(cx + wobble * 0.3, y + 13, 12, PALETTE.shroom);
+    // Lamelle sotto il cappello: la parte che nessuno guarda mai.
     r.push();
-    r.setAlpha(0.22);
-    r.dome(cx + wobble * 0.3, y + 13, 12, '#000000');
+    r.setAlpha(0.5);
+    for (let i = -3; i <= 3; i++) {
+      r.line([cx + i * 2.6 + wobble * 0.3, y + 12, cx + i * 3.1 + wobble * 0.3, y + 15], 1, cap.deep);
+    }
     r.pop();
-    r.dome(cx + wobble * 0.3, y + 13, 12, PALETTE.shroom);
-    // Puntini.
-    r.ellipse(x + 6 + wobble * 0.3, y + 7, 3, 3, PALETTE.paper);
-    r.ellipse(x + 18 + wobble * 0.3, y + 7, 3, 3, PALETTE.paper);
-    r.ellipse(x + 12 + wobble * 0.3, y + 3, 2.5, 2.5, PALETTE.paper);
 
-    // Faccia: l'unica cosa che tradisce le sue intenzioni, quando è troppo tardi.
-    r.rect(x + 8, y + 15, 3, 4, PALETTE.ink);
-    r.rect(x + 14, y + 15, 3, 4, PALETTE.ink);
-    r.rect(x + 10, y + 21, 5, 1.5, PALETTE.ink);
+    // Cappello: cupola con luce in alto a sinistra e bordo che rientra.
+    const capX = cx + wobble * 0.3;
+    r.dome(capX, y + 13, 12, cap.base);
+    r.push();
+    r.setAlpha(0.9);
+    r.radial(capX - 4, y + 5, 9, 7, [
+      { at: 0, color: alpha(cap.light, 1) },
+      { at: 1, color: alpha(cap.light, 0) },
+    ]);
+    r.setAlpha(0.75);
+    r.radial(capX + 6, y + 11, 7, 4.5, [
+      { at: 0, color: alpha(cap.dark, 0.95) },
+      { at: 1, color: alpha(cap.dark, 0) },
+    ]);
+    r.pop();
+    // Riflesso speculare stretto: è quello che lo fa sembrare bagnato.
+    r.push();
+    r.setAlpha(0.75);
+    r.ellipse(capX - 4.5, y + 4.5, 2.6, 1.5, cap.spec, -0.5);
+    r.pop();
+    // Bordo inferiore del cappello, in ombra.
+    r.rect(capX - 12, y + 12, 24, 1.6, alpha(cap.deep, 0.6));
+
+    // Puntini: leggermente scavati nel cappello, quindi hanno un'ombra sopra.
+    for (const [dx, dy, rad] of [[-6, -6, 3], [6, -6, 2.6], [0, -10, 2.2], [-10, -1, 1.8], [9, -1, 1.8]] as const) {
+      r.ellipse(capX + dx, y + 13 + dy - 0.6, rad, rad * 0.85, alpha(cap.deep, 0.35));
+      r.ellipse(capX + dx, y + 13 + dy, rad, rad * 0.85, PALETTE.paper);
+      r.ellipse(capX + dx - rad * 0.3, y + 13 + dy - rad * 0.3, rad * 0.4, rad * 0.3, glare(0.7));
+    }
+
+    // La faccia: l'unica cosa che tradisce le sue intenzioni.
+    for (const side of [-1, 1] as const) {
+      const ex = cx + side * 3.2 + lean;
+      r.ellipse(ex, y + 16.5, 1.9, 2.2, PALETTE.ink);
+      r.ellipse(ex - 0.5, y + 15.8, 0.6, 0.6, glare(0.85));
+    }
+    // Sorriso: due tratti che salgono. Non è un sorriso gentile.
+    r.line([cx - 3.4 + lean, y + 21, cx + lean, y + 19.6, cx + 3.4 + lean, y + 21], 1, shade(0.75));
   }
 }

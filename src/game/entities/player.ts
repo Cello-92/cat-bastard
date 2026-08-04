@@ -4,7 +4,7 @@ import { applyGravity, moveX, moveY, updateGrounded } from '@engine/physics';
 import type { Renderer } from '@engine/render/renderer';
 import type { Body } from '@engine/types';
 import { PHYSICS } from '../config';
-import { PALETTE, shade } from '../theme';
+import { MATERIAL, PALETTE, alpha, glare, mix, shade } from '../theme';
 import { isSolid } from '../tiles';
 import type { World } from '../world';
 
@@ -199,6 +199,15 @@ export class Player implements Body {
   }
 
   // ---------------------------------------------------------------- disegno
+  /**
+   * Il gatto è costruito a strati, dal fondo verso l'osservatore: ombra di
+   * contatto, coda, zampe posteriori, corpo, zampe anteriori, testa.
+   * L'ordine non è un dettaglio — è quello che dà la profondità alla figura.
+   *
+   * L'illuminazione segue la regola del mondo: luce dall'alto a sinistra,
+   * ventre in ombra, e un filo di luce di contorno sul lato illuminato che
+   * stacca il gatto da qualunque fondale si trovi dietro.
+   */
   draw(r: Renderer, tick: number): void {
     const cx = Math.round(this.centerX);
     const feet = Math.round(this.y + this.h);
@@ -211,11 +220,7 @@ export class Player implements Body {
     // Il corpo rimbalza due volte per falcata, in controfase con le zampe.
     const bodyBob = running ? -Math.abs(Math.cos(cycle)) * 1.6 * speed : 0;
 
-    // Ombra: si stringe quando sei in aria, dà il senso dell'altezza.
-    r.push();
-    r.setAlpha(this.onGround ? 0.26 : 0.13);
-    r.ellipse(cx, feet + 1, this.w * (this.onGround ? 0.5 : 0.34), 3.5, '#000000');
-    r.pop();
+    this.drawContactShadow(r, cx, feet);
 
     r.push();
     // Squash & stretch attorno ai piedi, così il gatto non "galleggia".
@@ -223,86 +228,269 @@ export class Player implements Body {
     r.scale(this.squashX, this.squashY);
     r.translate(-cx, -feet);
 
-    const x = cx - this.w / 2;
     const face = this.facing;
+    const top = feet - this.h + bodyBob;
+    // La testa sta nel terzo superiore, il tronco occupa il resto: sotto le
+    // zampe restano visibili. Un gatto tutto testa sembra un peluche.
+    const bodyY = top + 10;
+    const bodyH = feet - bodyY - 5;
 
-    // --- zampe: oscillano avanti/indietro e si alzano da terra a turno.
-    const frontSwing = swing;
-    const backSwing = -swing;
-    drawLeg(r, x + 12 + frontSwing * 3.2 * face, feet, Math.max(0, frontSwing) * 2.6);
-    drawLeg(r, x + 3 + backSwing * 3.2 * face, feet, Math.max(0, backSwing) * 2.6);
+    this.drawTail(r, cx, bodyY, face, tick, running);
+    // Zampe posteriori: più scure, stanno dietro al corpo.
+    drawLeg(r, cx - face * 7, feet, Math.max(0, -swing) * 3, 0.55);
+    drawLeg(r, cx + face * 2, feet, Math.max(0, swing) * 3, 0.55);
 
-    // --- corpo (rimbalza; le zampe no)
-    const y = feet - this.h + bodyBob;
+    this.drawBody(r, cx, bodyY, bodyH, face);
 
-    // Coda: sferza più veloce quando corri.
-    const tailWag = Math.sin(tick / (running ? 4 : 9)) * (running ? 4 : 3);
-    const tailX = face > 0 ? x - 7 : x + this.w + 1;
-    r.rect(tailX, y + 9 + tailWag * 0.4, 7, 4, PALETTE.paper);
-    r.rect(tailX + (face > 0 ? 0 : 4), y + 6 + tailWag, 3, 5, PALETTE.paper);
+    // Zampe anteriori: in piena luce, davanti a tutto il corpo.
+    drawLeg(r, cx + face * 6, feet, Math.max(0, swing) * 3.2, 1);
+    drawLeg(r, cx - face * 2, feet, Math.max(0, -swing) * 3.2, 1);
 
-    // Orecchie.
-    r.polygon([x + 2, y + 9, x + 5, y - 5, x + 11, y + 7], PALETTE.paper);
-    r.polygon([x + 12, y + 7, x + 18, y - 5, x + 21, y + 9], PALETTE.paper);
-    r.polygon([x + 4, y + 7, x + 6, y - 1, x + 9, y + 6], PALETTE.hot);
-    r.polygon([x + 14, y + 6, x + 17, y - 1, x + 19, y + 7], PALETTE.hot);
-
-    // Corpo con testa arrotondata.
-    r.rect(x, y + 5, this.w, this.h - 9, PALETTE.paper);
-    r.ellipse(x + this.w / 2, y + 10, this.w / 2, 7, PALETTE.paper);
-    // Ombreggiatura sul lato opposto alla luce.
-    r.push();
-    r.setAlpha(0.12);
-    r.rect(face > 0 ? x : x + this.w - 5, y + 5, 5, this.h - 9, '#000000');
+    this.drawHead(r, cx + face * 3, top + 7.5, face, tick);
     r.pop();
 
-    // Occhi (chiusi quando sbatte le palpebre).
-    const eyeShift = face > 0 ? 4 : 0;
-    if (this.blinkTimer > 0) {
-      r.rect(x + 4 + eyeShift, y + 12, 4, 2, PALETTE.furDark);
-      r.rect(x + 13 + eyeShift, y + 12, 4, 2, PALETTE.furDark);
-    } else {
-      r.rect(x + 4 + eyeShift, y + 10, 4, 5, PALETTE.furDark);
-      r.rect(x + 13 + eyeShift, y + 10, 4, 5, PALETTE.furDark);
-      // Riflesso: piccolo, ma dà vita allo sguardo.
-      r.rect(x + 5 + eyeShift, y + 11, 1.5, 1.5, PALETTE.paper);
-      r.rect(x + 14 + eyeShift, y + 11, 1.5, 1.5, PALETTE.paper);
-    }
-
-    // Musetto e guance.
-    r.rect(x + 9 + eyeShift, y + 17, 5, 3, PALETTE.hot);
-    r.push();
-    r.setAlpha(0.35);
-    r.rect(x + 1 + eyeShift, y + 16, 4, 3, PALETTE.hot);
-    r.rect(x + 17 + eyeShift, y + 16, 4, 3, PALETTE.hot);
-    r.pop();
-
-    // Baffi.
-    r.push();
-    r.setAlpha(0.5);
-    const whiskerX = face > 0 ? x + 17 : x - 3;
-    r.rect(whiskerX, y + 17, 8, 1, shade(0.55));
-    r.rect(whiskerX, y + 20, 7, 1, shade(0.55));
-    r.pop();
-
-    r.pop();
-
-    // Linee di velocità dietro al gatto quando è lanciato: due trattini che
-    // seguono la falcata, molto più leggibili di una scia continua.
+    // Scia d'aria alle spalle quando è lanciato: due strappi di luce, non una
+    // riga continua — si legge come velocità, non come un errore di disegno.
     if (running && speed > 0.85) {
       r.push();
-      r.setAlpha(0.22 + Math.abs(swing) * 0.16);
-      const backX = cx - face * (this.w / 2 + 6);
-      r.rect(backX - face * 10, feet - 20, 10, 2, PALETTE.paper);
-      r.rect(backX - face * 7, feet - 13, 7, 2, PALETTE.paper);
+      r.setBlend('add');
+      r.setAlpha(0.12 + Math.abs(swing) * 0.12);
+      const backX = cx - face * (this.w / 2 + 4);
+      for (let i = 0; i < 3; i++) {
+        const len = 9 + i * 4;
+        const y = feet - 8 - i * 7;
+        r.radial(backX - face * len * 0.5, y, len, 1.6, [
+          { at: 0, color: glare(0.8) },
+          { at: 1, color: glare(0) },
+        ]);
+      }
       r.pop();
     }
   }
+
+  /** Ombra di contatto: si stringe e si schiarisce man mano che sali. */
+  private drawContactShadow(r: Renderer, cx: number, feet: number): void {
+    const tight = this.onGround ? 1 : 0.62;
+    r.push();
+    r.setAlpha(this.onGround ? 0.34 : 0.16);
+    r.radial(cx, feet + 1.5, this.w * 0.62 * tight, 4.5 * tight, [
+      { at: 0, color: shade(0.85) },
+      { at: 0.55, color: shade(0.4) },
+      { at: 1, color: shade(0) },
+    ]);
+    r.pop();
+  }
+
+  /** Tronco: massa ovale, ventre in ombra, dorso in luce, pelo corto. */
+  private drawBody(r: Renderer, cx: number, y: number, h: number, face: number): void {
+    const fur = MATERIAL.fur;
+    const halfW = this.w / 2;
+    const midY = y + h * 0.45;
+
+    // Sagoma: spalle più alte della groppa, come un gatto che cammina.
+    r.blob(
+      [
+        cx - halfW + 1, midY - h * 0.28,
+        cx - halfW * 0.2, y - 1,
+        cx + halfW * 0.7, y + 1,
+        cx + halfW - 0.5, midY,
+        cx + halfW * 0.75, y + h - 1,
+        cx - halfW * 0.6, y + h - 1,
+        cx - halfW + 0.5, midY + h * 0.2,
+      ],
+      fur.base,
+    );
+
+    // Dorso in luce: la sorgente sta in alto a sinistra.
+    r.push();
+    r.setAlpha(0.85);
+    r.radial(cx - halfW * 0.35, y + h * 0.18, halfW * 1.05, h * 0.42, [
+      { at: 0, color: alpha(fur.light, 0.95) },
+      { at: 1, color: alpha(fur.light, 0) },
+    ]);
+    r.pop();
+
+    // Ventre in ombra: occlusione tra le zampe.
+    r.push();
+    r.setAlpha(0.6);
+    r.radial(cx + halfW * 0.15, y + h * 0.95, halfW * 0.95, h * 0.4, [
+      { at: 0, color: alpha(fur.dark, 0.8) },
+      { at: 1, color: alpha(fur.dark, 0) },
+    ]);
+    r.pop();
+
+    // Pelo: pochi tratti corti nel verso del manto, solo dove la luce radente
+    // li rivelerebbe davvero.
+    r.push();
+    r.setAlpha(0.16);
+    for (let i = 0; i < 4; i++) {
+      const fy = y + 3 + i * (h / 5);
+      r.line([cx - halfW * 0.5, fy, cx + halfW * 0.2, fy + 1.5], 0.8, fur.dark);
+    }
+    r.pop();
+
+    // Luce di contorno sul lato illuminato: separa il gatto dal fondale.
+    r.push();
+    r.setAlpha(0.5);
+    r.line(
+      [
+        cx - halfW * 0.1, y - 0.5,
+        cx - halfW * 0.75, y + h * 0.22,
+        cx - halfW * 0.95, y + h * 0.6,
+      ],
+      1.2,
+      glare(0.9),
+    );
+    r.pop();
+
+    // Ombra proiettata dalla testa sulle spalle.
+    r.push();
+    r.setAlpha(0.18);
+    r.radial(cx + face * 2, y + 2, halfW * 0.8, 3, [
+      { at: 0, color: shade(0.9) },
+      { at: 1, color: shade(0) },
+    ]);
+    r.pop();
+  }
+
+  /** Testa: cranio, orecchie con padiglione, occhi, muso, baffi. */
+  private drawHead(r: Renderer, cx: number, cy: number, face: number, tick: number): void {
+    const fur = MATERIAL.fur;
+    const skin = MATERIAL.skin;
+    const eye = MATERIAL.eye;
+    const rx = 7.6;
+    const ry = 6.8;
+
+    // Orecchie: padiglione rosa dentro, pelo fuori, punta appena piegata.
+    for (const side of [-1, 1] as const) {
+      const ex = cx + side * 4.8;
+      const tipX = ex + side * 2.6;
+      const tipY = cy - ry - 4.6;
+      r.polygon([ex - 2.9, cy - ry + 2, tipX, tipY, ex + 3, cy - ry + 1.2], fur.base);
+      r.polygon([ex - 1.4, cy - ry + 1.3, tipX - side * 0.3, tipY + 2.2, ex + 1.6, cy - ry + 0.8], skin.dark);
+      r.polygon([ex - 0.9, cy - ry + 1, tipX - side * 0.5, tipY + 2.8, ex + 1, cy - ry + 0.6], skin.base);
+      // L'orecchio rivolto alla luce riceve un bordo chiaro.
+      if (side < 0) r.line([ex - 2.7, cy - ry + 1.8, tipX, tipY], 0.9, alpha(fur.light, 0.9));
+    }
+
+    // Cranio.
+    r.ellipse(cx, cy, rx, ry, fur.base);
+    r.push();
+    r.setAlpha(0.9);
+    r.radial(cx - 2.4, cy - 2.4, rx * 0.85, ry * 0.85, [
+      { at: 0, color: alpha(fur.light, 1) },
+      { at: 1, color: alpha(fur.light, 0) },
+    ]);
+    r.pop();
+    r.push();
+    r.setAlpha(0.45);
+    r.radial(cx + 2, cy + 3.2, rx * 0.8, ry * 0.55, [
+      { at: 0, color: alpha(fur.dark, 0.9) },
+      { at: 1, color: alpha(fur.dark, 0) },
+    ]);
+    r.pop();
+
+    // Occhi: bulbo scuro, iride, pupilla verticale, riflesso.
+    const eyeY = cy - 0.4;
+    for (const side of [-1, 1] as const) {
+      const ex = cx + side * 3.2 + face * 0.6;
+      if (this.blinkTimer > 0) {
+        r.line([ex - 2, eyeY, ex + 2, eyeY], 1.2, fur.deep);
+        continue;
+      }
+      r.ellipse(ex, eyeY, 2.3, 2.5, eye.deep);
+      r.ellipse(ex, eyeY, 1.9, 2.1, eye.base);
+      r.ellipse(ex, eyeY - 0.3, 1.5, 1.5, eye.light);
+      // Pupilla a fessura: è ciò che rende inequivocabile che è un gatto.
+      r.ellipse(ex + face * 0.25, eyeY, 0.6, 1.8, '#0a0d0a');
+      r.ellipse(ex - 0.7, eyeY - 0.9, 0.6, 0.5, glare(0.95));
+    }
+
+    // Muso: zona più chiara, naso, bocca.
+    const muzzleY = cy + 3.2;
+    r.push();
+    r.setAlpha(0.6);
+    r.ellipse(cx + face * 0.6, muzzleY + 0.5, 3.8, 2.5, alpha(fur.light, 0.9));
+    r.pop();
+    const noseX = cx + face * 0.6;
+    r.polygon([noseX - 1.2, muzzleY, noseX + 1.2, muzzleY, noseX, muzzleY + 1.3], skin.dark);
+    r.line([noseX, muzzleY + 1.3, noseX, muzzleY + 2], 0.7, alpha(fur.deep, 0.8));
+    r.push();
+    r.setAlpha(0.75);
+    r.line([noseX - 1.9, muzzleY + 2.7, noseX, muzzleY + 2], 0.7, fur.deep);
+    r.line([noseX + 1.9, muzzleY + 2.7, noseX, muzzleY + 2], 0.7, fur.deep);
+    r.pop();
+
+    // Baffi: si muovono appena, sempre allo stesso ritmo.
+    const twitch = Math.sin(tick / 26) * 0.6;
+    r.push();
+    r.setAlpha(0.55);
+    for (const side of [-1, 1] as const) {
+      const wx = cx + side * 3;
+      for (let i = 0; i < 3; i++) {
+        const wy = muzzleY + 0.2 + i * 1.2;
+        r.line([wx, wy, wx + side * (6 + i), wy - 1.6 + i * 1.2 + twitch], 0.6, glare(0.7));
+      }
+    }
+    r.pop();
+  }
+
+  /**
+   * Coda: quattro segmenti che si inseguono con un ritardo crescente, così la
+   * punta arriva sempre dopo la base. Sferza più veloce quando corre.
+   */
+  private drawTail(r: Renderer, cx: number, bodyY: number, face: number, tick: number, running: boolean): void {
+    const fur = MATERIAL.fur;
+    const rate = running ? 5 : 11;
+    const amplitude = running ? 4.2 : 2.8;
+    const rootX = cx - face * (this.w / 2 - 3);
+    const rootY = bodyY + 7;
+
+    // La coda parte bassa dietro la groppa, poi si alza: è la curva a S che
+    // rende riconoscibile la sagoma di un gatto anche in silhouette.
+    // I segmenti si accorciano in orizzontale e crescono in verticale: la coda
+    // esce indietro, poi risale e si ripiega. È la curva a S del gatto vero.
+    const reach = [3, 5.4, 6.8, 6.4];
+    const rise = [-0.5, 2.6, 7, 11.5];
+    const points: number[] = [rootX, rootY];
+    for (let i = 0; i < 4; i++) {
+      const wag = Math.sin(tick / rate - i * 0.7) * amplitude * ((i + 1) / 4);
+      points.push(rootX - face * (reach[i] ?? 0), rootY - (rise[i] ?? 0) + wag);
+    }
+
+    // Tre passate sempre più strette: la coda si assottiglia verso la punta.
+    r.line(points, 3.2, fur.dark);
+    r.line(points, 2.2, fur.base);
+    r.push();
+    r.setAlpha(0.55);
+    r.line(points.slice(0, 6), 1, fur.light);
+    r.pop();
+    r.ellipse(points[8] ?? rootX, points[9] ?? rootY, 1.6, 1.5, fur.light);
+  }
 }
 
-/** Una zampa: `lift` la stacca da terra durante la falcata. */
-function drawLeg(r: Renderer, x: number, feet: number, lift: number): void {
-  const height = 5 - lift;
+/**
+ * Una zampa: `lift` la stacca da terra durante la falcata, `exposure` dice
+ * quanta luce le arriva (le posteriori sono in ombra dietro al corpo).
+ */
+function drawLeg(r: Renderer, x: number, feet: number, lift: number, exposure: number): void {
+  const fur = MATERIAL.fur;
+  const height = 7 - lift;
   if (height <= 0.5) return;
-  r.rect(x, feet - height, 7, height, PALETTE.paper);
+
+  const body = exposure < 1 ? mix(fur.base, fur.dark, 0.55) : fur.base;
+  const top = feet - height;
+
+  // Gamba.
+  r.line([x, top, x, feet - 1.6], 4.4, body);
+  // Zampa: una piccola ellisse schiacciata, con l'ombra sotto.
+  r.ellipse(x, feet - 1.4, 3.2, 1.9, exposure < 1 ? mix(fur.base, fur.dark, 0.4) : fur.light);
+  r.push();
+  r.setAlpha(0.35 * exposure);
+  r.line([x - 1.6, top + 1, x - 1.6, feet - 2.4], 1, alpha(fur.light, 0.9));
+  r.pop();
+  r.push();
+  r.setAlpha(0.3);
+  r.ellipse(x, feet - 0.4, 3, 1, PALETTE.ink);
+  r.pop();
 }

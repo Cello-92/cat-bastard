@@ -16,6 +16,11 @@ export const DEATH_CAUSE = {
   evilWalker: 'evilWalker',
   fallingSpike: 'fallingSpike',
   walker: 'walker',
+  fakeGround: 'fakeGround',
+  popSpikes: 'popSpikes',
+  ceilingSpikes: 'ceilingSpikes',
+  spring: 'spring',
+  diver: 'diver',
   generic: 'generic',
 } as const;
 
@@ -29,6 +34,31 @@ const BY_CAUSE: Record<Exclude<DeathCause, 'generic'>, readonly string[]> = {
   evilWalker: ['quello aveva le punte sotto la pelliccia', 'sembravano identici, vero?'],
   fallingSpike: ['il soffitto ti voleva male', 'dovevi guardare in alto'],
   walker: ['toccato', 'ti ha toccato lui per primo'],
+  fakeGround: [
+    'il pavimento non era d\'accordo',
+    'anche il terreno mente, qui',
+    'era terra finta. come tutto il resto',
+  ],
+  popSpikes: [
+    'erano sotto da sempre, aspettavano te',
+    'il pavimento aveva i denti',
+    'quel buchino nel metallo, l\'hai visto?',
+  ],
+  ceilingSpikes: [
+    'saltare non è sempre la risposta',
+    'il soffitto era più vicino di quanto pensassi',
+    'complimenti per l\'altezza',
+  ],
+  spring: [
+    'la molla ti ha lanciato esattamente dove voleva',
+    'saltavi troppo poco, ti ho aiutato io',
+    'era una molla, non un ascensore',
+  ],
+  diver: [
+    'stava lì appeso da prima che nascessi',
+    'guardare in alto ogni tanto aiuta',
+    'ti aspettava. da un pezzo',
+  ],
 };
 
 /** Fallback in escalation: indicizzato sul numero di morti. */

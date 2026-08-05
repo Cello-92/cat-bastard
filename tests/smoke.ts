@@ -1171,24 +1171,64 @@ console.log('\nTempi in millisecondi');
   check(formatMs(9) === '0:00.009', 'i millesimi hanno sempre tre cifre');
 }
 
+// Il formato degli id di livello è un contratto col database.
+//
+// `cb_sync` scarta le chiavi che non hanno la forma giusta, e lo fa con un
+// `continue`: niente errore, niente eccezione, solo un salvataggio che arriva
+// e non viene scritto. È il modo più silenzioso che questo progetto abbia di
+// rompersi, e infatti si è rotto — la regex accettava "1-11" mentre il gioco
+// manda "w1-11", quindi per ogni account il server teneva le morti totali e
+// buttava via tempi, monete e gomitoli.
+//
+// Qui la regex sta scritta due volte apposta, com'è già per le regole di
+// fusione: se qualcuno rinomina i livelli, questo controllo fallisce prima
+// del deploy invece di svuotare la classifica dopo.
+console.log('\nGli id dei livelli sono quelli che il server accetta');
+{
+  const ACCEPTED_BY_CB_SYNC = /^w[0-9]{1,3}-[0-9]{1,3}$/;
+  const rejected = LEVELS.filter((level) => !ACCEPTED_BY_CB_SYNC.test(level.id)).map((l) => l.id);
+  check(
+    rejected.length === 0,
+    `ogni id di livello passa il filtro di cb_sync${rejected.length ? ` (scartati: ${rejected.join(', ')})` : ''}`,
+  );
+
+  // E il payload che parte davvero usa quegli id, non altri.
+  const everyLevel: Progress = {
+    levels: Object.fromEntries(
+      LEVELS.map((level) => [level.id, { cleared: true, bestDeaths: 1, bestTicks: 600, bestCoins: 1 }]),
+    ),
+    totalDeaths: 1,
+    secrets: LEVELS.map((level) => level.id),
+  };
+  const sent = toPayload(everyLevel) as { levels: Record<string, unknown>; secrets: string[] };
+  check(
+    Object.keys(sent.levels).every((id) => ACCEPTED_BY_CB_SYNC.test(id)),
+    `i ${Object.keys(sent.levels).length} livelli del payload arrivano tutti in fondo a cb_sync`,
+  );
+  check(
+    sent.secrets.every((id) => ACCEPTED_BY_CB_SYNC.test(id)),
+    'nessun gomitolo viene scartato dal server: sarebbe un gatto perso',
+  );
+}
+
 console.log('\nSincronizzazione dei progressi');
 {
   const local: Progress = {
     levels: {
-      '1-1': { cleared: true, bestDeaths: 4, bestTicks: 600, bestCoins: 2 },
-      '1-2': { cleared: false, bestDeaths: 0, bestTicks: 0, bestCoins: 0 },
+      'w1-1': { cleared: true, bestDeaths: 4, bestTicks: 600, bestCoins: 2 },
+      'w1-2': { cleared: false, bestDeaths: 0, bestTicks: 0, bestCoins: 0 },
     },
     totalDeaths: 40,
-    secrets: ['1-1'],
+    secrets: ['w1-1'],
   };
 
   const payload = toPayload(local) as {
     levels: Record<string, { ms: number }>;
     secrets: string[];
   };
-  check(payload.levels['1-1']?.ms === 10000, 'un record di 600 tick parte come 10000ms');
-  check(payload.levels['1-2'] === undefined, 'un livello mai finito non ha un tempo da mandare');
-  check(payload.secrets.includes('1-1'), 'i gomitoli trovati partono con tutto il resto');
+  check(payload.levels['w1-1']?.ms === 10000, 'un record di 600 tick parte come 10000ms');
+  check(payload.levels['w1-2'] === undefined, 'un livello mai finito non ha un tempo da mandare');
+  check(payload.secrets.includes('w1-1'), 'i gomitoli trovati partono con tutto il resto');
 
   // Il server ha un tempo migliore su 1-1, un livello che qui non c'è, e un
   // gomitolo trovato su un altro computer.
@@ -1197,26 +1237,26 @@ console.log('\nSincronizzazione dei progressi');
       ok: true,
       nickname: 'gatto',
       total_deaths: 12,
-      secrets: ['2-3'],
+      secrets: ['w2-3'],
       levels: {
-        '1-1': { ms: 9000, deaths: 9, coins: 1 },
-        '1-3': { ms: 20000, deaths: 2, coins: 5 },
+        'w1-1': { ms: 9000, deaths: 9, coins: 1 },
+        'w1-3': { ms: 20000, deaths: 2, coins: 5 },
       },
     },
     local,
   );
 
-  check(merged.levels['1-1']?.bestTicks === 540, 'del tempo vince il più basso dei due');
-  check(merged.levels['1-1']?.bestDeaths === 4, 'delle morti vince il numero più basso');
+  check(merged.levels['w1-1']?.bestTicks === 540, 'del tempo vince il più basso dei due');
+  check(merged.levels['w1-1']?.bestDeaths === 4, 'delle morti vince il numero più basso');
   check(
-    merged.levels['1-1']?.bestCoins === 2,
+    merged.levels['w1-1']?.bestCoins === 2,
     'delle monete di un livello vince il numero più alto',
   );
-  check(merged.levels['1-3']?.cleared === true, 'un livello finito altrove arriva qui');
-  check(merged.levels['1-2']?.cleared === false, 'un livello mai finito resta mai finito');
+  check(merged.levels['w1-3']?.cleared === true, 'un livello finito altrove arriva qui');
+  check(merged.levels['w1-2']?.cleared === false, 'un livello mai finito resta mai finito');
   check(merged.totalDeaths === 40, 'le morti totali non scendono mai');
   check(
-    merged.secrets.includes('1-1') && merged.secrets.includes('2-3'),
+    merged.secrets.includes('w1-1') && merged.secrets.includes('w2-3'),
     'i gomitoli si sommano: uno trovato non si perde, nemmeno cambiando computer',
   );
   check(

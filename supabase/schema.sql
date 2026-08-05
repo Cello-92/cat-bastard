@@ -348,7 +348,7 @@ begin
     v_levels := '{}'::jsonb;
   end if;
 
-  -- Il gioco ha undici livelli. Duecento è un tetto larghissimo che esiste
+  -- Il gioco ha sedici livelli. Duecento è un tetto larghissimo che esiste
   -- solo perché la chiave anon è pubblica e qualcuno prima o poi proverà a
   -- mandarne centomila.
   if (select count(*) from jsonb_object_keys(v_levels)) > 200 then
@@ -357,8 +357,14 @@ begin
 
   for v_key, v_entry in select * from jsonb_each(v_levels)
   loop
-    -- Un id di livello è "1-11". Tutto il resto non è roba di questo gioco.
-    continue when v_key !~ '^[0-9]{1,3}-[0-9]{1,3}$';
+    -- Un id di livello è "w1-11": la "w" c'è sempre (vedi game/levels/). Il
+    -- filtro serve a non farsi riempire la tabella di chiavi inventate, non a
+    -- stabilire se un tempo è vero — ma deve accettare gli id che il gioco
+    -- manda davvero, altrimenti butta via tutto in silenzio, che è esattamente
+    -- quello che ha fatto finché qui c'era scritto '^[0-9]{1,3}-[0-9]{1,3}$'.
+    -- Chi rinomina i livelli tocca anche questa riga: `tests/smoke.ts` se ne
+    -- accorge e fallisce apposta.
+    continue when v_key !~ '^w[0-9]{1,3}-[0-9]{1,3}$';
     continue when jsonb_typeof(v_entry) <> 'object';
     continue when jsonb_typeof(v_entry -> 'ms') <> 'number';
 
@@ -386,13 +392,15 @@ begin
           updated_at  = now();
   end loop;
 
-  -- I gomitoli: unione, e solo id di livello plausibili.
+  -- I gomitoli: unione, e solo id di livello plausibili. Stesso formato di
+  -- sopra, e per la stessa ragione: un gomitolo scartato qui è un gatto che
+  -- il giocatore ha sbloccato e che sparisce cambiando computer.
   v_secrets := '{}';
   if jsonb_typeof(p_payload -> 'secrets') = 'array' then
     select coalesce(array_agg(distinct s), '{}')
       into v_secrets
       from jsonb_array_elements_text(p_payload -> 'secrets') as t(s)
-     where s ~ '^[0-9]{1,3}-[0-9]{1,3}$';
+     where s ~ '^w[0-9]{1,3}-[0-9]{1,3}$';
   end if;
 
   update public.players p

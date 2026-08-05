@@ -335,12 +335,25 @@ fine livello. Le regole stanno scritte due volte, in `cb_sync` e in
 | tempo, morti del livello | il minore | sono record |
 | monete del livello | la maggiore | è il massimo raccolto in un tentativo |
 | morti totali | la maggiore | è un contatore, sale e basta |
-| monete in tasca | quelle del client | si **spendono**: il massimo le farebbe rinascere |
-| gatti sbloccati | l'unione | uno sbloccato resta sbloccato |
+| gomitoli trovati | l'unione | uno trovato non si perde più |
+
+I gatti sbloccati **non** viaggiano: dipendono solo da quanti gomitoli hai, quindi
+sincronizzare i gomitoli sincronizza già i gatti, senza che il server debba
+fidarsi di una lista di gatti. Il gatto *indossato* non è un progresso ma una
+preferenza, e resta in `Settings`, in locale.
 
 Niente di tutto questo è una verifica anti-imbroglio, e non finge di esserlo. I
 controlli sui valori servono a non farsi riempire il database di spazzatura, non
 a stabilire se un tempo è vero: un client è un client.
+
+**Ma un filtro anti-spazzatura che sbaglia butta via i dati veri.** `cb_sync`
+scarta le chiavi che non hanno la forma di un id di livello, e lo fa con un
+`continue`: nessun errore, nessuna eccezione, solo un salvataggio che arriva e
+non viene scritto. Ha funzionato così per un po' — il filtro accettava `1-11`
+mentre il gioco manda `w1-11` — e il risultato era un database con dentro solo le
+morti totali e una classifica sempre vuota. Il formato è ora verificato da
+`tests/smoke.ts` contro i livelli veri: chi rinomina un livello lo scopre prima
+del deploy.
 
 **`cb_reset` esiste per un motivo preciso.** Senza, "azzera progressi"
 mentirebbe: si cancella tutto in locale e alla prima sincronizzazione il server

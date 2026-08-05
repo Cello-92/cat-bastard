@@ -69,6 +69,13 @@ export function drawBackground(r: Renderer, camX: number, sky: SkyName, tick: nu
   const horizon = H * HORIZON;
 
   drawSky(r, theme, W, H, horizon);
+
+  if (!theme.landscape) {
+    drawCaveDepth(r, theme, camX, tick, W, H);
+    drawGroundHaze(r, theme, horizon, W, H);
+    return;
+  }
+
   if (theme.stars) drawStars(r, theme, camX, tick, W, H);
   drawCelestialBody(r, theme, tick, W, H);
   drawRange(r, theme, camX, FAR_RANGE, horizon, W);
@@ -78,6 +85,66 @@ export function drawBackground(r: Renderer, camX: number, sky: SkyName, tick: nu
   drawForest(r, theme, camX, horizon, W);
   drawTreeLine(r, theme, camX, tick, horizon, W);
   drawGroundHaze(r, theme, horizon, W, H);
+}
+
+// ---------------------------------------------------------------- grotta
+/**
+ * Il fondo di una grotta: nessun orizzonte, solo altra roccia più indietro.
+ *
+ * La profondità qui non la dà la foschia ma il buio — ogni parete più lontana
+ * è più scura, non più chiara. Due quinte di roccia con le stalattiti appese
+ * scorrono a velocità diverse, e qualche pozza di luce lascia intuire che da
+ * qualche parte, sopra, c'è un'uscita.
+ */
+function drawCaveDepth(
+  r: Renderer,
+  theme: SkyTheme,
+  camX: number,
+  tick: number,
+  W: number,
+  H: number,
+): void {
+  const walls = [
+    { speed: 0.08, depth: 0.75, teeth: 46, spacing: 74, seed: 2.4 },
+    { speed: 0.2, depth: 0.45, teeth: 68, spacing: 108, seed: 6.1 },
+  ];
+
+  for (const wall of walls) {
+    const color = mix(theme.ridge, '#000000', wall.depth * 0.75);
+    const offset = camX * wall.speed;
+
+    // Volta: una fila di denti di roccia che scende dal soffitto.
+    const top: number[] = [-40, -10];
+    for (let x = -40; x <= W + 40; x += wall.spacing / 2) {
+      const n = hash(Math.floor((x + offset) / (wall.spacing / 2)) * 1.7 + wall.seed);
+      top.push(x, 10 + n * wall.teeth);
+    }
+    top.push(W + 40, -10);
+    r.polygon(top, color);
+
+    // Fondo: massi accumulati, più bassi e più radi.
+    const bottom: number[] = [-40, H + 10];
+    for (let x = -40; x <= W + 40; x += wall.spacing) {
+      const n = hash(Math.floor((x + offset) / wall.spacing) * 3.1 + wall.seed);
+      bottom.push(x, H - 30 - n * wall.teeth * 0.7);
+    }
+    bottom.push(W + 40, H + 10);
+    r.blob(bottom, color);
+  }
+
+  // Pozze di luce che filtrano da sopra: si muovono col mondo, molto lente.
+  r.push();
+  r.setBlend('add');
+  for (let i = 0; i < 3; i++) {
+    const x = ((i * 320 - camX * 0.28) % (W + 400)) + (W + 400);
+    const px = (x % (W + 400)) - 200;
+    r.setAlpha(0.07 + Math.abs(Math.sin(tick / 240 + i)) * 0.03);
+    r.radial(px, H * 0.22, 90, H * 0.5, [
+      { at: 0, color: alpha(theme.sunGlow, 0.55) },
+      { at: 1, color: alpha(theme.sunGlow, 0) },
+    ]);
+  }
+  r.pop();
 }
 
 // ---------------------------------------------------------------- cielo

@@ -291,25 +291,55 @@ function drawGrassMantle(r: Renderer, x: number, y: number, ctx: TileDrawContext
 /** Roccia nuda: come la terra, ma minerale — niente erba, spacchi netti. */
 function drawRock(r: Renderer, x: number, y: number, ctx: TileDrawContext): void {
   const rock = MATERIAL.rock;
-  r.gradientRect(x, y, T, T, bodyStops(rock));
+  r.gradientRect(x, y, T, T, ctx.open.up
+    ? bodyStops(rock)
+    : [
+        { at: 0, color: mix(rock.base, rock.dark, 0.35) },
+        { at: 1, color: mix(rock.base, rock.dark, 0.7) },
+      ]);
 
-  // Facce di frattura: due poligoni che spezzano la superficie in piani.
-  const n = cellNoise(ctx.col, ctx.row, 5);
+  // Facce di frattura: i vertici vengono tutti dal rumore della cella, quindi
+  // ogni masso è spaccato in modo suo e una parete non si ripete mai uguale.
+  const a = cellNoise(ctx.col, ctx.row, 5);
+  const b = cellNoise(ctx.col, ctx.row, 15);
+  const c = cellNoise(ctx.col, ctx.row, 25);
+
   r.push();
-  r.setAlpha(0.35);
-  r.polygon([x, y + T * n, x + T * 0.6, y, x + T, y + 6, x + T, y + T, x, y + T], alpha(rock.dark, 0.8));
-  r.setAlpha(0.28);
-  r.polygon([x, y, x + T * 0.55, y, x + T * 0.2, y + T * 0.5, x, y + T * 0.35], rock.light);
+  r.setAlpha(0.32);
+  r.polygon(
+    [
+      x, y + T * (0.25 + a * 0.5),
+      x + T * (0.35 + b * 0.4), y,
+      x + T, y + T * (0.1 + c * 0.3),
+      x + T, y + T,
+      x, y + T,
+    ],
+    alpha(rock.dark, 0.85),
+  );
+  r.setAlpha(0.26);
+  r.polygon(
+    [
+      x, y,
+      x + T * (0.3 + b * 0.45), y,
+      x + T * (0.1 + a * 0.3), y + T * (0.3 + c * 0.35),
+      x, y + T * (0.2 + a * 0.35),
+    ],
+    rock.light,
+  );
   r.pop();
 
-  // Crepe.
+  // Crepe: partono da un bordo a caso e non arrivano mai dall'altra parte.
   r.push();
-  r.setAlpha(0.5);
-  const cx = x + 6 + n * (T - 14);
-  r.line([cx, y + 3, cx + 4 - n * 8, y + 13, cx + 2, y + T - 5], 1.2, rock.deep);
+  r.setAlpha(0.45);
+  const cx = x + 4 + a * (T - 10);
+  r.line(
+    [cx, y + 2 + b * 5, cx + (b - 0.5) * 10, y + T * (0.4 + c * 0.2), cx + (a - 0.5) * 6, y + T - 3 - c * 6],
+    1 + b * 0.6,
+    rock.deep,
+  );
   r.pop();
 
-  speckle(r, x, y, ctx, 4, MATERIAL.iron, 4);
+  speckle(r, x, y, ctx, 3, MATERIAL.iron, 4);
   occlude(r, x, y, rock, ctx.open);
 }
 
@@ -621,9 +651,9 @@ function drawSpikes(
     // Riflesso sulla punta.
     r.push();
     r.setBlend('add');
-    r.setAlpha(0.55);
-    r.radial(tipX, tipY + 2, 3, 5, [
-      { at: 0, color: alpha(m.spec, 0.9) },
+    r.setAlpha(0.22);
+    r.radial(tipX, tipY + 2.5, 1.8, 3.5, [
+      { at: 0, color: alpha(m.spec, 0.8) },
       { at: 1, color: alpha(m.spec, 0) },
     ]);
     r.pop();
@@ -651,57 +681,95 @@ function drawSpikes(
   }
 }
 
-/** Feritoia da cui escono gli spuntoni a scatto: si vede, ed è apposta. */
+/**
+ * La piastra da cui escono gli spuntoni a scatto.
+ *
+ * Deve *farsi notare* anche da spenta: è l'unico preavviso che il giocatore
+ * riceve prima di passarci sopra. Acciaio chiaro contro la terra scura, tre
+ * feritoie nere e due tacche di pericolo agli angoli.
+ */
 function drawSpikeSocket(r: Renderer, x: number, y: number, ctx: TileDrawContext): void {
-  const m = MATERIAL.iron;
-  r.gradientRect(x, y + T - 6, T, 6, bodyStops(m));
+  const m = MATERIAL.steel;
+  const plateY = y + T - 9;
+
+  r.gradientRect(x, plateY, T, 9, bodyStops(m));
+  r.rect(x, plateY, T, 1.2, alpha(m.spec, 0.8));
+  r.rect(x, y + T - 1.5, T, 1.5, alpha(MATERIAL.iron.deep, 0.8));
+
+  // Feritoie: profonde, con il bordo superiore in ombra.
   for (let i = 0; i < 3; i++) {
-    const sx = x + 3 + i * (T / 3);
-    r.rect(sx, y + T - 5, T / 3 - 6, 2.5, m.deep);
-    r.rect(sx, y + T - 5, T / 3 - 6, 0.8, alpha(m.light, 0.4));
+    const sx = x + 3.5 + i * ((T - 7) / 3);
+    const w = (T - 7) / 3 - 3;
+    r.rect(sx, plateY + 2.5, w, 4, MATERIAL.iron.deep);
+    r.rect(sx, plateY + 2.5, w, 1, alpha(MATERIAL.iron.dark, 0.9));
   }
-  // Quando è carica, la feritoia si illumina: il preavviso è leale.
+
+  // Tacche di pericolo: gialle e nere, come su qualunque macchina che morde.
+  r.push();
+  r.setAlpha(0.75);
+  for (const cx of [x + 1.5, x + T - 3.5]) {
+    r.rect(cx, plateY + 2, 2, 5, MATERIAL.gold.base);
+    r.rect(cx, plateY + 3.6, 2, 1.6, MATERIAL.iron.deep);
+  }
+  r.pop();
+
+  // Quando è carica, dalle feritoie esce luce: il preavviso è leale.
   if (ctx.extension > 0 && ctx.extension < 1) {
     r.push();
     r.setBlend('add');
-    r.setAlpha(0.4);
-    r.radial(x + T / 2, y + T - 4, T * 0.6, 8, [
-      { at: 0, color: alpha(PALETTE.hot, 0.7) },
+    r.setAlpha(0.45);
+    r.radial(x + T / 2, plateY + 4, T * 0.6, 9, [
+      { at: 0, color: alpha(PALETTE.hot, 0.8) },
       { at: 1, color: alpha(PALETTE.hot, 0) },
     ]);
     r.pop();
   }
 }
 
-/** Molla d'acciaio: si comprime quando la carichi e ti spara in alto. */
+/**
+ * Molla d'acciaio. Deve leggersi come una molla *da ferma*: se il giocatore
+ * la riconosce solo dopo esserci salito sopra, non è una trappola leale.
+ * Piastra a terra, spire distanziate, piattello rosso in cima.
+ */
 function drawSpring(r: Renderer, x: number, y: number, ctx: TileDrawContext): void {
   const m = MATERIAL.steel;
+  const iron = MATERIAL.iron;
   const compression = ctx.extension;
-  const top = y + T - 10 + compression * 8;
+  const restHeight = 21;
+  const top = y + T - 4 - restHeight * (1 - compression * 0.62);
 
-  // Piastra di base.
-  r.gradientRect(x + 2, y + T - 5, T - 4, 5, bodyStops(MATERIAL.iron));
+  // Piastra di ancoraggio, con i bulloni.
+  r.gradientRect(x + 1, y + T - 5, T - 2, 5, bodyStops(iron));
+  r.ellipse(x + 4, y + T - 2.5, 1.4, 1.4, iron.light);
+  r.ellipse(x + T - 4, y + T - 2.5, 1.4, 1.4, iron.light);
 
-  // Spire: si stringono quando la molla è compressa.
+  // Spire: ellissi distanziate, ognuna con la sua ombra sotto e il riflesso
+  // sopra. Il filo si vede passare dietro, ed è quello che dice "molla".
   const coils = 4;
   const span = y + T - 6 - top;
   for (let i = 0; i < coils; i++) {
-    const cy = top + (i / coils) * span;
-    r.ellipse(x + T / 2, cy, T / 2 - 5, 2.6, m.dark);
-    r.ellipse(x + T / 2, cy - 0.8, T / 2 - 5.5, 2, m.base);
-    r.ellipse(x + T / 2 - 3, cy - 1.4, 4, 0.9, alpha(m.spec, 0.6));
+    const cy = top + 3 + (i / (coils - 1)) * span;
+    const rx = T / 2 - 6 + (i / coils) * 2.5;
+    r.ellipse(x + T / 2, cy + 1.2, rx, 2.4, alpha(m.deep, 0.55));
+    r.ellipse(x + T / 2, cy, rx, 2.2, m.base);
+    r.ellipse(x + T / 2 - rx * 0.35, cy - 0.8, rx * 0.45, 0.9, alpha(m.spec, 0.75));
   }
 
-  // Piattello superiore, quello che ti lancia.
-  r.gradientRect(x + 1, top - 5, T - 2, 6, [
+  // Piattello superiore: è la parte che ti colpisce, e si vede da lontano.
+  r.gradientRect(x + 1, top - 4, T - 2, 6, [
     { at: 0, color: m.light },
-    { at: 0.4, color: m.base },
+    { at: 0.35, color: m.base },
     { at: 1, color: m.dark },
   ]);
-  r.rect(x + 1, top - 5, T - 2, 1.2, alpha(m.spec, 0.8));
+  r.rect(x + 1, top - 4, T - 2, 1.4, alpha(m.spec, 0.85));
+  r.rect(x + 3, top - 1.6, T - 6, 1.6, PALETTE.hot);
   r.push();
-  r.setAlpha(0.5);
-  r.rect(x + 4, top - 3.5, T - 8, 1, PALETTE.hot);
+  r.setBlend('add');
+  r.setAlpha(0.18 + wave(ctx.tick, 40) * 0.14);
+  r.radial(x + T / 2, top - 1, T * 0.55, 6, [
+    { at: 0, color: alpha(PALETTE.hot, 0.7) },
+    { at: 1, color: alpha(PALETTE.hot, 0) },
+  ]);
   r.pop();
 }
 

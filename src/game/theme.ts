@@ -141,6 +141,12 @@ export interface SkyTheme {
   stars: boolean;
   /** Raggi crepuscolari dal sole. */
   rays: boolean;
+  /**
+   * C'è un paesaggio all'orizzonte, o siamo dentro qualcosa?
+   * Sottoterra montagne, boschi e filari non hanno senso: al loro posto va
+   * disegnata la profondità della grotta.
+   */
+  landscape: boolean;
 }
 
 /** Ogni mondo ha la sua ora del giorno: cielo, luce, foschia, creste. */
@@ -170,6 +176,7 @@ export const SKIES = {
     haze: 0.32,
     stars: false,
     rays: true,
+    landscape: true,
   },
   /** Tramonto: sole basso, ombre lunghe, tutto vira all'arancio. */
   sunset: {
@@ -197,6 +204,7 @@ export const SKIES = {
     haze: 0.45,
     stars: false,
     rays: true,
+    landscape: true,
   },
   /** Notte serena: luna alta, cielo che si schiarisce appena all'orizzonte. */
   night: {
@@ -223,6 +231,7 @@ export const SKIES = {
     haze: 0.38,
     stars: true,
     rays: false,
+    landscape: true,
   },
   /** Grotta: nessun cielo, solo umidità e una luce che non si sa da dove venga. */
   cave: {
@@ -248,6 +257,7 @@ export const SKIES = {
     haze: 0.55,
     stars: false,
     rays: false,
+    landscape: false,
   },
 } as const satisfies Record<string, SkyTheme>;
 

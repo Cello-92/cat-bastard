@@ -13,8 +13,9 @@ import { defineLevel, segment } from './level';
  * lanterne dei checkpoint.
  */
 
-/** Il soffitto della grotta: continuo, salvo dove serve farci passare. */
+/** Volta e pavimento della grotta: roccia nuda, senza un filo d'erba. */
 const CEILING = 'R'.repeat(SEGMENT_COLS);
+const FLOOR = CEILING;
 
 export const WORLD_1_4 = defineLevel({
   id: 'w1-4',
@@ -25,17 +26,17 @@ export const WORLD_1_4 = defineLevel({
   segments: [
     // 0 — l'imbocco. Si vede subito che il soffitto è basso.
     segment({
-      ground: true,
-      rows: { 0: CEILING, 1: CEILING },
+      rows: { 0: CEILING, 1: CEILING, 13: FLOOR, 14: FLOOR },
     }),
 
     // 1 — prima strettoia: spuntoni sopra e feritoie sotto, sfalsati, così
     // non si può né correre né saltare — si può solo alternare.
     segment({
-      ground: true,
       rows: {
         0: CEILING,
         1: CEILING,
+        13: FLOOR,
+        14: FLOOR,
         2: '    YY     YY    YY',
         12: '  AA   AA   AA   AA',
       },
@@ -43,22 +44,22 @@ export const WORLD_1_4 = defineLevel({
 
     // 2 — il primo vuoto, scavalcabile solo su assi marce.
     segment({
-      ground: true,
       rows: {
         0: CEILING,
         1: CEILING,
         10: '      DDD    DDD',
-        13: '#####          #####',
-        14: '#####          #####',
+        13: 'RRRRR          RRRRR',
+        14: 'RRRRR          RRRRR',
       },
     }),
 
     // 3 — colonia di bestie appese. Passano tutte, ma non insieme.
     segment({
-      ground: true,
       rows: {
         0: CEILING,
         1: CEILING,
+        13: FLOOR,
+        14: FLOOR,
         2: '   Z    Z    Z',
         12: '            G',
       },
@@ -67,24 +68,24 @@ export const WORLD_1_4 = defineLevel({
     // 4 — checkpoint e il pavimento che non c'è, in fondo a un corridoio in
     // cui non si può rallentare perché il soffitto scende.
     segment({
-      ground: true,
       rows: {
         0: CEILING,
         1: CEILING,
         2: '        YYYY',
         12: '  S',
-        13: '#########VVVV#######',
-        14: '#########    #######',
+        13: 'RRRRRRRRRVVVVRRRRRRR',
+        14: 'RRRRRRRRR    RRRRRRR',
       },
     }),
 
     // 5 — la molla è l'unico modo di salire al passaggio alto. È anche il
     // modo più veloce di finire contro il soffitto: dipende da dove la prendi.
     segment({
-      ground: true,
       rows: {
         0: CEILING,
         1: CEILING,
+        13: FLOOR,
+        14: FLOOR,
         3: '   YY        YY',
         6: '        RRRRRR',
         12: '     M        G',
@@ -94,10 +95,11 @@ export const WORLD_1_4 = defineLevel({
     // 6 — la bandiera in fondo alla galleria. Una grotta con l'uscita in
     // bella vista: è chiaramente una bugia, e infatti lo è.
     segment({
-      ground: true,
       rows: {
         0: CEILING,
         1: CEILING,
+        13: FLOOR,
+        14: FLOOR,
         8: '           F',
         9: '           F',
         10: '           F',
@@ -108,23 +110,23 @@ export const WORLD_1_4 = defineLevel({
     // 7 — il ponte sospeso: solido, marcio, solido, marcio. Con la stalattite
     // armata sopra il pezzo marcio.
     segment({
-      ground: true,
       rows: {
         0: CEILING,
         1: CEILING,
         7: '     T     T',
         10: '  RR  DD  RR  DD  RR',
-        13: '####            ####',
-        14: '####            ####',
+        13: 'RRRR            RRRR',
+        14: 'RRRR            RRRR',
       },
     }),
 
     // 8 — ultimo checkpoint e ultima pattuglia, in un corridoio alto un gatto.
     segment({
-      ground: true,
       rows: {
         0: CEILING,
         1: CEILING,
+        13: FLOOR,
+        14: FLOOR,
         2: '  YY   YY   YY   YY',
         12: ' S  J   G   J   G',
       },
@@ -133,10 +135,11 @@ export const WORLD_1_4 = defineLevel({
     // 9 — l'uscita vera. Fuori è ancora giorno, e non è un premio: è solo
     // dove ricomincia tutto.
     segment({
-      ground: true,
       rows: {
         0: CEILING,
         1: CEILING,
+        13: FLOOR,
+        14: FLOOR,
         8: '      Q',
         12: '            W',
       },

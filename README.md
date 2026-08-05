@@ -9,7 +9,7 @@ Ogni blocco è sospetto, ogni fungo è una trappola, la bandiera potrebbe non es
 
 ### [▶︎ GIOCA ORA](https://diamond26.github.io/cat-bastard/)
 
-Niente installazione. Niente account. Niente pietà.
+Niente installazione. Niente email. Niente pietà.
 
 <sub>TypeScript · Canvas 2D · zero dipendenze a runtime · zero asset binari</sub>
 
@@ -59,6 +59,18 @@ Qualcuno si compra con le monete — che si incassano **finendo** un livello, no
 raccogliendole — qualcuno è chiuso dentro un cubo nascosto in un livello
 preciso, uno si ha battendo il boss, e uno si sblocca a trecento morti. Quello
 è un premio o una diagnosi, decidi tu.
+
+## La classifica
+
+I tempi si contano al millesimo e finiscono in una classifica pubblica, livello
+per livello. Per entrarci serve un account, e un account qui è **un nickname e
+una password**: niente email, niente conferme, niente recupero. Se perdi la
+password hai perso l'account — è scritto anche dentro al gioco, prima che tu la
+scelga.
+
+Si può giocare benissimo senza: il popup all'avvio esce una volta sola e ha
+"non ora" fra le risposte. Chi risponde così però se lo sente dire chiaro —
+tempi e progressi restano solo in quel browser, e un browser si svuota da solo.
 
 ## Comandi
 

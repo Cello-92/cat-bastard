@@ -47,6 +47,50 @@
         <p data-win="stats"></p>
         <button class="btn" data-act="again">ANCORA</button>
       </section>
+
+      <!--
+        Account: nickname e password, niente email. Il contenuto lo riscrive
+        ui/account-dialog.ts a seconda di cosa si sta facendo; qui c'è solo il
+        guscio. Sta per ultimo di proposito: è l'unica schermata che deve poter
+        comparire sopra al menu.
+      -->
+      <section class="screen screen--account is-hidden" data-screen="account" aria-live="polite">
+        <h2 class="account__title" data-account="title">UN NOME PER LA CLASSIFICA</h2>
+        <p class="account__lead" data-account="lead"></p>
+
+        <form class="account__form" data-account="form" hidden>
+          <label class="account__field">
+            <span>NICKNAME</span>
+            <input
+              data-account="nickname"
+              type="text"
+              name="nickname"
+              autocomplete="username"
+              autocapitalize="off"
+              autocorrect="off"
+              spellcheck="false"
+              maxlength="16"
+              required
+            >
+          </label>
+          <label class="account__field">
+            <span>PASSWORD</span>
+            <input
+              data-account="password"
+              type="password"
+              name="password"
+              autocomplete="current-password"
+              maxlength="72"
+              required
+            >
+          </label>
+          <p class="account__error" data-account="error" hidden></p>
+          <button class="btn" type="submit" data-account="submit">CREA</button>
+        </form>
+
+        <div class="account__actions" data-account="actions"></div>
+        <p class="account__note" data-account="note"></p>
+      </section>
     </div>
 
     <footer class="footer">suggerimento: la seconda volta che muori nello stesso punto non è sfortuna</footer>

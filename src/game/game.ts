@@ -10,16 +10,19 @@ import {
   loadSettings,
   recordClear,
   resetProgress,
+  saveProgress,
   saveSettings,
   unlockSkin,
   type Progress,
   type Settings,
 } from '@core/storage';
+import { Account } from '@net/account';
 import { Hud } from '@ui/hud';
+import { AccountDialog } from '@ui/account-dialog';
 import { bindFullscreenKey, isFullscreen, toggleFullscreen } from '@ui/fullscreen';
 import { Menu, type MenuItem } from '@ui/menu';
 import { Screens } from '@ui/screens';
-import { formatTicks, plural } from '@ui/format';
+import { formatMs, formatTicksPrecise, plural } from '@ui/format';
 import { VIEW_HEIGHT, VIEW_WIDTH } from './config';
 import { LEVELS, firstLevel } from './levels';
 import {
@@ -54,12 +57,22 @@ export class Game {
   private readonly screens: Screens;
   private readonly menu: Menu;
   private readonly loop: GameLoop;
+  private readonly account = new Account();
+  private readonly accountDialog: AccountDialog;
 
   private world: World;
   private levelIndex = 0;
   private phase: Phase = 'menu';
   private progress: Progress;
   private settings: Settings;
+  /**
+   * Quale classifica si sta aspettando.
+   *
+   * La rete risponde quando le pare, e nel frattempo il giocatore ha già
+   * cambiato pagina tre volte: senza questo contatore una risposta in ritardo
+   * riscriverebbe il menu che sta guardando adesso.
+   */
+  private leaderboardRequest = 0;
 
   constructor(root: Document | HTMLElement = document) {
     const canvas = root.querySelector<HTMLCanvasElement>('#stage');
@@ -82,6 +95,20 @@ export class Game {
       onMove: () => this.audio.play('bump'),
       onChoose: () => this.audio.play('ui'),
       onPauseRequest: () => this.pause(),
+      // Col popup dell'account aperto il menu resta visibile dietro: senza
+      // questo, l'Invio che conferma la password confermerebbe anche la voce
+      // selezionata sotto.
+      isBlocked: () => this.accountDialog.isOpen,
+    });
+
+    this.accountDialog = new AccountDialog(root, {
+      onRegister: (nickname, password) => this.authenticate('register', nickname, password),
+      onLogin: (nickname, password) => this.authenticate('login', nickname, password),
+      onDismiss: () => this.markAccountPromptSeen(),
+      onDone: () => {
+        this.markAccountPromptSeen();
+        if (this.phase === 'menu') this.showRootMenu();
+      },
     });
 
     this.world = this.createWorld(0);
@@ -100,6 +127,75 @@ export class Game {
   start(): void {
     this.openMenu();
     this.loop.start();
+    // Il backend parte per conto suo e non ferma niente: se non risponde, o se
+    // non è nemmeno configurato, il gioco è quello di sempre.
+    void this.boot();
+  }
+
+  // ---------------------------------------------------------------- account
+  /**
+   * Il primo contatto col backend.
+   *
+   * Chi ha già una sessione la usa e non se ne accorge: si sincronizza e via.
+   * Chi non ce l'ha si vede il popup — una volta sola nella vita di questo
+   * browser, e con "non ora" fra le risposte.
+   */
+  private async boot(): Promise<void> {
+    if (!this.account.enabled) return;
+
+    if (this.account.isLogged) {
+      const merged = await this.account.sync(this.progress);
+      if (merged) this.adopt(merged);
+      if (this.phase === 'menu') this.showRootMenu();
+      return;
+    }
+
+    if (this.settings.accountPromptSeen) return;
+    this.accountDialog.open('welcome');
+  }
+
+  private async authenticate(
+    kind: 'register' | 'login',
+    nickname: string,
+    password: string,
+  ): Promise<string | null> {
+    const result =
+      kind === 'register'
+        ? await this.account.register(nickname, password, this.progress)
+        : await this.account.login(nickname, password, this.progress);
+
+    if (!result.ok) return result.message;
+    this.adopt(result.progress);
+    return null;
+  }
+
+  /** Adotta i progressi fusi col server e li scrive anche in locale. */
+  private adopt(progress: Progress): void {
+    this.progress = progress;
+    saveProgress(progress);
+    // La skin può essere cambiata insieme al resto: il gatto che si vede dietro
+    // al menu deve essere quello dell'account, non quello di prima.
+    this.world.player.skin = this.currentSkin;
+  }
+
+  /**
+   * Manda i progressi al server senza far aspettare nessuno.
+   *
+   * Fallisce in silenzio di proposito: una richiesta persa si ritenta alla
+   * prossima occasione, e non c'è nessun motivo per cui un problema di rete
+   * debba comparire sopra alla schermata di fine livello.
+   */
+  private queueSync(): void {
+    if (!this.account.isLogged) return;
+    void this.account.sync(this.progress).then((merged) => {
+      if (merged) this.adopt(merged);
+    });
+  }
+
+  private markAccountPromptSeen(): void {
+    if (this.settings.accountPromptSeen) return;
+    this.settings = { ...this.settings, accountPromptSeen: true };
+    saveSettings(this.settings);
   }
 
   // ---------------------------------------------------------------- setup
@@ -169,6 +265,24 @@ export class Game {
     const started = resume > 0 || this.progress.totalDeaths > 0;
     const cleared = LEVELS.filter((level) => this.progress.levels[level.id]?.cleared).length;
 
+    const online: MenuItem[] = this.account.enabled
+      ? [
+          {
+            label: 'CLASSIFICA',
+            hint: 'I tempi migliori di tutti, livello per livello',
+            onSelect: () => this.showLeaderboardMenu(),
+          },
+          {
+            label: 'ACCOUNT',
+            value: this.account.nickname ?? 'OSPITE',
+            hint: this.account.isLogged
+              ? 'I tuoi record sono al sicuro e vanno in classifica'
+              : 'Senza account i progressi restano solo in questo browser',
+            onSelect: () => this.showAccountMenu(),
+          },
+        ]
+      : [];
+
     this.menu.show({
       title: started
         ? `${cleared} livelli su ${LEVELS.length} · ${plural(this.progress.totalDeaths, 'morte', 'morti')} in totale`
@@ -191,6 +305,7 @@ export class Game {
           hint: `Cambia gatto. Hai ${plural(this.progress.coins, 'moneta', 'monete')} in tasca`,
           onSelect: () => this.showSkinsMenu(),
         },
+        ...online,
         {
           label: 'SCHERMO INTERO',
           value: isFullscreen() ? 'ON' : 'OFF',
@@ -228,13 +343,13 @@ export class Game {
       return {
         label: `${level.name}   ${level.title}`,
         value: record?.cleared
-          ? `${plural(record.bestDeaths, 'morte', 'morti')} · ${formatTicks(record.bestTicks)}`
+          ? `${plural(record.bestDeaths, 'morte', 'morti')} · ${formatTicksPrecise(record.bestTicks)}`
           : unlocked
             ? 'MAI FINITO'
             : 'BLOCCATO',
         hint: unlocked
           ? record?.cleared
-            ? `Record: ${plural(record.bestDeaths, 'morte', 'morti')}, ${formatTicks(record.bestTicks)}, ${plural(record.bestCoins, 'moneta', 'monete')}`
+            ? `Record: ${plural(record.bestDeaths, 'morte', 'morti')}, ${formatTicksPrecise(record.bestTicks)}, ${plural(record.bestCoins, 'moneta', 'monete')}`
             : 'Mai superato. Prima o poi.'
           : `Finisci ${LEVELS[index - 1]?.name ?? ''} per sbloccarlo`,
         locked: !unlocked,
@@ -249,6 +364,126 @@ export class Game {
       items,
       onBack: () => this.showRootMenu(),
     });
+  }
+
+  // ------------------------------------------------------------ classifica
+  private showLeaderboardMenu(): void {
+    const items: MenuItem[] = LEVELS.map((level) => {
+      const record = this.progress.levels[level.id];
+      return {
+        label: `${level.name}   ${level.title}`,
+        value: record?.cleared ? formatTicksPrecise(record.bestTicks) : '—',
+        hint: record?.cleared
+          ? 'Il valore a destra è il tuo tempo: guarda quanto sei lontano'
+          : 'Non l\'hai mai finito. Gli altri sì',
+        onSelect: () => void this.showLeaderboardFor(level.id, level.name, level.title),
+      };
+    });
+
+    items.push({ label: 'INDIETRO', onSelect: () => this.showRootMenu() });
+
+    this.menu.show({
+      title: 'CLASSIFICA · i venti tempi migliori di ogni livello',
+      items,
+      onBack: () => this.showRootMenu(),
+    });
+  }
+
+  private async showLeaderboardFor(levelId: string, name: string, title: string): Promise<void> {
+    const request = ++this.leaderboardRequest;
+    const back: MenuItem = { label: 'INDIETRO', onSelect: () => this.showLeaderboardMenu() };
+
+    const page = (body: readonly string[]): void => {
+      this.menu.show({
+        compact: true,
+        title: `${name} — ${title}`,
+        body,
+        items: [back],
+        onBack: () => this.showLeaderboardMenu(),
+      });
+    };
+
+    page(['Caricamento…']);
+
+    const rows = await this.account.leaderboard(levelId);
+    // Risposta in ritardo su una pagina che non c'è più: si butta. Il giocatore
+    // ha già cambiato schermata e riscrivergliela sotto sarebbe un bug.
+    if (request !== this.leaderboardRequest) return;
+
+    if (!rows) {
+      page(['Il server non risponde.', 'La classifica si guarda quando torna: il gioco no, quello va lo stesso.']);
+      return;
+    }
+    if (rows.length === 0) {
+      page(['Nessuno ha ancora finito questo livello.', 'C\'è un primo posto libero, e non capita spesso.']);
+      return;
+    }
+
+    const mine = this.account.nickname?.toLowerCase();
+    page(
+      rows.map((row, i) => {
+        const rank = `${String(i + 1).padStart(2, ' ')}.`;
+        const who = row.nickname.length > 16 ? `${row.nickname.slice(0, 15)}…` : row.nickname;
+        const marker = mine && row.nickname.toLowerCase() === mine ? '◂ tu' : '';
+        return `${rank} ${who.padEnd(17, ' ')}${formatMs(row.ms).padStart(9, ' ')}   ${plural(row.deaths, 'morte', 'morti')} ${marker}`;
+      }),
+    );
+  }
+
+  // --------------------------------------------------------------- account
+  private showAccountMenu(): void {
+    if (this.account.isLogged) {
+      this.menu.show({
+        compact: true,
+        title: `ACCOUNT · ${this.account.nickname ?? ''}`,
+        body: [
+          'I tuoi record vanno in classifica e ti seguono su qualunque computer.',
+          'Nessuna email, nessun recupero password: se la perdi, perdi l\'account.',
+        ],
+        items: [
+          {
+            label: 'SINCRONIZZA ORA',
+            hint: 'Di solito succede da solo a fine livello',
+            onSelect: () => {
+              this.queueSync();
+              this.showRootMenu();
+            },
+          },
+          {
+            label: 'ESCI',
+            hint: 'I progressi restano su questo browser, ma smettono di salire in classifica',
+            onSelect: () => void this.logout(),
+          },
+          { label: 'INDIETRO', onSelect: () => this.showRootMenu() },
+        ],
+        onBack: () => this.showRootMenu(),
+      });
+      return;
+    }
+
+    this.menu.show({
+      compact: true,
+      title: 'ACCOUNT',
+      body: [
+        'Senza account tempi e progressi restano solo in questo browser: se cancelli i dati del sito o cambi computer, spariscono.',
+        'Serve solo un nickname e una password. Niente email.',
+      ],
+      items: [
+        {
+          label: 'CREA UN ACCOUNT',
+          hint: 'I progressi di adesso non si perdono: si portano dentro',
+          onSelect: () => this.accountDialog.open('create'),
+        },
+        { label: 'ACCEDI', hint: 'Ne hai già uno', onSelect: () => this.accountDialog.open('login') },
+        { label: 'INDIETRO', onSelect: () => this.showRootMenu() },
+      ],
+      onBack: () => this.showRootMenu(),
+    });
+  }
+
+  private async logout(): Promise<void> {
+    await this.account.logout();
+    this.showRootMenu();
   }
 
   /**
@@ -306,6 +541,9 @@ export class Game {
     // subito, ed è il modo più corto di far capire cosa si è appena comprato.
     this.world.player.skin = this.currentSkin;
     this.showSkinsMenu();
+    // Una moneta spesa è una moneta spesa anche sul server, altrimenti la
+    // prossima sincronizzazione la farebbe ricomparire in tasca.
+    this.queueSync();
   }
 
   private showHelpMenu(): void {
@@ -339,6 +577,14 @@ export class Game {
           onSelect: () => {
             this.progress = resetProgress();
             this.showRootMenu();
+            // Con un account bisogna azzerare anche di là, altrimenti la
+            // prima sincronizzazione rimanda indietro tutto quello che si è
+            // appena buttato via e il menu avrebbe mentito.
+            if (this.account.isLogged) {
+              void this.account.reset(this.progress).then((cleared) => {
+                if (cleared) this.adopt(cleared);
+              });
+            }
           },
         },
       ],
@@ -401,6 +647,9 @@ export class Game {
     const levelId = this.world.level.id;
     const before = this.progress;
     this.progress = recordClear(this.progress, levelId, stats);
+    // Il tempo appena fatto va in classifica adesso, non alla prossima
+    // apertura del gioco: è l'unico momento in cui interessa a qualcuno.
+    this.queueSync();
 
     const isLast = this.levelIndex >= LEVELS.length - 1;
     // Un gatto che si sblocca finendo *questo* livello va annunciato: è un
@@ -413,8 +662,13 @@ export class Game {
         isSkinUnlocked(skin, this.progress),
     );
     const summary =
-      `${plural(stats.deaths, 'morte', 'morti')} · ${plural(stats.coins, 'moneta', 'monete')} in tasca · ${formatTicks(stats.ticks)} di sofferenza` +
-      (earned ? `\nGatto sbloccato: ${earned.name}` : '');
+      `${plural(stats.deaths, 'morte', 'morti')} · ${plural(stats.coins, 'moneta', 'monete')} in tasca · ${formatTicksPrecise(stats.ticks)} di sofferenza` +
+      (earned ? `\nGatto sbloccato: ${earned.name}` : '') +
+      // Chi non ha un account l'ha già saputo all'avvio: qui è un promemoria
+      // che arriva nel momento in cui ha appena stabilito un tempo.
+      (this.account.enabled && !this.account.isLogged
+        ? '\nQuesto tempo non va in classifica: non hai un account.'
+        : '');
 
     if (isLast) {
       this.screens.showLevelComplete({

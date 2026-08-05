@@ -10,6 +10,21 @@
 export const TICK_HZ = 60;
 export const TICK_MS = 1000 / TICK_HZ;
 
+/**
+ * Tick → millisecondi, e ritorno.
+ *
+ * Il gioco conta in tick e non cambierà: è l'unica unità che resta identica su
+ * ogni computer. Ma un tick vale 16.667ms e non è un tempo che si possa
+ * mostrare a un essere umano, né confrontare con quello di un altro giocatore
+ * senza spiegargli cos'è un tick. Quindi fuori di qui — nella classifica, nei
+ * record, nel database — si parla di millisecondi.
+ *
+ * Il giro completo è esatto: lo scarto di un arrotondamento è sempre sotto gli
+ * 8.4ms, cioè metà tick, quindi `msToTicks(ticksToMs(n))` ridà `n`.
+ */
+export const ticksToMs = (ticks: number): number => Math.round(ticks * TICK_MS);
+export const msToTicks = (ms: number): number => Math.round(ms / TICK_MS);
+
 /** Oltre questa soglia si scarta il tempo accumulato (tab in background). */
 const MAX_ACCUMULATED_MS = TICK_MS * 5;
 

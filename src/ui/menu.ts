@@ -41,6 +41,15 @@ export interface MenuCallbacks {
   onChoose(): void;
   /** Esc premuto a menu chiuso: il gioco decide se è una pausa. */
   onPauseRequest(): void;
+  /**
+   * C'è qualcosa sopra al menu che si sta prendendo la tastiera?
+   *
+   * Il menu resta visibile dietro al popup dell'account, e senza questa
+   * domanda continuerebbe a rispondere alle frecce e all'Invio: si premerebbe
+   * "GIOCA" senza vederlo, mentre si sta scrivendo una password. Il menu non
+   * sa cosa ci sia sopra e non deve saperlo — chiede, e basta.
+   */
+  isBlocked?(): boolean;
 }
 
 export class Menu {
@@ -141,6 +150,8 @@ export class Menu {
   }
 
   private readonly handleKey = (event: KeyboardEvent): void => {
+    if (this.callbacks.isBlocked?.() === true) return;
+
     if (!this.open) {
       // Esc a gioco aperto non è "indietro": è la richiesta di pausa.
       if (event.code === 'Escape') {

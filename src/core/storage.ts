@@ -5,6 +5,7 @@
 
 const KEY = 'cat-bastard/progress/v1';
 const SETTINGS_KEY = 'cat-bastard/settings/v1';
+const SESSION_KEY = 'cat-bastard/session/v1';
 
 export interface LevelRecord {
   cleared: boolean;
@@ -61,18 +62,72 @@ export function loadProgress(): Progress {
 /** Preferenze del giocatore. Poche, e tutte con un default sensato. */
 export interface Settings {
   audio: boolean;
+  /**
+   * Il popup dell'account è già stato mostrato una volta.
+   *
+   * Serve a non riproporlo a ogni apertura: chi ha risposto "non ora" ha
+   * risposto, e continuare a chiederglielo sarebbe l'unica cosa del gioco a
+   * dargli fastidio senza essere una trappola.
+   */
+  accountPromptSeen: boolean;
 }
 
-const defaultSettings = (): Settings => ({ audio: true });
+const defaultSettings = (): Settings => ({ audio: true, accountPromptSeen: false });
 
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return defaultSettings();
     const parsed = JSON.parse(raw) as Partial<Settings>;
-    return { audio: parsed.audio ?? true };
+    return {
+      audio: parsed.audio ?? true,
+      accountPromptSeen: parsed.accountPromptSeen ?? false,
+    };
   } catch {
     return defaultSettings();
+  }
+}
+
+/**
+ * La sessione dell'account, se c'è.
+ *
+ * Il token è una stringa casuale generata dal server: qui si conserva com'è,
+ * nel database ne esiste solo l'impronta. Non contiene niente — non è un JWT,
+ * non ha dentro il nickname, non scade da solo — ed è esattamente quello che
+ * serve: senza il database non vale niente.
+ */
+export interface Session {
+  token: string;
+  nickname: string;
+}
+
+export function loadSession(): Session | null {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<Session>;
+    if (typeof parsed.token !== 'string' || typeof parsed.nickname !== 'string') return null;
+    if (!parsed.token) return null;
+    return { token: parsed.token, nickname: parsed.nickname };
+  } catch {
+    return null;
+  }
+}
+
+export function saveSession(session: Session): void {
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  } catch {
+    // Senza salvataggio si resta connessi finché la pagina è aperta. Poco, ma
+    // meglio di un errore in faccia a chi gioca in navigazione privata.
+  }
+}
+
+export function clearSession(): void {
+  try {
+    localStorage.removeItem(SESSION_KEY);
+  } catch {
+    // Come sopra.
   }
 }
 

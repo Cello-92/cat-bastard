@@ -40,8 +40,18 @@ jobs:
       - name: Smoke test
         run: npm test
 
+      # Le due variabili del backend arrivano dai secrets del repo e finiscono
+      # dentro al bundle. Se non ci sono, il gioco si costruisce lo stesso e
+      # parte senza account e senza classifica: è voluto, così il deploy non si
+      # rompe mai per colpa di una configurazione mancante.
+      # Da impostare una volta con:
+      #   gh secret set VITE_SUPABASE_URL
+      #   gh secret set VITE_SUPABASE_ANON_KEY
       - name: Typecheck + build
         run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
       - name: Configura Pages
         uses: actions/configure-pages@v5

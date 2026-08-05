@@ -77,6 +77,7 @@ Un rage game funziona solo se è *ingiusto ma leale*. Ogni trappola deve rispett
 ## Architettura
 
 Tre strati, con dipendenze a senso unico: `game` → `engine` → `core`. Mai il contrario.
+`net` sta di lato: dipende solo da `core`, e nessuno dipende da lui tranne `game.ts`.
 
 ```
 src/
@@ -92,7 +93,12 @@ src/
               skins.ts (i gatti giocabili e come si sbloccano)
     levels/   level.ts (helper) + un file per livello + index.ts (registro)
     render/   background.ts (parallasse), tiles.ts (disegno dei tile)
-  ui/         hud.ts, menu.ts, screens.ts, format.ts — l'unico codice che tocca il DOM
+  net/        supabase.ts (fetch e basta), account.ts (sessione e sincronia),
+              payload.ts (traduzione locale<->server), config.ts
+              Il backend. Opzionale per costruzione: se non è configurato,
+              il gioco è esattamente quello di prima.
+  ui/         hud.ts, menu.ts, screens.ts, account-dialog.ts, format.ts
+              L'unico codice che tocca il DOM
 tests/        smoke test headless, gira in CI
 legacy/       prototipo originale single-file, solo come riferimento
 ```
@@ -220,7 +226,7 @@ npm test        # struttura, risolutore, smoke test, regressioni
 npm run build   # typecheck + build
 ```
 
-`tests/` contiene cinque cose diverse:
+`tests/` contiene sette cose diverse:
 
 - **lo smoke test**, che esegue il gioco headless contro un `NullRenderer` capace di
   intercettare coordinate NaN e `push`/`pop` sbilanciati. Non dice se il gioco è bello,
@@ -242,12 +248,95 @@ npm run build   # typecheck + build
   mentre cammina ma non mentre è impegnato. C'è anche un controllo che rifà il
   giro del risolutore su ogni singolo mattone dell'arena: un mattone
   irraggiungibile è un boss imbattibile;
+- **la sincronizzazione dei progressi**, che è l'unica parte del backend che si
+  possa sbagliare in silenzio: una fusione fatta male non lancia niente e non
+  rompe niente, restituisce un record peggiore di quello che il giocatore aveva.
+  Si prova headless perché `net/payload.ts` è puro apposta — la rete non c'entra
+  e non deve entrarci;
 - **il risolutore** (`tests/solver.ts`), che *gioca* ogni livello: cerca con la fisica vera
   una sequenza di comandi dallo spawn all'arrivo, considerando perso in partenza tutto ciò
   che sparisce sotto le zampe e già scattata ogni trappola. Serve perché un livello può
   avere una geometria ineccepibile ed essere comunque impossibile: basta piazzare una
   trappola istantanea dentro l'unica traiettoria utile, ed è già successo. Se il risolutore
   non trova un percorso, il livello è rotto — e "rotto" non è un sinonimo di "difficile".
+
+## Account e classifica (backend Supabase)
+
+Il gioco ha un backend, e l'unica cosa che davvero conta saperne è che **è
+opzionale**. Se le due variabili d'ambiente non ci sono, `Account.enabled` è
+falso, le voci ACCOUNT e CLASSIFICA non compaiono nel menu, il popup non esce e
+il gioco è identico a com'era: progressi in `localStorage` e basta. Un rage game
+non può smettere di partire perché è giù un server.
+
+### Cosa c'è di là
+
+`supabase/schema.sql` è tutto lo schema, da eseguire a mano nel SQL Editor di
+Supabase. È idempotente. Tre tabelle (`players`, `sessions`, `scores`), RLS
+attiva ovunque e **nessuna policy**: dal client non si legge e non si scrive una
+riga. L'unica superficie pubblica sono sette funzioni RPC `SECURITY DEFINER`.
+
+Questo è il punto architetturale, non un dettaglio: la chiave `anon` finisce nel
+JavaScript pubblicato — è pubblica per costruzione — quindi l'unica difesa vera
+è che con quella chiave si possano chiamare solo quelle funzioni. La chiave
+`service_role` non entra in questo repo per nessun motivo.
+
+### Come è fatto l'account
+
+Nickname e password, niente email, niente recupero, nessun dato personale. È una
+scelta di prodotto e insieme la ragione per cui non c'è niente da gestire in
+termini di GDPR: nel database non c'è nulla che identifichi una persona.
+Password persa = account perso, ed è dichiarato nel popup **prima** che la
+password venga scelta, non dopo.
+
+Non si usa Supabase Auth: vuole per forza un'email o un telefono. La password è
+bcrypt via `pgcrypto`, la sessione è un token casuale di cui il database
+conserva solo lo sha256. Le funzioni non sollevano eccezioni per gli errori
+previsti — rispondono `{"ok": false, "error": "CODICE"}` — perché un'eccezione
+annulla la transazione e con lei il contatore dei tentativi di login sbagliati,
+che è proprio la cosa che deve sopravvivere.
+
+### Le regole della sincronizzazione
+
+Il client manda tutto quello che sa, il server tiene il meglio delle due parti e
+rimanda il risultato, che il client adotta. Un solo giro, uguale al login e a
+fine livello. Le regole stanno scritte due volte, in `cb_sync` e in
+`net/payload.ts`, e vanno tenute allineate:
+
+| Cosa | Come si fonde | Perché |
+|---|---|---|
+| tempo, morti del livello | il minore | sono record |
+| monete del livello | la maggiore | è il massimo raccolto in un tentativo |
+| morti totali | la maggiore | è un contatore, sale e basta |
+| monete in tasca | quelle del client | si **spendono**: il massimo le farebbe rinascere |
+| gatti sbloccati | l'unione | uno sbloccato resta sbloccato |
+
+Niente di tutto questo è una verifica anti-imbroglio, e non finge di esserlo. I
+controlli sui valori servono a non farsi riempire il database di spazzatura, non
+a stabilire se un tempo è vero: un client è un client.
+
+**`cb_reset` esiste per un motivo preciso.** Senza, "azzera progressi"
+mentirebbe: si cancella tutto in locale e alla prima sincronizzazione il server
+rimanda indietro ogni record. Chi tocca il salvataggio si ricordi di questo.
+
+### I tempi
+
+Il gioco conta in tick a 60Hz e continuerà a farlo: è l'unica unità identica su
+ogni computer. Fuori — classifica, record, database — si parla di millisecondi,
+e la conversione sta in `core/loop.ts` (`ticksToMs` / `msToTicks`), all'unico
+confine dove serve. L'HUD resta a `m:ss`: tre cifre che girano a 60Hz in un
+angolo dello schermo sono rumore mentre si sta saltando.
+
+### Configurazione
+
+`.env.local` in sviluppo (vedi `.env.example`), secrets del repo per il deploy:
+
+```bash
+gh secret set VITE_SUPABASE_URL
+gh secret set VITE_SUPABASE_ANON_KEY
+```
+
+Il workflow le passa a `npm run build` e Vite le cuce dentro al bundle. Se
+mancano il deploy funziona lo stesso e pubblica il gioco senza backend.
 
 ## Distribuzione
 
@@ -267,6 +356,7 @@ e allegare uno zip offline: non servono a ospitare la pagina.
 5. ~~Più trappole e più nemici~~ ✅ — resta il secondo mondo con un tileset davvero diverso
 6. ~~Dieci livelli: i nastri (`>` `<`), la molla-tagliola (`m`) e i cieli `dawn` e `storm`~~ ✅
 7. ~~Un boss finale che ovviamente bara~~ ✅ — 1-11, *Il Padrone*
+8. ~~Account (nickname e password, niente email) e classifica dei tempi~~ ✅ — Supabase
 
 ## Il boss (1-11)
 

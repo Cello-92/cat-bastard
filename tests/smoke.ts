@@ -1,7 +1,9 @@
 import { Audio } from '@core/audio';
-import { GameLoop } from '@core/loop';
+import { GameLoop, msToTicks, ticksToMs } from '@core/loop';
 import type { Input } from '@core/input';
 import { buySkin, equipSkin, recordClear, type Progress } from '@core/storage';
+import { applyRemote, errorMessage, toPayload } from '@net/payload';
+import { formatMs } from '@ui/format';
 import { SKINS, isSkinUnlocked } from '@game/skins';
 import { RULES, TILE_SIZE } from '@game/config';
 import { LEVELS } from '@game/levels';
@@ -1083,6 +1085,111 @@ function findTile(rows: readonly string[], tile: string): { c: number; r: number
     if (c >= 0) return { c, r };
   }
   return null;
+}
+
+// ---------------------------------------------------------------- account e classifica
+//
+// Del backend si prova solo la parte che si può sbagliare in silenzio: la
+// conversione dei tempi e la fusione dei progressi. Una fusione fatta male non
+// lancia niente e non rompe niente — restituisce un record peggiore di quello
+// che il giocatore aveva, e se ne accorge lui, dopo, quando è tardi.
+//
+// La rete non si prova qui: non c'è, e non deve servire. Il gioco senza
+// backend è il gioco di prima.
+console.log('\nTempi in millisecondi');
+{
+  let exact = true;
+  for (let ticks = 0; ticks <= 5000; ticks++) {
+    if (msToTicks(ticksToMs(ticks)) !== ticks) exact = false;
+  }
+  check(exact, 'il giro tick → millisecondi → tick non perde mai un tick');
+  check(ticksToMs(60) === 1000, 'sessanta tick sono un secondo esatto');
+  check(formatMs(0) === '0:00.000', 'zero si scrive 0:00.000');
+  check(formatMs(61234) === '1:01.234', '61234ms si scrivono 1:01.234');
+  check(formatMs(9) === '0:00.009', 'i millesimi hanno sempre tre cifre');
+}
+
+console.log('\nSincronizzazione dei progressi');
+{
+  const local: Progress = {
+    levels: {
+      '1-1': { cleared: true, bestDeaths: 4, bestTicks: 600, bestCoins: 2 },
+      '1-2': { cleared: false, bestDeaths: 0, bestTicks: 0, bestCoins: 0 },
+    },
+    totalDeaths: 40,
+    coins: 3,
+    skins: ['classic', 'ombra'],
+    skin: 'ombra',
+  };
+
+  const payload = toPayload(local) as { levels: Record<string, { ms: number }> };
+  check(payload.levels['1-1']?.ms === 10000, 'un record di 600 tick parte come 10000ms');
+  check(
+    payload.levels['1-2'] === undefined,
+    'un livello mai finito non ha un tempo da mandare',
+  );
+
+  // Il server ha un tempo migliore su 1-1 e un livello che qui non c'è.
+  const merged = applyRemote(
+    {
+      ok: true,
+      nickname: 'gatto',
+      coins: 1,
+      total_deaths: 12,
+      skin: 'padrone',
+      skins: ['classic', 'padrone'],
+      levels: {
+        '1-1': { ms: 9000, deaths: 9, coins: 1 },
+        '1-3': { ms: 20000, deaths: 2, coins: 5 },
+      },
+    },
+    local,
+  );
+
+  check(merged.levels['1-1']?.bestTicks === 540, 'del tempo vince il più basso dei due');
+  check(merged.levels['1-1']?.bestDeaths === 4, 'delle morti vince il numero più basso');
+  check(merged.levels['1-1']?.bestCoins === 2, 'delle monete di un livello vince il numero più alto');
+  check(merged.levels['1-3']?.cleared === true, 'un livello finito altrove arriva qui');
+  check(merged.levels['1-2']?.cleared === false, 'un livello mai finito resta mai finito');
+  check(merged.totalDeaths === 40, 'le morti totali non scendono mai');
+  check(
+    merged.coins === 1,
+    'le monete in tasca sono quelle del server: si spendono, e il massimo le farebbe rinascere',
+  );
+  check(
+    merged.skins.includes('ombra') && merged.skins.includes('padrone'),
+    'i gatti sbloccati si sommano, non si sostituiscono',
+  );
+  check(merged.skin === 'padrone', 'il gatto equipaggiato è quello del server, se lo si possiede');
+
+  const impostor = applyRemote(
+    {
+      ok: true,
+      nickname: 'gatto',
+      coins: 0,
+      total_deaths: 0,
+      skin: 'gatto-che-non-esiste',
+      skins: [],
+      levels: {},
+    },
+    local,
+  );
+  check(
+    impostor.skin === 'ombra',
+    'un gatto equipaggiato ma non posseduto non viene adottato',
+  );
+}
+
+console.log('\nMessaggi di errore');
+{
+  check(
+    errorMessage('NICKNAME_TAKEN').includes('già'),
+    'un codice conosciuto diventa una frase in italiano',
+  );
+  check(
+    errorMessage('BOH_NON_ESISTE') === 'Qualcosa è andato storto. Riprova.',
+    'un codice sconosciuto non finisce mai davanti al giocatore così com\'è',
+  );
 }
 
 console.log(failures === 0 ? '\nTutto ok.\n' : `\n${failures} controlli falliti.\n`);

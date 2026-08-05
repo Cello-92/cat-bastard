@@ -34,7 +34,8 @@ esattamente cosa ti ha fregato.
 
 ## Cosa ti aspetta
 
-Due mondi, nove livelli, cinque gatti e un numero imbarazzante di modi per morire.
+Due mondi, sedici livelli, quindici gatti, un boss che bara, e un numero
+imbarazzante di modi per morire.
 
 **Mondo 1 — la collina.** Sembra un platform normale. Non lo è.
 
@@ -65,11 +66,13 @@ Due mondi, nove livelli, cinque gatti e un numero imbarazzante di modi per morir
 
 Chi arriva in fondo ha imparato dove si muore. Non è la stessa cosa di essere bravo.
 
-## I gomitoli
+## I gatti
 
-Ogni livello del secondo mondo nasconde **un gomitolo** dietro qualcosa che sembra
-un muro. Trovarli sblocca altri gatti: nero, soriano, siamese, e uno che si ottiene
-solo dopo aver finito tutto.
+Quindici gatti da sbloccare, e nessuno di loro ti aiuta: cambiano solo l'aspetto.
+Qualcuno si compra con le monete — che si incassano **finendo** un livello, non
+raccogliendole — qualcuno è chiuso dentro un cubo nascosto (in certi livelli del
+primo mondo, e in ognuno del secondo), uno si ha battendo il boss, e uno si sblocca
+a trecento morti. Quello è un premio o una diagnosi, decidi tu.
 
 Non danno nessun vantaggio — nemmeno mezzo pixel di salto in più. Cambiano solo la
 faccia di chi muore, ed è l'unica promessa che questo gioco mantiene per intero.

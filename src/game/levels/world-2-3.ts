@@ -76,9 +76,8 @@ export const WORLD_2_3 = defineLevel({
     // niente, e dietro c'è il gomitolo.
     segment({
       rows: {
-        8: '      ==============',
-        9: '      :   *   ======',
-        10: '      ==============',
+        11: '      ==============',
+        12: '      :   *   ======',
         13: FLOOR,
         14: FLOOR,
       },

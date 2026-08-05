@@ -65,7 +65,7 @@ export const WORLD_2_4 = defineLevel({
     segment({
       rows: {
         13: '~~~>>>>>>>>>~~~~   +',
-        14: '~~~>>>>>>>>>~~~~   +',
+        14: '~~~~~~~~~~~~~~~~   +',
       },
     }),
 
@@ -85,9 +85,8 @@ export const WORLD_2_4 = defineLevel({
     // è l'unico modo per arrivarci, e la parete davanti non è una parete.
     segment({
       rows: {
-        8: '    ================',
-        9: '    :    *   =======',
-        10: '    ================',
+        11: '    ================',
+        12: '    :    *   =======',
         13: FLOOR,
         14: FLOOR,
       },

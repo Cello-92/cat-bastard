@@ -17,16 +17,27 @@ export interface Progress {
   levels: Record<string, LevelRecord>;
   totalDeaths: number;
   /**
-   * Id dei livelli in cui il gomitolo nascosto è stato trovato.
+   * Monete in tasca, spendibili.
    *
-   * Sta nei progressi e non nel record del livello perché un segreto trovato
-   * non si perde più: rigiocare il livello e non prenderlo non lo cancella —
-   * sarebbe l'unica cattiveria del gioco senza una battuta a giustificarla.
+   * Si incassano solo *finendo* un livello: quelle raccolte in un tentativo
+   * finito male non entrano in tasca. È la ragione per cui raccogliere una
+   * moneta è una scelta e non un riflesso — e visto che una moneta su tre è
+   * avvelenata, è anche una scommessa.
    */
-  secrets: string[];
+  coins: number;
+  /** Skin già ottenute: comprate, trovate, o vinte una volta per sempre. */
+  skins: string[];
+  /** Skin equipaggiata. */
+  skin: string;
 }
 
-const emptyProgress = (): Progress => ({ levels: {}, totalDeaths: 0, secrets: [] });
+const emptyProgress = (): Progress => ({
+  levels: {},
+  totalDeaths: 0,
+  coins: 0,
+  skins: [],
+  skin: 'classic',
+});
 
 export function loadProgress(): Progress {
   try {
@@ -38,9 +49,9 @@ export function loadProgress(): Progress {
     return {
       levels: parsed.levels ?? {},
       totalDeaths: parsed.totalDeaths ?? 0,
-      // Chi giocava prima che i gomitoli esistessero non ne ha nessuno, e va
-      // benissimo così: il salvataggio vecchio deve continuare a caricarsi.
-      secrets: parsed.secrets ?? [],
+      coins: parsed.coins ?? 0,
+      skins: Array.isArray(parsed.skins) ? parsed.skins : [],
+      skin: typeof parsed.skin === 'string' ? parsed.skin : 'classic',
     };
   } catch {
     return emptyProgress();
@@ -50,18 +61,16 @@ export function loadProgress(): Progress {
 /** Preferenze del giocatore. Poche, e tutte con un default sensato. */
 export interface Settings {
   audio: boolean;
-  /** Id del gatto scelto (vedi game/cats.ts). */
-  cat: string;
 }
 
-const defaultSettings = (): Settings => ({ audio: true, cat: 'bastardo' });
+const defaultSettings = (): Settings => ({ audio: true });
 
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return defaultSettings();
     const parsed = JSON.parse(raw) as Partial<Settings>;
-    return { audio: parsed.audio ?? true, cat: parsed.cat ?? 'bastardo' };
+    return { audio: parsed.audio ?? true };
   } catch {
     return defaultSettings();
   }
@@ -119,10 +128,29 @@ export function recordClear(
   return updated;
 }
 
-/** Segna il gomitolo di un livello come trovato. Idempotente. */
-export function recordSecret(progress: Progress, levelId: string): Progress {
-  if (progress.secrets.includes(levelId)) return progress;
-  const updated: Progress = { ...progress, secrets: [...progress.secrets, levelId] };
+/** Aggiunge una skin alla collezione. Idempotente: un cubo si prende una volta. */
+export function unlockSkin(progress: Progress, skinId: string): Progress {
+  if (progress.skins.includes(skinId)) return progress;
+  const updated: Progress = { ...progress, skins: [...progress.skins, skinId] };
+  saveProgress(updated);
+  return updated;
+}
+
+/** Compra una skin: toglie le monete e la aggiunge. Se non bastano, non fa niente. */
+export function buySkin(progress: Progress, skinId: string, price: number): Progress {
+  if (progress.skins.includes(skinId) || progress.coins < price) return progress;
+  const updated: Progress = {
+    ...progress,
+    coins: progress.coins - price,
+    skins: [...progress.skins, skinId],
+  };
+  saveProgress(updated);
+  return updated;
+}
+
+export function equipSkin(progress: Progress, skinId: string): Progress {
+  if (progress.skin === skinId) return progress;
+  const updated: Progress = { ...progress, skin: skinId };
   saveProgress(updated);
   return updated;
 }

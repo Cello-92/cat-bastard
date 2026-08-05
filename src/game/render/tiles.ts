@@ -162,9 +162,6 @@ export function drawTile(r: Renderer, tile: string, x: number, y: number, ctx: T
       // Stesso vapore, stesso rumore, stessa griglia. Uno solleva, l'altro no.
       drawVent(r, x, y, ctx);
       break;
-    case TILE.YARN:
-      drawYarn(r, x, y, ctx);
-      break;
     case TILE.COIN:
     case TILE.LURE_COIN:
       // Stessa moneta. Stesso oro, stesso alone, stessa rotazione.
@@ -1357,61 +1354,6 @@ function drawVent(r: Renderer, x: number, y: number, ctx: TileDrawContext): void
     ]);
   }
   r.pop();
-}
-
-/**
- * Il gomitolo.
- *
- * L'unico oggetto del gioco disegnato per essere *desiderato*: lana calda in
- * un mondo di lamiera, un alone che si vede da fuori schermo quando la stanza
- * segreta si apre, e il capo del filo che penzola. Nessuna trappola gli
- * somiglia — se assomigliasse a qualcosa che uccide, trovarlo non sarebbe una
- * ricompensa ma un'altra tassa.
- */
-function drawYarn(r: Renderer, x: number, y: number, ctx: TileDrawContext): void {
-  const cx = x + T / 2;
-  const bob = Math.sin((ctx.tick + ctx.col * 11) / 22) * 2.4;
-  const cy = y + T / 2 + bob;
-  const radius = 9.5;
-
-  // Alone: è la cosa che si nota per prima, ed è voluto.
-  r.push();
-  r.setBlend('add');
-  r.setAlpha(0.18 + wave(ctx.tick, 44) * 0.16);
-  r.radial(cx, cy, 26, 26, [
-    { at: 0, color: alpha(PALETTE.yarn, 0.7) },
-    { at: 1, color: alpha(PALETTE.yarn, 0) },
-  ]);
-  r.pop();
-
-  // Palla: sfera di lana, luce in alto a sinistra come tutto il resto.
-  r.ellipse(cx, cy + 0.8, radius, radius, alpha(PALETTE.hotDeep, 0.55));
-  r.ellipse(cx, cy, radius, radius, PALETTE.yarn);
-  r.push();
-  r.setAlpha(0.8);
-  r.radial(cx - 3, cy - 3.4, radius * 0.8, radius * 0.8, [
-    { at: 0, color: glare(0.6) },
-    { at: 1, color: glare(0) },
-  ]);
-  r.pop();
-
-  // Avvolgimento: tre fasci di fili in direzioni diverse, come un gomitolo vero.
-  r.push();
-  r.setAlpha(0.55);
-  for (let i = -2; i <= 2; i++) {
-    const off = i * 3.2;
-    r.line([cx - radius + 1, cy + off * 0.6, cx, cy + off, cx + radius - 1, cy + off * 0.6], 1, PALETTE.hotDeep);
-    r.line([cx + off * 0.6, cy - radius + 1, cx + off, cy, cx + off * 0.6, cy + radius - 1], 1, alpha(PALETTE.paper, 0.5));
-  }
-  r.pop();
-
-  // Il capo del filo, che penzola e ondeggia piano.
-  const sway = Math.sin(ctx.tick / 18) * 3;
-  r.line(
-    [cx + radius - 2, cy + 3, cx + radius + 4 + sway, cy + 8, cx + radius + 1 + sway, cy + 13],
-    1.2,
-    PALETTE.yarn,
-  );
 }
 
 // ---------------------------------------------------------------- raccolte

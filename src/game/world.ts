@@ -13,6 +13,7 @@ import { Diver } from './entities/diver';
 import { Drone } from './entities/drone';
 import { FallingSpike } from './entities/falling-spike';
 import { Player } from './entities/player';
+import { Rubble } from './entities/rubble';
 import { Sentry } from './entities/sentry';
 import { Shroom } from './entities/shroom';
 import { Snowball } from './entities/snowball';
@@ -22,7 +23,7 @@ import { drawBackground } from './render/background';
 import { drawTile, type OpenSides } from './render/tiles';
 import { MATERIAL, PALETTE, SKIES, alpha } from './theme';
 import { DEATH_CAUSE, tauntFor, type DeathCause } from './taunts';
-import { TILE, isDeadly, isSpawner, joins } from './tiles';
+import { TILE, beltDirection, isDeadly, isSolid, isSpawner, joins } from './tiles';
 
 /**
  * Il mondo di gioco: mappa, entità, regole, camera.
@@ -55,8 +56,15 @@ export interface RunStats {
 export interface WorldCallbacks {
   onTaunt(text: string): void;
   onWin(stats: RunStats): void;
-  /** Gomitolo raccolto: va segnato subito, anche se poi il livello non finisce. */
-  onSecret?(): void;
+  /**
+   * Il gatto ha preso il cubo nascosto di questo livello.
+   *
+   * Il mondo non sa cosa sia una skin e non deve saperlo: dice solo che è
+   * successo, e chi sta fuori decide se sbloccare qualcosa. È lo stesso patto
+   * di `onWin` — qui dentro non entra mai niente che sappia di DOM o di
+   * salvataggi.
+   */
+  onSecret?(levelId: string): void;
 }
 
 /** Da quale tile letale è arrivata la morte: serve a scegliere la battuta. */
@@ -150,8 +158,6 @@ export class World {
    * quella trappola lì, e il gioco glielo deve dire (CLAUDE.md, punto 7).
    */
   private lastDeadVent = -1000;
-  /** Il gomitolo di questo livello è già stato preso in questo tentativo. */
-  secretFound = false;
 
   // -------------------------------------------------------------- il boss
   /**
@@ -202,7 +208,7 @@ export class World {
     this.coins = 0;
     this.ticks = 0;
     this.checkpoint = null;
-    this.secretFound = false;
+    this.secretTaken = false;
     // Ricominciare da capo significa anche tornare a non sapere dove sono le
     // trappole invisibili: è l'unica cosa che il respawn non porta con sé.
     this.discovered.clear();
@@ -233,7 +239,21 @@ export class World {
     for (const { c, r, tile } of this.map.entries()) {
       if (isSpawner(tile)) {
         this.map.clear(c, r);
-        this.entities.push(this.spawn(tile, c, r));
+        if (tile === TILE.BOSS) {
+          // Il marcatore sta nella cella *sopra* il pavimento: il Padrone ci
+          // poggia i piedi, non ci sta dentro.
+          this.boss = new Boss(
+            c * TILE_SIZE + (TILE_SIZE - BOSS.width) / 2,
+            (r + 1) * TILE_SIZE - BOSS.height,
+          );
+          this.entities.push(this.boss);
+        } else {
+          this.entities.push(this.spawn(tile, c, r));
+        }
+      } else if (tile === TILE.BOSS_BRICK) {
+        this.bossBricks.push({ c, r });
+      } else if (tile === TILE.BOSS_GATE) {
+        this.gateCells.push({ c, r });
       } else if (tile === TILE.TRAP_BRICK) {
         this.trapBricks.push({ c, r, fired: false, instant: false });
       } else if (tile === TILE.COLLAPSE) {
@@ -335,8 +355,6 @@ export class World {
     for (const { c, r, tile } of this.map.touching(this.player)) {
       if (tile === TILE.COIN) {
         this.collectCoin(c, r);
-      } else if (tile === TILE.YARN) {
-        this.collectYarn(c, r);
       } else if (tile === TILE.FAKE_WALL) {
         // Una volta che ci sei passato attraverso resta segnata per tutto il
         // tentativo: il segreto è nasconderla la prima volta, non farti
@@ -386,23 +404,23 @@ export class World {
   }
 
   /**
-   * Il gomitolo: l'unica cosa nascosta del gioco che non ti ammazza.
+   * Cubo delle skin: l'unica cosa che si porta fuori dal livello.
    *
-   * Ne esiste uno per livello, sempre dietro qualcosa che sembrava un muro.
-   * Vale per tutta la partita, non per il tentativo: raccoglierlo e poi morire
-   * non lo fa perdere — sarebbe l'ennesima cattiveria, e questa parte del gioco
-   * è deliberatamente gentile.
+   * Non conta come moneta e non entra nelle statistiche del tentativo: è un
+   * oggetto da collezione, e mescolarlo al punteggio farebbe credere che sia
+   * roba da rigiocare per fare il record.
    */
-  private collectYarn(c: number, r: number): void {
+  private collectSkinCube(c: number, r: number): void {
     this.map.clear(c, r);
-    this.secretFound = true;
+    this.secretTaken = true;
     this.audio.play('win');
     const x = c * TILE_SIZE + TILE_SIZE / 2;
     const y = r * TILE_SIZE + TILE_SIZE / 2;
-    this.effects.ring(x, y, PALETTE.yarn, 4.2, 20);
-    this.effects.burst(x, y, PALETTE.yarn, { count: 18, speed: 3.4, size: 4, life: 34 });
-    this.effects.floatingText(x, y - 8, 'GOMITOLO', PALETTE.yarn, 13);
-    this.callbacks.onSecret?.();
+    this.effects.flash(0.3, PALETTE.hot);
+    this.effects.ring(x, y, PALETTE.hot, 5, 22);
+    this.effects.burst(x, y, PALETTE.paper, { count: 20, speed: 4.2, size: 4, life: 44, light: true });
+    this.effects.floatingText(x, y - 14, 'GATTO SBLOCCATO', PALETTE.hot, 14);
+    this.callbacks.onSecret?.(this.level.id);
   }
 
   private activateCheckpoint(c: number, r: number): void {
@@ -428,6 +446,19 @@ export class World {
         this.beltGrace = RULES.beltBlameTicks;
       } else if (tile === TILE.INVISIBLE) {
         this.reveal(c, r);
+        continue;
+      }
+
+      // Il mattone del boss non "sbriciola" come gli altri: ha una mappa tutta
+      // sua (torna dopo un po') e annuncia il crollo tremando e scuotendo la
+      // camera. Va gestito prima della tabella dei tile che spariscono.
+      if (tile === TILE.BOSS_BRICK) {
+        const key = TileMap.key(c, r);
+        if (!this.brickFalling.has(key)) {
+          this.brickFalling.set(key, RULES.bossBrickDelayTicks);
+          this.audio.play('crumble');
+          this.camera.shake(2);
+        }
         continue;
       }
 
@@ -506,9 +537,7 @@ export class World {
         this.crumbling.set(key, remaining - 1);
         continue;
       }
-      const [cs, rs] = key.split(',');
-      const c = Number(cs);
-      const r = Number(rs);
+      const [c, r] = cellOf(key);
       // I detriti sono del materiale che ha appena ceduto: legno per l'asse,
       // ghiaccio per la lastra. Va letto prima di cancellare la cella.
       const debris = this.map.get(c, r) === TILE.BRITTLE_ICE ? PALETTE.ice : PALETTE.wood;
@@ -871,7 +900,7 @@ export class World {
       deaths: this.deaths,
       coins: this.coins,
       ticks: this.ticks,
-      secret: this.secretFound,
+      secret: this.secretTaken,
     });
   }
 
@@ -966,9 +995,16 @@ export class World {
    */
   private openSidesOf(c: number, r: number, tile: string): OpenSides {
     // Terra con terra, ghiaccio con ghiaccio, lamiera con lamiera: la regola
-    // completa sta in tiles.ts, qui si applica e basta.
+    // completa di saldatura sta in tiles.ts (`joins`), qui si applica e basta.
+    //
+    // Il lato di sopra è un caso a parte: una cella di terra non "vede il
+    // cielo" se sopra ha un solido qualunque, non solo dell'altra terra.
+    // Senza questo, sotto un nastro trasportatore spuntava l'erba — il nastro
+    // non è terra, quindi la terra sotto si credeva esposta.
+    const above = this.map.get(c, r - 1);
+
     return {
-      up: !joins(tile, this.map.get(c, r - 1)),
+      up: !joins(tile, above) && !isSolid(above),
       down: !joins(tile, this.map.get(c, r + 1)),
       left: !joins(tile, this.map.get(c - 1, r)),
       right: !joins(tile, this.map.get(c + 1, r)),

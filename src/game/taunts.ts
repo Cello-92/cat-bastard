@@ -27,6 +27,7 @@ export const DEATH_CAUSE = {
   ghost: 'ghost',
   snapSpikes: 'snapSpikes',
   hiddenSpikes: 'hiddenSpikes',
+  trapSpring: 'trapSpring',
   // --- mondo 2
   ice: 'ice',
   brittleIce: 'brittleIce',
@@ -35,6 +36,11 @@ export const DEATH_CAUSE = {
   sentry: 'sentry',
   drone: 'drone',
   snowball: 'snowball',
+  // --- il boss di 1-11
+  boss: 'boss',
+  bossCharge: 'bossCharge',
+  bossStomp: 'bossStomp',
+  bossRubble: 'bossRubble',
   generic: 'generic',
 } as const;
 
@@ -103,6 +109,11 @@ const BY_CAUSE: Record<Exclude<DeathCause, 'generic'>, readonly string[]> = {
     'ora sono visibili. non ti servirà a molto, ma sono visibili',
     'invisibili. la seconda volta no',
   ],
+  trapSpring: [
+    'quella molla non lanciava niente. si chiudeva',
+    'era una tagliola col piattello rosso',
+    'ci sono molle e molle. quella era dell\'altro tipo',
+  ],
   ice: [
     'sul ghiaccio si frena prima. molto prima',
     'quattro zampe e zero aderenza',
@@ -114,9 +125,9 @@ const BY_CAUSE: Record<Exclude<DeathCause, 'generic'>, readonly string[]> = {
     'un attimo in più fermo lì ed era sicuro. no, aspetta: il contrario',
   ],
   belt: [
-    'il nastro ti ha accompagnato. gentile',
-    'stavi fermo, ma il pavimento no',
-    'andava dall\'altra parte. sempre andato dall\'altra parte',
+    'il nastro ti ha accompagnato. fin laggiù',
+    'correvi. il pavimento correva più di te',
+    'il nastro andava di là. tu pensavi di andare di qua',
   ],
   deadVent: [
     'quel getto era spento. lo era anche prima',
@@ -137,6 +148,26 @@ const BY_CAUSE: Record<Exclude<DeathCause, 'generic'>, readonly string[]> = {
     'rotolava verso di te da tre secondi',
     'una palla di ghiaccio. correva più di te',
     'era in salita per lei e in discesa per te, eppure',
+  ],
+  boss: [
+    'gli sei andato addosso. lui era lì da prima',
+    'toccarlo non era il piano, vero?',
+    'il Padrone non si tocca. il Padrone tocca',
+  ],
+  bossCharge: [
+    'te l\'ha annunciato. ha ruggito e tutto',
+    'correva dritto. tu pure',
+    'i mensoloni servivano a quello, sai',
+  ],
+  bossStomp: [
+    'saltargli in testa. certo. come no',
+    'ha una corona. le corone pungono',
+    'ha funzionato con i funghi, doveva funzionare anche qui',
+  ],
+  bossRubble: [
+    'quello era il TUO mattone',
+    'l\'hai staccato tu. è caduto dove eri tu',
+    'il soffitto non distingue chi lo ha fatto cadere',
   ],
 };
 

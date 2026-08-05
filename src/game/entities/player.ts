@@ -4,8 +4,8 @@ import { applyGravity, groundTiles, moveX, moveY, updateGrounded } from '@engine
 import type { Renderer } from '@engine/render/renderer';
 import type { Body } from '@engine/types';
 import { PHYSICS, SURFACE } from '../config';
-import { catById, type CatSkin } from '../cats';
-import { PALETTE, alpha, glare, mix, shade, type Material } from '../theme';
+import { DEFAULT_SKIN, skinById, type SkinDef } from '../skins';
+import { MATERIAL, PALETTE, alpha, glare, mix, shade, type Material } from '../theme';
 import { TILE, beltDirection, isIcy, isSolid } from '../tiles';
 import type { World } from '../world';
 
@@ -50,8 +50,14 @@ export class Player implements Body {
   /** -1 sinistra, +1 destra. */
   facing = 1;
 
-  /** Il manto scelto nel menu: cambia solo l'aspetto, mai la fisica. */
-  skin: CatSkin = catById(undefined);
+  /**
+   * Il gatto che si sta usando.
+   *
+   * Cambia solo l'aspetto: cassa, fisica e comandi sono identici per tutti, e
+   * devono restarlo. In un gioco che ti frega di continuo, la cosa che ti sei
+   * comprato col sudore non può anche darti un vantaggio (vedi game/skins.ts).
+   */
+  skin: SkinDef = skinById(DEFAULT_SKIN);
 
   /** Superfici sotto e attorno al gatto, campionate una volta per tick. */
   private onIce = false;
@@ -351,45 +357,25 @@ export class Player implements Body {
     const bodyY = top + 10;
     const bodyH = feet - bodyY - 5;
 
-    // Il manto decide solo *quali* materiali usare: la logica di luce, gli
-    // strati e le proporzioni restano identiche per tutti i gatti.
-    const leg = this.skin.pattern === 'points' ? this.skin.marks : this.skin.fur;
-    const paw = this.skin.pattern === 'tux' ? this.skin.marks : leg;
+    // Le estremità (coda, zampe, orecchie) hanno un mantello loro solo se la
+    // skin lo dichiara: è quello che distingue un siamese da un gatto crema.
+    const paws = this.skin.points ?? this.skin.fur;
 
     this.drawTail(r, cx, bodyY, face, tick, running);
     // Zampe posteriori: più scure, stanno dietro al corpo.
-    drawLeg(r, cx - face * 7, feet, Math.max(0, -swing) * 3, 0.55, leg, paw);
-    drawLeg(r, cx + face * 2, feet, Math.max(0, swing) * 3, 0.55, leg, paw);
+    drawLeg(r, cx - face * 7, feet, Math.max(0, -swing) * 3, 0.55, paws, this.fade());
+    drawLeg(r, cx + face * 2, feet, Math.max(0, swing) * 3, 0.55, paws, this.fade());
 
     this.drawBody(r, cx, bodyY, bodyH, face);
 
     // Zampe anteriori: in piena luce, davanti a tutto il corpo.
-    drawLeg(r, cx + face * 6, feet, Math.max(0, swing) * 3.2, 1, leg, paw);
-    drawLeg(r, cx - face * 2, feet, Math.max(0, -swing) * 3.2, 1, leg, paw);
+    drawLeg(r, cx + face * 6, feet, Math.max(0, swing) * 3.2, 1, paws, this.fade());
+    drawLeg(r, cx - face * 2, feet, Math.max(0, -swing) * 3.2, 1, paws, this.fade());
 
     this.drawHead(r, cx + face * 3, top + 7.5, face, tick);
     if (this.skin.crown) this.drawCrown(r, cx + face * 3, top - 6, tick);
     r.pop();
     r.pop();
-
-    // Sul ghiaccio le zampe non mordono: sotto i piedi resta una striscia
-    // lucida e qualche scaglia. Serve a far vedere *perché* non sta frenando,
-    // che è l'unica cosa che il giocatore deve capire di questa superficie.
-    if (this.isSliding && Math.abs(this.vx) > 1.4) {
-      const back = -Math.sign(this.vx);
-      r.push();
-      r.setAlpha(0.35);
-      r.radial(cx + back * 10, feet - 1, 14, 2.4, [
-        { at: 0, color: alpha(PALETTE.ice, 0.9) },
-        { at: 1, color: alpha(PALETTE.ice, 0) },
-      ]);
-      r.setAlpha(0.5);
-      for (let i = 0; i < 3; i++) {
-        const shard = ((tick * 2 + i * 9) % 14) + 2;
-        r.ellipse(cx + back * (6 + shard), feet - 2 - (shard % 5), 1.2, 1, PALETTE.ice);
-      }
-      r.pop();
-    }
 
     // Scia d'aria alle spalle quando è lanciato: due strappi di luce, non una
     // riga continua — si legge come velocità, non come un errore di disegno.
@@ -471,8 +457,6 @@ export class Player implements Body {
     }
     r.pop();
 
-    this.drawMarkings(r, cx, y, h, face);
-
     // Luce di contorno sul lato illuminato: separa il gatto dal fondale.
     r.push();
     r.setAlpha(this.fade(0.5));
@@ -497,72 +481,12 @@ export class Player implements Body {
     r.pop();
   }
 
-  /**
-   * Marcature del manto: strisce, pettorina, punte.
-   *
-   * Vengono disegnate DOPO le luci del corpo e prima del contorno, così
-   * ricevono la stessa illuminazione della pelliccia sotto invece di sembrare
-   * un adesivo appiccicato sopra.
-   */
-  private drawMarkings(r: Renderer, cx: number, y: number, h: number, face: number): void {
-    const halfW = this.w / 2;
-    const marks = this.skin.marks;
-
-    if (this.skin.pattern === 'tabby') {
-      // Strisce sulla groppa: si stringono verso la coda, come quelle vere.
-      r.push();
-      r.setAlpha(0.55);
-      for (let i = 0; i < 4; i++) {
-        const sy = y + 2 + i * (h / 5.5);
-        const width = halfW * (0.9 - i * 0.12);
-        r.line(
-          [cx - face * width, sy + 2.5, cx - face * width * 0.2, sy, cx + face * width * 0.35, sy + 1.5],
-          2.2,
-          marks.base,
-        );
-      }
-      r.pop();
-      return;
-    }
-
-    if (this.skin.pattern === 'tux') {
-      // Pettorina: una macchia bianca sul davanti, con la punta verso il muso.
-      r.push();
-      r.setAlpha(0.95);
-      r.blob(
-        [
-          cx + face * halfW * 0.62, y + h * 0.18,
-          cx + face * halfW * 0.78, y + h * 0.55,
-          cx + face * halfW * 0.45, y + h * 0.95,
-          cx + face * halfW * 0.02, y + h * 0.7,
-          cx + face * halfW * 0.2, y + h * 0.28,
-        ],
-        marks.base,
-      );
-      r.setAlpha(0.45);
-      r.radial(cx + face * halfW * 0.4, y + h * 0.4, halfW * 0.5, h * 0.3, [
-        { at: 0, color: alpha(marks.light, 0.9) },
-        { at: 1, color: alpha(marks.light, 0) },
-      ]);
-      r.pop();
-      return;
-    }
-
-    if (this.skin.pattern === 'points') {
-      // Il siamese non ha macchie sul tronco: sfuma verso le estremità.
-      r.push();
-      r.setAlpha(0.32);
-      r.radial(cx - face * halfW * 0.7, y + h * 0.75, halfW * 0.8, h * 0.5, [
-        { at: 0, color: alpha(marks.base, 0.8) },
-        { at: 1, color: alpha(marks.base, 0) },
-      ]);
-      r.pop();
-    }
-  }
-
   /** Testa: cranio, orecchie con padiglione, occhi, muso, baffi. */
   private drawHead(r: Renderer, cx: number, cy: number, face: number, tick: number): void {
-    const fur = this.skin.pattern === 'points' ? this.skin.marks : this.skin.fur;
+    // Le orecchie seguono le estremità, non il corpo: su un siamese sono la
+    // prima cosa che si guarda.
+    const fur = this.skin.points ?? this.skin.fur;
+    const coat = this.skin.fur;
     const skin = this.skin.nose;
     const eye = this.skin.eye;
     const rx = 7.6;
@@ -596,16 +520,6 @@ export class Player implements Body {
       { at: 1, color: alpha(coat.dark, 0) },
     ]);
     r.pop();
-
-    // La "M" del soriano in mezzo alla fronte: piccola, ma è la firma del manto.
-    if (this.skin.pattern === 'tabby') {
-      r.push();
-      r.setAlpha(0.5);
-      for (const side of [-1, 1] as const) {
-        r.line([cx + side * 1.4, cy - ry + 1, cx + side * 2.6, cy - ry + 4.4], 1.1, this.skin.marks.base);
-      }
-      r.pop();
-    }
 
     // Occhi: bulbo scuro, iride, pupilla verticale, riflesso.
     const eyeY = cy - 0.4;
@@ -690,7 +604,7 @@ export class Player implements Body {
    * punta arriva sempre dopo la base. Sferza più veloce quando corre.
    */
   private drawTail(r: Renderer, cx: number, bodyY: number, face: number, tick: number, running: boolean): void {
-    const fur = this.skin.pattern === 'points' ? this.skin.marks : this.skin.fur;
+    const fur = this.skin.points ?? this.skin.fur;
     const rate = running ? 5 : 11;
     const amplitude = running ? 4.2 : 2.8;
     const rootX = cx - face * (this.w / 2 - 3);
@@ -715,20 +629,6 @@ export class Player implements Body {
     r.setAlpha(this.fade(0.55));
     r.line(points.slice(0, 6), 1, fur.light);
     r.pop();
-
-    // Anelli sulla coda: li ha solo il soriano, e sono la prima cosa che si
-    // vede quando il gatto scappa verso destra.
-    if (this.skin.pattern === 'tabby') {
-      r.push();
-      r.setAlpha(0.6);
-      for (let i = 1; i < 4; i++) {
-        const px = points[i * 2] ?? rootX;
-        const py = points[i * 2 + 1] ?? rootY;
-        r.ellipse(px, py, 1.9, 1.6, this.skin.marks.base);
-      }
-      r.pop();
-    }
-
     r.ellipse(points[8] ?? rootX, points[9] ?? rootY, 1.6, 1.5, fur.light);
   }
 }
@@ -736,8 +636,6 @@ export class Player implements Body {
 /**
  * Una zampa: `lift` la stacca da terra durante la falcata, `exposure` dice
  * quanta luce le arriva (le posteriori sono in ombra dietro al corpo).
- * `fur` e `paw` arrivano dal manto scelto: certi gatti hanno le zampe di un
- * colore e i cuscinetti di un altro.
  */
 function drawLeg(
   r: Renderer,
@@ -746,7 +644,7 @@ function drawLeg(
   lift: number,
   exposure: number,
   fur: Material,
-  paw: Material,
+  opacity: number,
 ): void {
   const height = 7 - lift;
   if (height <= 0.5) return;
@@ -757,7 +655,7 @@ function drawLeg(
   // Gamba.
   r.line([x, top, x, feet - 1.6], 4.4, body);
   // Zampa: una piccola ellisse schiacciata, con l'ombra sotto.
-  r.ellipse(x, feet - 1.4, 3.2, 1.9, exposure < 1 ? mix(paw.base, paw.dark, 0.4) : paw.light);
+  r.ellipse(x, feet - 1.4, 3.2, 1.9, exposure < 1 ? mix(fur.base, fur.dark, 0.4) : fur.light);
   r.push();
   r.setAlpha(0.35 * exposure * opacity);
   r.line([x - 1.6, top + 1, x - 1.6, feet - 2.4], 1, alpha(fur.light, 0.9));

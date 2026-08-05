@@ -103,10 +103,6 @@ export const TILE = {
   BRITTLE_ICE: ';',
   /** Piastra d'acciaio: il pavimento della fabbrica. Solida e onesta. */
   STEEL: '=',
-  /** Nastro trasportatore verso destra: ti porta dove vuole lui. */
-  BELT_RIGHT: '>',
-  /** Nastro trasportatore verso sinistra. Di solito verso qualcosa di brutto. */
-  BELT_LEFT: '<',
   /** Getto di vapore: non è solido, ti solleva finché ci resti dentro. */
   VENT: '^',
   /**
@@ -115,11 +111,31 @@ export const TILE = {
    */
   DEAD_VENT: ',',
 
+  // --- Roba del boss: esiste solo dentro l'arena di 1-11.
+  /**
+   * Mattone del soffitto dell'arena.
+   *
+   * È l'unica arma che il gatto ha contro il Padrone, ed è anche l'unico posto
+   * in cui il gioco chiede al giocatore di fidarsi di una piattaforma che sta
+   * per cedere: ci sali sopra, quello trema, e poco dopo si stacca portandosi
+   * dietro tutto il peso della muratura. Dove cade non lo decide lui.
+   */
+  BOSS_BRICK: 'x',
+  /**
+   * Il portone in fondo all'arena: solido finché il Padrone è vivo, aperto
+   * nell'istante in cui smette di esserlo. Non è una trappola, è una serratura.
+   */
+  BOSS_GATE: '|',
+
   // --- Segreti: non uccidono, si nascondono.
   /** Parete d'acciaio attraversabile: dietro c'è sempre qualcosa. */
   FAKE_WALL: ':',
-  /** Gomitolo: uno per livello, ben nascosto. Sblocca i gatti. */
-  YARN: '*',
+  /**
+   * Cubo delle skin: l'unica cosa nel gioco che si può raccogliere una volta
+   * sola per sempre. Non uccide, non aiuta, non conta nel punteggio — sblocca
+   * un gatto. Sta sempre in un posto che nessuno attraverserebbe per caso.
+   */
+  SKIN_CUBE: '*',
 
   // --- Marcatori: rimossi dalla griglia al caricamento e sostituiti da entità.
   /** Nemico che cammina, schiacciabile. */
@@ -134,6 +150,8 @@ export const TILE = {
   DRONE: '%',
   /** Palla di ghiaccio: quando entri nel suo raggio, rotola verso di te. */
   SNOWBALL: '&',
+  /** Il Padrone: il boss di 1-11. Ne esiste uno solo per livello. */
+  BOSS: '@',
 } as const;
 
 export type TileChar = (typeof TILE)[keyof typeof TILE];
@@ -158,6 +176,8 @@ const SOLID = new Set<string>([
   TILE.STEEL,
   TILE.BELT_RIGHT,
   TILE.BELT_LEFT,
+  TILE.BOSS_BRICK,
+  TILE.BOSS_GATE,
 ]);
 
 /** Tile che al contatto uccidono, sempre e comunque. */
@@ -178,6 +198,7 @@ const SPAWNERS = new Set<string>([
   TILE.SENTRY,
   TILE.DRONE,
   TILE.SNOWBALL,
+  TILE.BOSS,
 ]);
 
 /**

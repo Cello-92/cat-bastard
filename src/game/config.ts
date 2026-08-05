@@ -41,11 +41,20 @@ export const RULES = {
   /** Tick prima che una piattaforma toccata si sbricioli. */
   crumbleDelayTicks: 16,
   /** Tick prima che il finto terreno sparisca sotto le zampe. */
-  fakeGroundDelayTicks: 7,
+  fakeGroundDelayTicks: 6,
+  /**
+   * Tick prima che una piattaforma fantasma svanisca: quasi zero.
+   * Non è reattivo — è memorizzabile. Chi sa che sta arrivando salta prima.
+   */
+  ghostDelayTicks: 3,
   /** Tick che gli spuntoni a scatto impiegano a uscire: è il loro preavviso. */
   popSpikeChargeTicks: 11,
   /** Distanza orizzontale a cui gli spuntoni a scatto si attivano. */
   popSpikeRange: 46,
+  /** Gli spuntoni nascosti scattano in tre tick: un venteesimo di secondo. */
+  snapSpikeChargeTicks: 3,
+  /** E si attivano solo quando ci sei già praticamente sopra. */
+  snapSpikeRange: 20,
   /** Quanto sotto il livello si muore. */
   fallDeathMargin: 160,
   /** Distanza verticale massima per considerare valido uno stomp. */

@@ -52,6 +52,12 @@ const causeOfTile = (tile: string): DeathCause => {
       return DEATH_CAUSE.spikes;
     case TILE.CEILING_SPIKES:
       return DEATH_CAUSE.ceilingSpikes;
+    case TILE.LURE_COIN:
+      return DEATH_CAUSE.lureCoin;
+    case TILE.FAKE_CHECKPOINT:
+      return DEATH_CAUSE.fakeCheckpoint;
+    case TILE.HIDDEN_SPIKES:
+      return DEATH_CAUSE.hiddenSpikes;
     case TILE.FAKE_FLAG:
       return DEATH_CAUSE.fakeFlag;
     default:
@@ -63,6 +69,8 @@ interface TrapBrick {
   c: number;
   r: number;
   fired: boolean;
+  /** Zero preavviso: il masso parte nello stesso istante in cui lo attivi. */
+  instant: boolean;
 }
 
 export class World {
@@ -91,8 +99,21 @@ export class World {
    * che il giocatore riceve.
    */
   private extensions = new Map<string, number>();
-  /** Celle di spuntoni a scatto, raccolte una volta al caricamento. */
-  private popSpikes: { c: number; r: number }[] = [];
+  /**
+   * Celle di spuntoni a scatto, raccolte una volta al caricamento.
+   * `snap` distingue quelli con la piastra e la carica lenta da quelli che
+   * schizzano fuori dal terreno liscio senza preavviso.
+   */
+  private popSpikes: { c: number; r: number; snap: boolean }[] = [];
+  /**
+   * Trappole invisibili già scoperte, per chiave "c,r".
+   *
+   * A differenza di tutto il resto NON viene azzerata alla morte: una trappola
+   * invisibile uccide una volta sola, poi resta visibile per tutto il
+   * tentativo. È il compromesso che tiene in piedi il patto — la prima volta
+   * muori senza capire, dalla seconda è colpa tua.
+   */
+  private discovered = new Set<string>();
   private checkpoint: { c: number; r: number } | null = null;
   private deathTimer = 0;
 
@@ -111,6 +132,9 @@ export class World {
     this.coins = 0;
     this.ticks = 0;
     this.checkpoint = null;
+    // Ricominciare da capo significa anche tornare a non sapere dove sono le
+    // trappole invisibili: è l'unica cosa che il respawn non porta con sé.
+    this.discovered.clear();
     this.rebuild();
   }
 
@@ -137,9 +161,13 @@ export class World {
           this.entities.push(new Walker(c * TILE_SIZE + 3, r * TILE_SIZE + 6, tile === TILE.EVIL_WALKER));
         }
       } else if (tile === TILE.TRAP_BRICK) {
-        this.trapBricks.push({ c, r, fired: false });
+        this.trapBricks.push({ c, r, fired: false, instant: false });
+      } else if (tile === TILE.COLLAPSE) {
+        this.trapBricks.push({ c, r, fired: false, instant: true });
       } else if (tile === TILE.POP_SPIKES) {
-        this.popSpikes.push({ c, r });
+        this.popSpikes.push({ c, r, snap: false });
+      } else if (tile === TILE.SNAP_SPIKES) {
+        this.popSpikes.push({ c, r, snap: true });
       }
     }
 
@@ -205,12 +233,19 @@ export class World {
         return;
       } else if (tile === TILE.SPRING) {
         this.launch(c, r);
-      } else if (tile === TILE.POP_SPIKES) {
+      } else if (tile === TILE.POP_SPIKES || tile === TILE.SNAP_SPIKES) {
         // Uccidono solo quando sono davvero fuori: mezzi usciti sono l'avviso.
+        // Per quelli istantanei l'avviso dura due tick, che è come dire niente.
         if ((this.extensions.get(TileMap.key(c, r)) ?? 0) > 0.55) {
-          this.kill(DEATH_CAUSE.popSpikes);
+          this.kill(tile === TILE.SNAP_SPIKES ? DEATH_CAUSE.snapSpikes : DEATH_CAUSE.popSpikes);
           return;
         }
+      } else if (tile === TILE.HIDDEN_SPIKES) {
+        // Da qui in poi si vedono. Non serve a chi è appena morto, serve a chi
+        // riprova — ed è esattamente il punto.
+        this.discovered.add(TileMap.key(c, r));
+        this.kill(DEATH_CAUSE.hiddenSpikes);
+        return;
       } else if (isDeadly(tile)) {
         this.kill(causeOfTile(tile));
         return;
@@ -253,6 +288,14 @@ export class World {
         const key = TileMap.key(c, r);
         if (!this.crumbling.has(key)) {
           this.crumbling.set(key, RULES.crumbleDelayTicks);
+          this.audio.play('crumble');
+        }
+      } else if (tile === TILE.GHOST) {
+        // Un solo tick di vita. Non trema, non si scurisce, non fa rumore
+        // finché è troppo tardi: quando te ne accorgi sei già in caduta.
+        const key = TileMap.key(c, r);
+        if (!this.crumbling.has(key)) {
+          this.crumbling.set(key, RULES.ghostDelayTicks);
           this.audio.play('crumble');
         }
       } else if (tile === TILE.FAKE_GROUND) {
@@ -371,18 +414,23 @@ export class World {
    * pochi tick sono l'unico preavviso. Sono anche l'unico modo di passare.
    */
   private handlePopSpikes(): void {
-    const step = 1 / RULES.popSpikeChargeTicks;
+    for (const { c, r, snap } of this.popSpikes) {
+      // Quelli con la piastra si vedono e ci mettono un attimo. Quelli
+      // nascosti nel terreno liscio scattano quasi subito, e solo quando sei
+      // già sopra: la portata è la metà.
+      const step = snap ? 1 / RULES.snapSpikeChargeTicks : 1 / RULES.popSpikeChargeTicks;
+      const range = snap ? RULES.snapSpikeRange : RULES.popSpikeRange;
 
-    for (const { c, r } of this.popSpikes) {
       const key = TileMap.key(c, r);
       const current = this.extensions.get(key) ?? 0;
       const dx = Math.abs(this.player.centerX - (c * TILE_SIZE + TILE_SIZE / 2));
-      const near = dx < RULES.popSpikeRange;
+      const near = dx < range;
 
       const next = near ? Math.min(1, current + step) : Math.max(0, current - step * 0.6);
       if (next === current) continue;
 
-      // Al primo scatto fanno rumore e polvere: il giocatore deve poterli sentire.
+      // Al primo scatto fanno rumore e polvere: almeno l'orecchio deve avere
+      // una possibilità, visto che l'occhio non ce l'ha.
       if (current === 0 && next > 0) {
         this.audio.play('trap');
         this.effects.burst(c * TILE_SIZE + TILE_SIZE / 2, r * TILE_SIZE + TILE_SIZE - 4, PALETTE.dust, {
@@ -412,7 +460,9 @@ export class World {
 
       brick.fired = true;
       this.map.clear(brick.c, brick.r);
-      this.entities.push(new FallingSpike(brick.c * TILE_SIZE + 4, brick.r * TILE_SIZE + 6));
+      this.entities.push(
+        new FallingSpike(brick.c * TILE_SIZE + 4, brick.r * TILE_SIZE + 6, brick.instant ? 0 : undefined),
+      );
       this.audio.play('trap');
       this.camera.shake(FEEL.screenShakeOnTrap);
       this.effects.burst(
@@ -556,7 +606,7 @@ export class World {
           tick,
           col,
           row,
-          revealed: this.revealed.has(key),
+          revealed: this.revealed.has(key) || this.discovered.has(key),
           crumbling: this.crumbling.has(key),
           checkpointActive: this.checkpoint?.c === col && this.checkpoint.r === row,
           hasFlagAbove: above === tile && (tile === TILE.FAKE_FLAG || tile === TILE.GOAL),

@@ -3,6 +3,7 @@ import type { Input } from '@core/input';
 import { TILE_SIZE } from '@game/config';
 import { LEVELS } from '@game/levels';
 import { SEGMENT_COLS, LEVEL_ROWS } from '@game/config';
+import { defineLevel, segment } from '@game/levels/level';
 import { TILE, isSolid } from '@game/tiles';
 import { World } from '@game/world';
 import { NullRenderer } from './null-renderer';
@@ -81,8 +82,12 @@ for (const level of LEVELS) {
     let hasFloor = false;
     for (let r = 0; r < LEVEL_ROWS; r++) {
       const tile = rows[r]?.[c] ?? TILE.EMPTY;
-      // Il terreno finto sparisce, quindi come appoggio non conta.
-      if (tile !== TILE.EMPTY && tile !== TILE.FAKE_GROUND && isSolid(tile)) {
+      // Terreno finto, piattaforme fantasma e massi che crollano spariscono
+      // appena li tocchi: come appoggio non contano, quindi il livello deve
+      // restare attraversabile anche senza di loro.
+      const vanishes =
+        tile === TILE.FAKE_GROUND || tile === TILE.GHOST || tile === TILE.COLLAPSE;
+      if (tile !== TILE.EMPTY && !vanishes && isSolid(tile)) {
         hasFloor = true;
         break;
       }
@@ -160,6 +165,113 @@ for (const level of LEVELS) {
     world.update(fakeInput(0));
     check(world.state === 'won', `${level.name}: toccare l'arrivo vince`);
     check(wins === 1, `${level.name}: onWin chiamato una sola volta`);
+  }
+}
+
+// ---------------------------------------------------------------- trappole nascoste
+//
+// Le trappole di questo gioco sono spietate ma non sleali: uccidono senza
+// preavviso, però sempre nello stesso punto e per un motivo che il giocatore
+// può ricostruire. Questi controlli fissano proprio quel contratto — che una
+// moneta avvelenata uccida, che una lanterna finta non salvi, che una
+// piattaforma fantasma sparisca e che gli spuntoni invisibili, una volta che
+// ti hanno preso, restino visibili per il resto del tentativo.
+console.log('\nTrappole nascoste');
+{
+  const trapAudio = new Audio();
+
+  /** Mondo minimo con una sola trappola, e il gatto piazzato sopra. */
+  const withTrap = (rows: Record<number, string>) => {
+    const level = defineLevel({
+      id: 'trap-test',
+      name: 'TEST',
+      title: 'trappole',
+      sky: 'day',
+      spawn: { c: 1, r: 12 },
+      segments: [segment({ ground: true, rows })],
+    });
+    const causes: string[] = [];
+    const world = new World(level, trapAudio, {
+      onTaunt: (text) => causes.push(text),
+      onWin: () => {},
+    });
+    return { world, causes };
+  };
+
+  const idle = {
+    isDown: () => false,
+    justPressed: () => false,
+    endTick: () => {},
+  } as unknown as Input;
+
+  // Moneta avvelenata: identica a una moneta, uccide invece di dare un punto.
+  {
+    const { world } = withTrap({ 12: '     E' });
+    world.player.x = 5 * TILE_SIZE;
+    world.player.y = 12 * TILE_SIZE;
+    world.update(idle);
+    check(world.state === 'dying', 'la moneta esca uccide invece di dare un punto');
+    check(world.coins === 0, 'la moneta esca non viene contata');
+  }
+
+  // Checkpoint finto: non salva, ammazza, e non sposta il punto di respawn.
+  {
+    const { world } = withTrap({ 12: '     N' });
+    world.player.x = 5 * TILE_SIZE;
+    world.player.y = 12 * TILE_SIZE;
+    world.update(idle);
+    check(world.state === 'dying', 'il checkpoint finto uccide');
+  }
+
+  // Spuntoni invisibili: uccidono, poi restano visibili fino a fine tentativo.
+  {
+    const { world } = withTrap({ 12: '     !' });
+    const renderer = new NullRenderer();
+    world.player.x = 5 * TILE_SIZE;
+    world.player.y = 12 * TILE_SIZE;
+
+    const before = renderer.calls;
+    world.draw(renderer, 0);
+    const invisibleCost = renderer.calls - before;
+
+    world.update(idle);
+    check(world.state === 'dying', 'gli spuntoni invisibili uccidono');
+
+    // Passata la morte, la cella va disegnata: adesso si vedono.
+    for (let tick = 0; tick < 200 && world.state !== 'playing'; tick++) world.update(idle);
+    const afterDeath = renderer.calls;
+    world.draw(renderer, 1);
+    check(
+      renderer.calls - afterDeath > invisibleCost,
+      'dopo la prima morte gli spuntoni invisibili si vedono',
+    );
+
+    // Ricominciare da capo li fa tornare invisibili: si riparte a non sapere.
+    world.restart();
+    const afterRestart = renderer.calls;
+    world.draw(renderer, 2);
+    check(
+      renderer.calls - afterRestart <= invisibleCost,
+      'ricominciando il livello tornano invisibili',
+    );
+  }
+
+  // Piattaforma fantasma: regge un istante, poi non c\'è più.
+  {
+    const { world } = withTrap({ 11: '     L' });
+    world.player.x = 5 * TILE_SIZE + 4;
+    world.player.y = 11 * TILE_SIZE - world.player.h;
+    for (let tick = 0; tick < 4; tick++) world.update(idle);
+    check(world.map.get(5, 11) === TILE.EMPTY, 'la piattaforma fantasma sparisce quasi subito');
+  }
+
+  // Masso che crolla: parte senza il tremolio di preavviso della stalattite.
+  {
+    const { world } = withTrap({ 8: '     K' });
+    world.player.x = 5 * TILE_SIZE;
+    world.player.y = 12 * TILE_SIZE;
+    world.update(idle);
+    check(world.map.get(5, 8) === TILE.EMPTY, 'il masso si stacca appena gli passi sotto');
   }
 }
 

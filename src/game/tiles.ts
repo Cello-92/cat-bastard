@@ -41,12 +41,33 @@ export const TILE = {
   SPRING: 'M',
   /** Moneta raccoglibile. */
   COIN: 'C',
+  /**
+   * Moneta identica a `C` che invece di darti un punto ti ammazza.
+   * Nessun segno, nessun colore diverso: si scopre raccogliendola.
+   */
+  LURE_COIN: 'E',
   /** Bandiera finta: uccide. */
   FAKE_FLAG: 'F',
   /** Arrivo vero. */
   GOAL: 'W',
   /** Checkpoint. */
   CHECKPOINT: 'S',
+  /** Checkpoint identico a `S`. Toccarlo uccide. La lanterna non si accende mai. */
+  FAKE_CHECKPOINT: 'N',
+
+  // --- Trappole senza preavviso: la prima volta ammazzano e basta.
+  /** Masso indistinguibile dal soffitto che crolla nell'istante in cui passi sotto. */
+  COLLAPSE: 'K',
+  /** Piattaforma solida che sparisce appena la sfiori. Non trema, non avvisa. */
+  GHOST: 'L',
+  /** Spuntoni nascosti nel terreno: schizzano fuori istantaneamente, senza feritoia. */
+  SNAP_SPIKES: 'O',
+  /**
+   * Spuntoni invisibili: non c'è niente da vedere finché non ti uccidono.
+   * Dopo la prima morte restano visibili per tutto il tentativo, così la
+   * seconda volta la trappola è evitabile — che è l'unica regola che resta.
+   */
+  HIDDEN_SPIKES: '!',
 
   // --- Marcatori: rimossi dalla griglia al caricamento e sostituiti da entità.
   /** Nemico che cammina, schiacciabile. */
@@ -64,6 +85,8 @@ const SOLID = new Set<string>([
   TILE.GROUND,
   TILE.ROCK,
   TILE.FAKE_GROUND,
+  TILE.GHOST,
+  TILE.COLLAPSE,
   TILE.PIPE,
   TILE.PRIZE,
   TILE.HONEST,
@@ -74,7 +97,13 @@ const SOLID = new Set<string>([
 ]);
 
 /** Tile che al contatto uccidono, sempre e comunque. */
-const DEADLY = new Set<string>([TILE.SPIKES, TILE.CEILING_SPIKES, TILE.FAKE_FLAG]);
+const DEADLY = new Set<string>([
+  TILE.SPIKES,
+  TILE.CEILING_SPIKES,
+  TILE.FAKE_FLAG,
+  TILE.LURE_COIN,
+  TILE.FAKE_CHECKPOINT,
+]);
 
 /** Tile che vengono convertiti in entità al caricamento del livello. */
 const SPAWNERS = new Set<string>([TILE.WALKER, TILE.EVIL_WALKER, TILE.DIVER]);
@@ -84,7 +113,13 @@ const SPAWNERS = new Set<string>([TILE.WALKER, TILE.EVIL_WALKER, TILE.DIVER]);
  * Serve al disegno per sapere dove il suolo continua e dove invece è esposto
  * al cielo: l'erba e i bordi illuminati nascono da qui.
  */
-const EARTH = new Set<string>([TILE.GROUND, TILE.ROCK, TILE.FAKE_GROUND]);
+const EARTH = new Set<string>([
+  TILE.GROUND,
+  TILE.ROCK,
+  TILE.FAKE_GROUND,
+  TILE.GHOST,
+  TILE.COLLAPSE,
+]);
 
 export const isSolid = (tile: string): boolean => SOLID.has(tile);
 export const isDeadly = (tile: string): boolean => DEADLY.has(tile);

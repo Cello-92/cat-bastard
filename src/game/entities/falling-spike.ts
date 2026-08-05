@@ -18,10 +18,17 @@ const HEIGHT = 26;
 const TELEGRAPH_TICKS = 14;
 
 export class FallingSpike extends Entity {
-  private telegraph = TELEGRAPH_TICKS;
+  private telegraph: number;
 
-  constructor(x: number, y: number) {
+  /**
+   * `telegraph` è quanti tick trema prima di partire. Il mattone-trappola ne
+   * concede una manciata; il masso che crolla dal soffitto zero — cade
+   * nell'istante in cui gli passi sotto, e la prima volta non c'è verso di
+   * saperlo.
+   */
+  constructor(x: number, y: number, telegraph = TELEGRAPH_TICKS) {
     super(x, y, WIDTH, HEIGHT);
+    this.telegraph = telegraph;
   }
 
   update(world: World): void {

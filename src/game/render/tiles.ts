@@ -33,7 +33,10 @@ export interface TileDrawContext {
   tick: number;
   col: number;
   row: number;
-  /** Per il blocco invisibile: già scoperto? */
+  /**
+   * Per il blocco invisibile e per gli spuntoni invisibili: già scoperti?
+   * Finché è false non si disegna niente — non c'è proprio nulla da vedere.
+   */
   revealed: boolean;
   /** Per la piattaforma: sta per sbriciolarsi? */
   crumbling: boolean;
@@ -80,8 +83,23 @@ export function drawTile(r: Renderer, tile: string, x: number, y: number, ctx: T
       drawCrumble(r, x, y, ctx);
       break;
     case TILE.FAKE_GROUND:
-      // Identico al terreno vero: è tutto il punto della trappola.
+    case TILE.GHOST:
+      // Identici al terreno vero: è tutto il punto della trappola. Nessun
+      // segno, nessuna sfumatura diversa — chi disegnasse un indizio qui
+      // starebbe disinnescando la trappola.
       drawGround(r, x, y, ctx);
+      break;
+    case TILE.COLLAPSE:
+      // Indistinguibile dalla roccia del soffitto.
+      drawRock(r, x, y, ctx);
+      break;
+    case TILE.SNAP_SPIKES:
+      // A riposo non c'è niente: né feritoia, né piastra. Solo terreno.
+      if (ctx.extension > 0) drawSpikes(r, x, y, ctx, ctx.extension, false);
+      break;
+    case TILE.HIDDEN_SPIKES:
+      // Esistono solo dopo che ti hanno ucciso una volta.
+      if (ctx.revealed) drawSpikes(r, x, y, ctx, 1, false);
       break;
     case TILE.INVISIBLE:
       if (ctx.revealed) drawRevealedBlock(r, x, y, ctx.tick);
@@ -100,9 +118,14 @@ export function drawTile(r: Renderer, tile: string, x: number, y: number, ctx: T
       drawSpring(r, x, y, ctx);
       break;
     case TILE.COIN:
+    case TILE.LURE_COIN:
+      // Stessa moneta. Stesso oro, stesso alone, stessa rotazione.
       drawCoin(r, x, y, ctx);
       break;
     case TILE.CHECKPOINT:
+    case TILE.FAKE_CHECKPOINT:
+      // Stessa lanterna. L'unica differenza è che questa non si accende mai,
+      // ma per scoprirlo bisogna toccarla, e toccarla è la trappola.
       drawCheckpoint(r, x, y, ctx);
       break;
     case TILE.FAKE_FLAG:

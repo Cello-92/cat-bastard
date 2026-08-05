@@ -21,6 +21,12 @@ export const DEATH_CAUSE = {
   ceilingSpikes: 'ceilingSpikes',
   spring: 'spring',
   diver: 'diver',
+  lureCoin: 'lureCoin',
+  fakeCheckpoint: 'fakeCheckpoint',
+  collapse: 'collapse',
+  ghost: 'ghost',
+  snapSpikes: 'snapSpikes',
+  hiddenSpikes: 'hiddenSpikes',
   generic: 'generic',
 } as const;
 
@@ -58,6 +64,36 @@ const BY_CAUSE: Record<Exclude<DeathCause, 'generic'>, readonly string[]> = {
     'stava lì appeso da prima che nascessi',
     'guardare in alto ogni tanto aiuta',
     'ti aspettava. da un pezzo',
+  ],
+  lureCoin: [
+    'era una moneta. non era una moneta',
+    'ti sei fidato di una moneta gialla',
+    'costava più di quanto valeva',
+  ],
+  fakeCheckpoint: [
+    'quella lanterna non si è mai accesa, sai',
+    'checkpoint finto. dovevi guardarla meglio',
+    'hai corso verso il punto di salvataggio. tenero',
+  ],
+  collapse: [
+    'il soffitto ha ceduto. proprio lì. proprio adesso',
+    'non c\'era nessun preavviso, no',
+    'stava aspettando che passassi tu',
+  ],
+  ghost: [
+    'la piattaforma c\'era. poi non c\'era più',
+    'non tutte le piattaforme reggono. quella no',
+    'un attimo prima era solida. giuro',
+  ],
+  snapSpikes: [
+    'sbucati dal niente, esatto',
+    'non c\'era nessuna feritoia da vedere. apposta',
+    'il terreno era normale fino a un decimo di secondo fa',
+  ],
+  hiddenSpikes: [
+    'lì non c\'era niente. adesso lo vedi, però',
+    'ora sono visibili. non ti servirà a molto, ma sono visibili',
+    'invisibili. la seconda volta no',
   ],
 };
 

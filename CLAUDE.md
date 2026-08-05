@@ -44,7 +44,13 @@ Un rage game funziona solo se è *ingiusto ma leale*. Ogni trappola deve rispett
    significa aggiungere anche la sua battuta.
 7. **La trappola deve essere leggibile a posteriori.** Dopo la morte il giocatore deve capire
    *esattamente* cosa l'ha fregato. Se non lo capisce è frustrazione morta, non rage game.
-   Per questo la stalattite ha un preavviso e le assi marce tremano prima di cedere.
+   Attenzione: leggibile *dopo*, non necessariamente *prima*. Metà delle trappole non dà alcun
+   preavviso — è il cuore del genere — ma ognuna lascia una spiegazione: la moneta era avvelenata,
+   la lanterna era finta, il pavimento non c'era. Gli spuntoni invisibili, dopo averti preso una
+   volta, restano visibili per tutto il tentativo: la prima morte è gratis, la seconda è colpa tua.
+8. **Difficile non vuol dire impossibile.** Nessun salto richiesto supera le cinque colonne, e il
+   test headless rifiuta un livello che lo violi. Le piattaforme che spariscono non contano come
+   appoggio in quel calcolo: il livello deve restare attraversabile anche senza di loro.
 
 ## Stack e vincoli tecnici
 
@@ -115,6 +121,20 @@ Ogni trappola sfrutta un'abitudine del giocatore, e ognuna ha il suo taunt in `t
 | `F` | l'arrivo | uccide |
 | `J` | il nemico normale (identico) | ha le punte sotto: schiacciarlo uccide |
 | `Z` | ombra sul soffitto | si tuffa quando le passi sotto |
+
+Queste invece non danno **nessun preavviso**: la prima volta uccidono e basta.
+Sono deterministiche come tutte le altre — stesso punto, stessa morte — quindi
+si imparano morendo, che è il gameplay. Non sono casuali: casuale sarebbe
+ingiocabile.
+
+| Tile | Cosa sembra | Cosa fa |
+|---|---|---|
+| `E` | una moneta, identica a `C` | ucciderti quando la raccogli |
+| `N` | un checkpoint, identico a `S` | ucciderti quando lo tocchi. La lanterna non si accende mai |
+| `K` | roccia del soffitto | crolla nell'istante in cui gli passi sotto |
+| `L` | una piattaforma solida | sparisce dopo tre tick, senza tremare |
+| `O` | terreno normale, senza feritoia | spuntoni che scattano quando ci sei già sopra |
+| `!` | niente. Proprio niente | spuntoni invisibili. Dopo la prima morte restano visibili per tutto il tentativo |
 
 ### Aggiungere roba
 

@@ -1,7 +1,8 @@
 import { Audio } from '@core/audio';
 import type { Input } from '@core/input';
 import { TILE_SIZE } from '@game/config';
-import { LEVELS } from '@game/levels';
+import { LEVELS, SECRET_COUNT } from '@game/levels';
+import { CATS } from '@game/cats';
 import { SEGMENT_COLS, LEVEL_ROWS } from '@game/config';
 import { defineLevel, segment } from '@game/levels/level';
 import { TILE, isSolid } from '@game/tiles';
@@ -87,7 +88,10 @@ for (const level of LEVELS) {
       // appena li tocchi: come appoggio non contano, quindi il livello deve
       // restare attraversabile anche senza di loro.
       const vanishes =
-        tile === TILE.FAKE_GROUND || tile === TILE.GHOST || tile === TILE.COLLAPSE;
+        tile === TILE.FAKE_GROUND ||
+        tile === TILE.GHOST ||
+        tile === TILE.COLLAPSE ||
+        tile === TILE.BRITTLE_ICE;
       if (tile !== TILE.EMPTY && !vanishes && isSolid(tile)) {
         hasFloor = true;
         break;
@@ -300,6 +304,287 @@ console.log('\nTrappole nascoste');
     world.update(idle);
     check(world.map.get(5, 8) === TILE.EMPTY, 'il masso si stacca appena gli passi sotto');
   }
+}
+
+// ---------------------------------------------------------------- superfici del mondo 2
+//
+// Il secondo mondo introduce le prime cose che cambiano *come risponde il
+// pavimento*: ghiaccio, nastri, getti di vapore. Sono le uniche modifiche alla
+// fisica di tutto il gioco, quindi hanno bisogno di un contratto scritto —
+// altrimenti al primo ritocco delle costanti si scopre che un livello tarato
+// sul ghiaccio è diventato impossibile, e lo si scopre giocando.
+console.log('\nSuperfici del mondo 2');
+{
+  const surfaceAudio = new Audio();
+
+  const withRows = (rows: Record<number, string>, spawn = { c: 1, r: 12 }) => {
+    const level = defineLevel({
+      id: 'surface-test',
+      name: 'TEST',
+      title: 'superfici',
+      sky: 'frost',
+      spawn,
+      segments: [segment({ rows })],
+    });
+    let secrets = 0;
+    const world = new World(level, surfaceAudio, {
+      onTaunt: () => {},
+      onWin: () => {},
+      onSecret: () => secrets++,
+    });
+    return { world, secrets: () => secrets };
+  };
+
+  const idle = {
+    isDown: () => false,
+    justPressed: () => false,
+    endTick: () => {},
+  } as unknown as Input;
+  /** Quanto scivola, senza toccare niente, chi arriva a velocità piena. */
+  const slideDistance = (floor: string): number => {
+    const { world } = withRows({ 13: floor, 14: floor });
+    world.player.x = 2 * TILE_SIZE;
+    world.player.y = 12 * TILE_SIZE;
+    const start = world.player.x;
+    world.player.vx = 4;
+    for (let tick = 0; tick < 40; tick++) world.update(idle);
+    return world.player.x - start;
+  };
+
+  const onSnow = slideDistance('+'.repeat(SEGMENT_COLS));
+  const onIce = slideDistance('~'.repeat(SEGMENT_COLS));
+  check(onIce > onSnow * 2, `sul ghiaccio si scivola molto più a lungo (${Math.round(onIce)}px contro ${Math.round(onSnow)}px)`);
+
+  // Nastro: sposta anche chi non preme niente, e nel verso disegnato.
+  {
+    const { world } = withRows({ 13: '>'.repeat(SEGMENT_COLS), 14: '>'.repeat(SEGMENT_COLS) });
+    world.player.x = 3 * TILE_SIZE;
+    world.player.y = 12 * TILE_SIZE;
+    const start = world.player.x;
+    for (let tick = 0; tick < 30; tick++) world.update(idle);
+    check(world.player.x > start + 20, 'il nastro trascina anche chi sta fermo');
+  }
+
+  // Getto di vapore: solleva. Il gemello spento è identico e non fa niente.
+  {
+    const shaft = (tile: string): number => {
+      const column = ' '.repeat(5) + tile;
+      const { world } = withRows({
+        9: column,
+        10: column,
+        11: column,
+        12: column,
+        13: '#'.repeat(SEGMENT_COLS),
+        14: '#'.repeat(SEGMENT_COLS),
+      });
+      world.player.x = 5 * TILE_SIZE;
+      world.player.y = 12 * TILE_SIZE;
+      const start = world.player.y;
+      for (let tick = 0; tick < 20; tick++) world.update(idle);
+      return start - world.player.y;
+    };
+
+    check(shaft('^') > TILE_SIZE, 'il getto di vapore solleva il gatto');
+    check(shaft(',') <= 0, 'il getto spento, identico a vedersi, non solleva niente');
+  }
+
+  // Ghiaccio sottile: regge un istante, poi cede come un'asse marcia.
+  {
+    const { world } = withRows({ 13: '#####;##############', 14: '#####' });
+    world.player.x = 5 * TILE_SIZE + 4;
+    world.player.y = 12 * TILE_SIZE;
+    for (let tick = 0; tick < 20; tick++) world.update(idle);
+    check(world.map.get(5, 13) === TILE.EMPTY, 'il ghiaccio sottile si crepa e cede');
+  }
+}
+
+// ---------------------------------------------------------------- segreti
+//
+// I gomitoli sono l'unica cosa del gioco che non tradisce nessuno, e proprio
+// per questo hanno bisogno di un test: se un giorno il muro finto tornasse
+// solido o il gomitolo smettesse di segnalarsi, nessuno se ne accorgerebbe
+// morendo — ci si accorge solo di quello che uccide.
+console.log('\nSegreti');
+{
+  const secretAudio = new Audio();
+
+  const withRows = (rows: Record<number, string>) => {
+    const level = defineLevel({
+      id: 'secret-test',
+      name: 'TEST',
+      title: 'segreti',
+      sky: 'foundry',
+      spawn: { c: 1, r: 12 },
+      segments: [segment({ ground: true, rows })],
+    });
+    let secrets = 0;
+    const world = new World(level, secretAudio, {
+      onTaunt: () => {},
+      onWin: () => {},
+      onSecret: () => secrets++,
+    });
+    return { world, secrets: () => secrets };
+  };
+
+  const idle = {
+    isDown: () => false,
+    justPressed: () => false,
+    endTick: () => {},
+  } as unknown as Input;
+  const runRight = {
+    isDown: (a: string) => a === 'right',
+    justPressed: () => false,
+    endTick: () => {},
+  } as unknown as Input;
+
+  // La parete finta: sembra lamiera, non ferma niente.
+  {
+    const { world } = withRows({ 12: '    :' });
+    world.player.x = 2 * TILE_SIZE;
+    world.player.y = 12 * TILE_SIZE;
+    for (let tick = 0; tick < 60; tick++) world.update(runRight);
+    check(world.player.x > 5 * TILE_SIZE, 'la parete finta si attraversa');
+  }
+
+  // Il gomitolo: si prende una volta sola, non conta come moneta, e avvisa.
+  {
+    const { world, secrets } = withRows({ 12: '    *' });
+    world.player.x = 4 * TILE_SIZE;
+    world.player.y = 12 * TILE_SIZE;
+    world.update(idle);
+    check(world.secretFound, 'il gomitolo viene registrato quando lo si prende');
+    check(secrets() === 1, 'il gomitolo avvisa il gioco una volta sola');
+    check(world.coins === 0, 'il gomitolo non è una moneta');
+    check(world.state === 'playing', 'il gomitolo non uccide (è l\'unico)');
+
+    world.update(idle);
+    check(secrets() === 1, 'restare fermi sopra non lo fa contare due volte');
+  }
+}
+
+// ---------------------------------------------------------------- nemici del mondo 2
+//
+// Tre nemici nuovi, tre contratti diversi, e l'unica cosa che il giocatore può
+// verificare è cosa succede saltandoci sopra: il drone si schiaccia, la
+// sentinella no. Se questi due si invertissero il livello resterebbe
+// "giocabile" e diventerebbe un imbroglio.
+console.log('\nNemici del mondo 2');
+{
+  const enemyAudio = new Audio();
+
+  /** Lascia cadere il gatto sulla testa del nemico e dice com'è finita. */
+  const stomp = (marker: string): { dying: boolean; bounced: boolean } => {
+    const level = defineLevel({
+      id: 'enemy-test',
+      name: 'TEST',
+      title: 'nemici',
+      sky: 'foundry',
+      spawn: { c: 1, r: 12 },
+      segments: [segment({ ground: true, rows: { 12: `    ${marker}` } })],
+    });
+    const world = new World(level, enemyAudio, { onTaunt: () => {}, onWin: () => {} });
+    const idle = {
+      isDown: () => false,
+      justPressed: () => false,
+      endTick: () => {},
+    } as unknown as Input;
+
+    // Piazzato sopra il nemico e in caduta: è la definizione di stomp. Gli si
+    // concedono pochi tick perché il contatto avvenga davvero.
+    world.player.x = 4 * TILE_SIZE + 4;
+    world.player.y = 12 * TILE_SIZE - world.player.h - 6;
+    world.player.vy = 3;
+    world.player.onGround = false;
+
+    let bounced = false;
+    for (let tick = 0; tick < 12 && world.state === 'playing'; tick++) {
+      world.update(idle);
+      if (world.player.vy < -1) bounced = true;
+    }
+    return { dying: world.state === 'dying', bounced };
+  };
+
+  const sentry = stomp(TILE.SENTRY);
+  check(sentry.dying, 'schiacciare la sentinella uccide: l\'elmo è chiodato');
+
+  const drone = stomp(TILE.DRONE);
+  check(!drone.dying && drone.bounced, 'schiacciare il drone funziona e fa rimbalzare');
+
+  const walker = stomp(TILE.WALKER);
+  check(!walker.dying && walker.bounced, 'il nemico normale si schiaccia ancora come prima');
+
+  // La palla di ghiaccio parte verso il gatto e lo raggiunge: non è un
+  // ostacolo fermo, è una scadenza.
+  {
+    const level = defineLevel({
+      id: 'snowball-test',
+      name: 'TEST',
+      title: 'palla',
+      sky: 'frost',
+      spawn: { c: 1, r: 12 },
+      segments: [segment({ ground: true, rows: { 12: '     &' } })],
+    });
+    const world = new World(level, enemyAudio, { onTaunt: () => {}, onWin: () => {} });
+    const idle = {
+      isDown: () => false,
+      justPressed: () => false,
+      endTick: () => {},
+    } as unknown as Input;
+
+    world.player.x = TILE_SIZE;
+    world.player.y = 12 * TILE_SIZE;
+    let killed = false;
+    for (let tick = 0; tick < 90 && !killed; tick++) {
+      world.update(idle);
+      killed = world.state !== 'playing';
+    }
+    check(killed, 'la palla di ghiaccio rotola verso il gatto e lo prende');
+  }
+}
+
+// ---------------------------------------------------------------- gatti
+//
+// I manti sbloccabili cambiano quali materiali entrano nel disegno del gatto,
+// e ogni manto ha marcature diverse: basta un materiale dimenticato perché una
+// coordinata diventi NaN e il gatto sparisca — ma solo per chi ha trovato
+// abbastanza gomitoli, cioè per nessuno finché non è troppo tardi.
+console.log('\nGatti');
+{
+  const catAudio = new Audio();
+  const level = LEVELS[0]!;
+  const world = new World(level, catAudio, { onTaunt: () => {}, onWin: () => {} });
+  const idle = {
+    isDown: () => false,
+    justPressed: () => false,
+    endTick: () => {},
+  } as unknown as Input;
+
+  for (const cat of CATS) {
+    const renderer = new NullRenderer();
+    world.player.skin = cat;
+    let crashed: unknown = null;
+    try {
+      for (let tick = 0; tick < 30; tick++) {
+        world.update(idle);
+        world.draw(renderer, tick);
+      }
+    } catch (error) {
+      crashed = error;
+    }
+    check(
+      crashed === null && renderer.problems.length === 0 && renderer.transformDepth === 0,
+      `${cat.name}: si disegna senza coordinate invalide`,
+    );
+  }
+
+  check(
+    CATS.filter((cat) => cat.yarn === 0).length === 1,
+    'esiste un solo gatto disponibile da subito',
+  );
+  check(
+    CATS.every((cat) => cat.yarn <= SECRET_COUNT),
+    `nessun gatto chiede più gomitoli di quanti ne esistano (${SECRET_COUNT})`,
+  );
 }
 
 // ---------------------------------------------------------------- regressione: corsa piatta

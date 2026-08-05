@@ -34,7 +34,9 @@ esattamente cosa ti ha fregato.
 
 ## Cosa ti aspetta
 
-Quattro livelli, un gatto, e un numero imbarazzante di modi per morire.
+Due mondi, nove livelli, cinque gatti e un numero imbarazzante di modi per morire.
+
+**Mondo 1 — la collina.** Sembra un platform normale. Non lo è.
 
 | | |
 |---|---|
@@ -46,7 +48,28 @@ Quattro livelli, un gatto, e un numero imbarazzante di modi per morire.
 | 🏮 **Il checkpoint** | quella lanterna non si accende mai, sai |
 | 🔻 **Gli spuntoni invisibili** | la prima morte è gratis. La seconda è colpa tua |
 
+**Mondo 2 — il gelo e la fabbrica.** Qui non cambiano le cose: cambia il pavimento.
+
+| | |
+|---|---|
+| 🧊 **Il ghiaccio** | frenare diventa una manovra. Si vede benissimo: è leale |
+| 🩶 **Il ghiaccio sottile** | uguale all'altro finché non ci sali sopra |
+| ⚙️ **Il nastro** | il pavimento ha un'opinione sua su dove stai andando |
+| ♨️ **Il getto di vapore** | ti solleva dove il salto non arriva. Uno su due è spento |
+| 🛡️ **La sentinella** | ti vede, si pianta un attimo, poi ti viene addosso |
+| 🛸 **Il drone** | passa e ripassa sempre uguale. È l'unico che si schiaccia |
+| ⚪ **La palla di ghiaccio** | rotola verso di te, ed è più veloce di te |
+
 Chi arriva in fondo ha imparato dove si muore. Non è la stessa cosa di essere bravo.
+
+## I gomitoli
+
+Ogni livello del secondo mondo nasconde **un gomitolo** dietro qualcosa che sembra
+un muro. Trovarli sblocca altri gatti: nero, soriano, siamese, e uno che si ottiene
+solo dopo aver finito tutto.
+
+Non danno nessun vantaggio — nemmeno mezzo pixel di salto in più. Cambiano solo la
+faccia di chi muore, ed è l'unica promessa che questo gioco mantiene per intero.
 
 ## Comandi
 

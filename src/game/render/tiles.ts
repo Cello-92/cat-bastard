@@ -63,6 +63,9 @@ export function drawTile(r: Renderer, tile: string, x: number, y: number, ctx: T
     case TILE.GROUND:
       drawGround(r, x, y, ctx);
       break;
+    case TILE.SNOW:
+      drawGround(r, x, y, ctx, true);
+      break;
     case TILE.ROCK:
       drawRock(r, x, y, ctx);
       break;
@@ -116,6 +119,38 @@ export function drawTile(r: Renderer, tile: string, x: number, y: number, ctx: T
       break;
     case TILE.SPRING:
       drawSpring(r, x, y, ctx);
+      break;
+    case TILE.ICE:
+      drawIce(r, x, y, ctx, false);
+      break;
+    case TILE.BRITTLE_ICE:
+      // Identico al ghiaccio buono finché non ci sali sopra: solo allora si
+      // crepa. Il preavviso c'è, ma dura dieci tick.
+      drawIce(r, x, y, ctx, ctx.crumbling);
+      break;
+    case TILE.STEEL:
+      drawSteel(r, x, y, ctx);
+      break;
+    case TILE.FAKE_WALL:
+      // Finché non ci sei passato attraverso è una parete e basta: disegnarla
+      // anche solo un filo diversa vorrebbe dire regalare il segreto a chi
+      // guarda lo schermo da fermo. Dopo, invece, resta marcata.
+      drawSteel(r, x, y, ctx);
+      if (ctx.revealed) drawOpenSeam(r, x, y, ctx);
+      break;
+    case TILE.BELT_RIGHT:
+      drawBelt(r, x, y, ctx, 1);
+      break;
+    case TILE.BELT_LEFT:
+      drawBelt(r, x, y, ctx, -1);
+      break;
+    case TILE.VENT:
+    case TILE.DEAD_VENT:
+      // Stesso vapore, stesso rumore, stessa griglia. Uno solleva, l'altro no.
+      drawVent(r, x, y, ctx);
+      break;
+    case TILE.YARN:
+      drawYarn(r, x, y, ctx);
       break;
     case TILE.COIN:
     case TILE.LURE_COIN:
@@ -224,7 +259,7 @@ function speckle(
  * Terra: sezione di suolo con strati, sassi inclusi e — se la faccia superiore
  * è esposta — il manto erboso con i suoi ciuffi e le radici che scendono.
  */
-function drawGround(r: Renderer, x: number, y: number, ctx: TileDrawContext): void {
+function drawGround(r: Renderer, x: number, y: number, ctx: TileDrawContext, snowy = false): void {
   const soil = MATERIAL.soil;
 
   // Il gradiente "chiaro sopra, scuro sotto" vale per una superficie esposta.
@@ -256,7 +291,57 @@ function drawGround(r: Renderer, x: number, y: number, ctx: TileDrawContext): vo
   speckle(r, x, y, ctx, 3, MATERIAL.rock, ctx.open.up ? 12 : 4);
   occlude(r, x, y, soil, ctx.open);
 
-  if (ctx.open.up) drawGrassMantle(r, x, y, ctx);
+  if (!ctx.open.up) return;
+  if (snowy) drawSnowMantle(r, x, y, ctx);
+  else drawGrassMantle(r, x, y, ctx);
+}
+
+/**
+ * Manto nevoso: la stessa struttura del manto erboso — un bordo irregolare che
+ * scende nella terra, luce sopra, ombra al contatto — ma la neve non ha fili:
+ * ha cumuli. Il profilo superiore esce dalla cella verso l'alto, così il
+ * terreno innevato sembra *coperto* e non semplicemente ridipinto di bianco.
+ */
+function drawSnowMantle(r: Renderer, x: number, y: number, ctx: TileDrawContext): void {
+  const snow = MATERIAL.snow;
+  const depth = 10;
+
+  // Cumulo: bordo superiore ondulato che sporge sopra la linea della cella.
+  const crest: number[] = [x - 1, y + depth + 2];
+  for (let i = 0; i <= 4; i++) {
+    const px = x + (i / 4) * T;
+    const py = y - 3 + cellNoise(ctx.col, ctx.row, i + 350) * 5;
+    crest.push(px, py);
+  }
+  crest.push(x + T + 1, y + depth + 2);
+  r.blob(crest, snow.base);
+
+  // Luce sulla sommità, ombra azzurra dove la neve incontra la terra.
+  r.gradientRect(x, y - 2, T, depth + 4, [
+    { at: 0, color: alpha(snow.light, 0.95) },
+    { at: 0.55, color: alpha(snow.base, 0.55) },
+    { at: 1, color: alpha(snow.dark, 0.45) },
+  ]);
+
+  // Croste di ghiaccio dove la neve si è sciolta e riformata.
+  r.push();
+  r.setAlpha(0.4);
+  for (let i = 0; i < 3; i++) {
+    const cx = x + 3 + cellNoise(ctx.col, ctx.row, i + 360) * (T - 6);
+    r.ellipse(cx, y + depth + 1, 3 + cellNoise(ctx.col, ctx.row, i + 370) * 3, 1.4, MATERIAL.ice.base);
+  }
+  r.pop();
+
+  // Cristalli: pochi punti che accendono la superficie, sempre gli stessi.
+  r.push();
+  r.setBlend('add');
+  r.setAlpha(0.5 + wave(ctx.tick + ctx.col * 13, 70) * 0.4);
+  for (let i = 0; i < 2; i++) {
+    const sx = x + 4 + cellNoise(ctx.col, ctx.row, i + 380) * (T - 8);
+    const sy = y - 1 + cellNoise(ctx.col, ctx.row, i + 390) * 4;
+    r.ellipse(sx, sy, 0.9, 0.9, glare(0.9));
+  }
+  r.pop();
 }
 
 /** Manto erboso sulla faccia esposta al cielo, con radici e fili singoli. */
@@ -794,6 +879,355 @@ function drawSpring(r: Renderer, x: number, y: number, ctx: TileDrawContext): vo
     { at: 1, color: alpha(PALETTE.hot, 0) },
   ]);
   r.pop();
+}
+
+// ---------------------------------------------------------------- mondo 2
+/**
+ * Ghiaccio.
+ *
+ * È l'unico materiale del gioco che si guarda *dentro*: sotto la superficie
+ * lucida corrono fratture e bolle d'aria intrappolate, e il colore si satura
+ * con la profondità invece di scurirsi. La lastra sottile è identica finché
+ * non si crepa — la crepa è tutto il preavviso, e arriva quando sei già sopra.
+ */
+function drawIce(r: Renderer, x: number, y: number, ctx: TileDrawContext, cracking: boolean): void {
+  const m = MATERIAL.ice;
+
+  // Corpo: chiaro in superficie, sempre più saturo verso il fondo.
+  r.gradientRect(x, y, T, T, ctx.open.up
+    ? [
+        { at: 0, color: m.light },
+        { at: 0.18, color: mix(m.light, m.base, 0.6) },
+        { at: 0.7, color: m.base },
+        { at: 1, color: m.dark },
+      ]
+    : [
+        { at: 0, color: mix(m.base, m.dark, 0.25) },
+        { at: 1, color: mix(m.base, m.dark, 0.65) },
+      ]);
+
+  // Fratture interne: piani di rottura che riflettono la luce da dentro.
+  r.push();
+  r.setAlpha(0.35);
+  for (let i = 0; i < 3; i++) {
+    const nx = cellNoise(ctx.col, ctx.row, i + 700);
+    const ny = cellNoise(ctx.col, ctx.row, i + 710);
+    const px = x + 3 + nx * (T - 8);
+    const py = y + 4 + ny * (T - 10);
+    r.line([px, py, px + 5 + nx * 7, py - 4 - ny * 5], 1.2, alpha(m.light, 0.9));
+    r.line([px, py, px - 4 - ny * 6, py + 5 + nx * 5], 0.9, alpha(m.spec, 0.5));
+  }
+  r.pop();
+
+  // Bolle d'aria: piccole, tonde, sempre negli stessi punti.
+  for (let i = 0; i < 3; i++) {
+    const bx = x + 5 + cellNoise(ctx.col, ctx.row, i + 720) * (T - 10);
+    const by = y + 7 + cellNoise(ctx.col, ctx.row, i + 730) * (T - 14);
+    const rad = 0.8 + cellNoise(ctx.col, ctx.row, i + 740) * 1.4;
+    r.ellipse(bx, by, rad, rad, alpha(m.deep, 0.35));
+    r.ellipse(bx - rad * 0.3, by - rad * 0.3, rad * 0.5, rad * 0.5, glare(0.5));
+  }
+
+  occlude(r, x, y, m, ctx.open);
+
+  if (ctx.open.up) {
+    // Pellicola lucida in superficie: è quella che dice "qui non si frena".
+    r.push();
+    r.setBlend('add');
+    r.setAlpha(0.3);
+    r.gradientRect(x, y, T, 6, [
+      { at: 0, color: alpha(m.spec, 0.75) },
+      { at: 1, color: alpha(m.spec, 0) },
+    ]);
+    r.pop();
+    // Riflesso obliquo, sempre nello stesso punto della cella.
+    r.push();
+    r.setAlpha(0.4);
+    const sx = x + 4 + cellNoise(ctx.col, ctx.row, 750) * (T - 14);
+    r.polygon([sx, y + 2, sx + 6, y + 2, sx - 2, y + 11, sx - 7, y + 11], glare(0.8));
+    r.pop();
+  }
+
+  if (ctx.open.down) {
+    // Ghiaccioli sotto la lastra: si vedono solo dove il ghiaccio è esposto.
+    for (let i = 0; i < 3; i++) {
+      const ix = x + 5 + i * 10 + cellNoise(ctx.col, ctx.row, i + 760) * 3;
+      const len = 3 + cellNoise(ctx.col, ctx.row, i + 770) * 6;
+      r.polygon([ix - 2, y + T, ix + 2, y + T, ix, y + T + len], alpha(m.base, 0.85));
+      r.line([ix, y + T, ix, y + T + len * 0.7], 0.8, alpha(m.spec, 0.6));
+    }
+  }
+
+  if (cracking) {
+    // Crepe che si aprono: partono dal centro e raggiungono i bordi.
+    r.push();
+    r.setAlpha(0.55 + wave(ctx.tick, 5) * 0.35);
+    const cx = x + T / 2;
+    const cy = y + T / 2;
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2 + cellNoise(ctx.col, ctx.row, 780);
+      r.line(
+        [cx, cy, cx + Math.cos(a) * T * 0.3, cy + Math.sin(a) * T * 0.3, cx + Math.cos(a + 0.3) * T * 0.5, cy + Math.sin(a + 0.3) * T * 0.5],
+        1.2,
+        m.deep,
+      );
+    }
+    r.pop();
+  }
+}
+
+/**
+ * Lamiera della fabbrica: pannello imbullonato, giunti incassati, colature di
+ * ruggine. È il pavimento più onesto del gioco — e proprio per questo è quello
+ * dietro cui si nasconde il gomitolo.
+ */
+function drawSteel(r: Renderer, x: number, y: number, ctx: TileDrawContext): void {
+  const m = MATERIAL.plate;
+
+  r.gradientRect(x, y, T, T, ctx.open.up
+    ? bodyStops(m)
+    : [
+        { at: 0, color: mix(m.base, m.dark, 0.3) },
+        { at: 1, color: mix(m.base, m.dark, 0.65) },
+      ]);
+
+  // Spazzolatura verticale: righe finissime, sempre le stesse.
+  r.push();
+  r.setAlpha(0.12);
+  for (let i = 0; i < 6; i++) {
+    const sx = x + 2 + i * 5 + cellNoise(ctx.col, ctx.row, i + 800) * 2;
+    r.line([sx, y + 1, sx, y + T - 1], 1, i % 2 ? m.light : m.dark);
+  }
+  r.pop();
+
+  // Giunto incassato lungo il bordo del pannello.
+  r.rect(x + 3, y + 3, T - 6, 1, alpha(m.deep, 0.55));
+  r.rect(x + 3, y + 4, T - 6, 0.8, alpha(m.light, 0.3));
+  r.rect(x + 3, y + T - 4, T - 6, 1, alpha(m.deep, 0.5));
+
+  // Bulloni agli angoli: testa esagonale, luce in alto a sinistra.
+  for (const [dx, dy] of [[6, 6], [T - 6, 6], [6, T - 6], [T - 6, T - 6]] as const) {
+    r.ellipse(x + dx, y + dy + 0.6, 2.2, 2.2, alpha(m.deep, 0.7));
+    r.ellipse(x + dx, y + dy, 2.2, 2.2, m.base);
+    r.ellipse(x + dx - 0.5, y + dy - 0.6, 1.2, 1.1, m.light);
+    r.ellipse(x + dx - 0.7, y + dy - 0.8, 0.5, 0.45, m.spec);
+  }
+
+  // Ruggine che cola dai bulloni: la fabbrica è ferma da un pezzo.
+  r.push();
+  r.setAlpha(0.16);
+  for (let i = 0; i < 2; i++) {
+    const rx = x + 5 + cellNoise(ctx.col, ctx.row, i + 810) * (T - 10);
+    r.gradientRect(rx, y + 7, 2, T - 10, [
+      { at: 0, color: alpha(MATERIAL.copper.dark, 0.9) },
+      { at: 1, color: alpha(MATERIAL.copper.dark, 0) },
+    ]);
+  }
+  r.pop();
+
+  occlude(r, x, y, m, ctx.open);
+}
+
+/**
+ * La giuntura di una parete già attraversata.
+ *
+ * Non si vede prima — prima è lamiera identica alle altre — e non serve a
+ * insospettire: serve a *ricordare*. Trovato un passaggio, non lo si deve
+ * ricercare a tentoni ogni volta che si rientra nel livello.
+ */
+function drawOpenSeam(r: Renderer, x: number, y: number, ctx: TileDrawContext): void {
+  r.push();
+  r.setAlpha(0.5 + wave(ctx.tick, 60) * 0.25);
+  r.line([x + 2, y + 2, x + 2, y + T - 2], 1.4, alpha(PALETTE.yarn, 0.9));
+  r.line([x + T - 2, y + 2, x + T - 2, y + T - 2], 1.4, alpha(PALETTE.yarn, 0.6));
+  r.pop();
+  r.push();
+  r.setBlend('add');
+  r.setAlpha(0.1 + wave(ctx.tick, 60) * 0.08);
+  r.gradientRect(x, y, T, T, [
+    { at: 0, color: alpha(PALETTE.yarn, 0.5) },
+    { at: 1, color: alpha(PALETTE.yarn, 0) },
+  ], true);
+  r.pop();
+}
+
+/**
+ * Nastro trasportatore.
+ *
+ * Deve leggersi *da fermo* in che verso porta: i galloni scorrono, i rulli
+ * girano, e la banda si vede rientrare sotto il telaio. Se il giocatore
+ * capisce dove lo porta solo dopo esserci salito, non è una regola nuova —
+ * è un imbroglio, e quelli si fanno altrove.
+ */
+function drawBelt(r: Renderer, x: number, y: number, ctx: TileDrawContext, direction: number): void {
+  const rubber = MATERIAL.rubber;
+  const iron = MATERIAL.iron;
+  const beltTop = y + 6;
+  const beltH = 11;
+
+  // Telaio sotto la banda.
+  r.gradientRect(x, y + T - 14, T, 14, bodyStops(iron));
+  r.push();
+  r.setAlpha(0.4);
+  r.line([x, y + T - 6, x + T, y + T - 6], 1, iron.deep);
+  r.pop();
+
+  // Banda di gomma.
+  r.gradientRect(x, beltTop, T, beltH, [
+    { at: 0, color: rubber.light },
+    { at: 0.25, color: rubber.base },
+    { at: 1, color: rubber.deep },
+  ]);
+  r.rect(x, beltTop, T, 1.2, alpha(rubber.spec, 0.55));
+
+  // Galloni: scorrono nel verso del nastro, a velocità costante.
+  const shift = ((ctx.tick * 1.25 * direction) % 12 + 12) % 12;
+  r.push();
+  r.clipRect(x, beltTop, T, beltH);
+  r.setAlpha(0.85);
+  for (let i = -1; i < 3; i++) {
+    const gx = x + i * 12 + shift;
+    r.polygon(
+      [
+        gx, beltTop + 1.5,
+        gx + direction * 5, beltTop + beltH / 2,
+        gx, beltTop + beltH - 1.5,
+        gx + direction * 2.6, beltTop + beltH - 1.5,
+        gx + direction * 7.6, beltTop + beltH / 2,
+        gx + direction * 2.6, beltTop + 1.5,
+      ],
+      MATERIAL.gold.base,
+    );
+  }
+  r.pop();
+
+  // Rulli di rinvio sotto la banda: piccoli e fitti, come su un nastro vero.
+  // Grossi e uno per cella diventerebbero una fila di cerchi ripetuti, che è
+  // il modo più veloce per far sembrare un mondo una griglia.
+  const spin = (ctx.tick * 0.16 * direction) % (Math.PI * 2);
+  for (let i = 0; i < 3; i++) {
+    const rx = x + 6 + i * 10;
+    const ry = beltTop + beltH + 3.5;
+    r.ellipse(rx, ry, 3, 3, MATERIAL.steel.dark);
+    r.ellipse(rx - 0.6, ry - 0.8, 1.6, 1.6, alpha(MATERIAL.steel.light, 0.7));
+    r.line([rx, ry, rx + Math.cos(spin + i) * 2.4, ry + Math.sin(spin + i) * 2.4], 0.8, MATERIAL.steel.deep);
+  }
+
+  // Ombra proiettata dalla banda sul telaio.
+  r.gradientRect(x, beltTop + beltH, T, 4, [
+    { at: 0, color: shade(0.4) },
+    { at: 1, color: shade(0) },
+  ]);
+}
+
+/**
+ * Getto di vapore.
+ *
+ * La griglia da cui esce è di ferro, e il vapore sale a sbuffi regolari: la
+ * fase dipende da riga e colonna, quindi ogni getto ha il suo ritmo e resta
+ * identico a ogni tentativo. Il getto spento usa esattamente questo disegno —
+ * per distinguerli bisogna entrarci, che è il prezzo del biglietto.
+ */
+function drawVent(r: Renderer, x: number, y: number, ctx: TileDrawContext): void {
+  const iron = MATERIAL.iron;
+  const phase = ctx.tick * 0.09 + ctx.col * 1.7 + ctx.row * 0.9;
+
+  // Bocchetta: si vede solo se sotto c'è qualcosa, ma disegnarla sempre rende
+  // la colonna di vapore leggibile anche a mezz'aria.
+  if (!ctx.open.down) {
+    r.gradientRect(x + 2, y + T - 7, T - 4, 7, bodyStops(iron));
+    for (let i = 0; i < 3; i++) {
+      const sx = x + 5 + i * ((T - 10) / 3);
+      r.rect(sx, y + T - 5.5, (T - 10) / 3 - 2, 3.5, iron.deep);
+    }
+    r.rect(x + 2, y + T - 7, T - 4, 1, alpha(iron.light, 0.6));
+  }
+
+  // Il fusto del getto: una colonna piena che riempie la cella. Deve leggersi
+  // *da lontano* — è l'unica cosa del gioco che il giocatore deve vedere prima
+  // di saltarci dentro, perché la spinta comincia dove comincia il vapore.
+  // Il riempimento è *uniforme* dentro la cella, non sfumato: una cella alla
+  // volta con un gradiente proprio darebbe una colonna a fasce, e il getto
+  // sembrerebbe una pila di scatole invece di una cosa sola.
+  r.push();
+  r.setBlend('add');
+  r.setAlpha(0.26 + wave(ctx.tick + ctx.col * 7, 34) * 0.08);
+  r.gradientRect(x + 3, y, T - 6, T, [
+    { at: 0, color: alpha(PALETTE.steam, 0.1) },
+    { at: 0.5, color: alpha(PALETTE.steam, 0.55) },
+    { at: 1, color: alpha(PALETTE.steam, 0.1) },
+  ], true);
+  r.pop();
+
+  // Sbuffi: quattro nuvole che salgono e si allargano, sfasate tra loro.
+  r.push();
+  for (let i = 0; i < 4; i++) {
+    const t = (phase + i * 0.25) % 1;
+    const py = y + T - t * T;
+    const spread = 7 + t * 11;
+    r.setAlpha(0.75 * (1 - t * 0.7));
+    r.radial(x + T / 2 + Math.sin(phase * 2 + i) * 3, py, spread, spread * 0.8, [
+      { at: 0, color: alpha(PALETTE.steam, 0.85) },
+      { at: 0.5, color: alpha(PALETTE.steam, 0.35) },
+      { at: 1, color: alpha(PALETTE.steam, 0) },
+    ]);
+  }
+  r.pop();
+}
+
+/**
+ * Il gomitolo.
+ *
+ * L'unico oggetto del gioco disegnato per essere *desiderato*: lana calda in
+ * un mondo di lamiera, un alone che si vede da fuori schermo quando la stanza
+ * segreta si apre, e il capo del filo che penzola. Nessuna trappola gli
+ * somiglia — se assomigliasse a qualcosa che uccide, trovarlo non sarebbe una
+ * ricompensa ma un'altra tassa.
+ */
+function drawYarn(r: Renderer, x: number, y: number, ctx: TileDrawContext): void {
+  const cx = x + T / 2;
+  const bob = Math.sin((ctx.tick + ctx.col * 11) / 22) * 2.4;
+  const cy = y + T / 2 + bob;
+  const radius = 9.5;
+
+  // Alone: è la cosa che si nota per prima, ed è voluto.
+  r.push();
+  r.setBlend('add');
+  r.setAlpha(0.18 + wave(ctx.tick, 44) * 0.16);
+  r.radial(cx, cy, 26, 26, [
+    { at: 0, color: alpha(PALETTE.yarn, 0.7) },
+    { at: 1, color: alpha(PALETTE.yarn, 0) },
+  ]);
+  r.pop();
+
+  // Palla: sfera di lana, luce in alto a sinistra come tutto il resto.
+  r.ellipse(cx, cy + 0.8, radius, radius, alpha(PALETTE.hotDeep, 0.55));
+  r.ellipse(cx, cy, radius, radius, PALETTE.yarn);
+  r.push();
+  r.setAlpha(0.8);
+  r.radial(cx - 3, cy - 3.4, radius * 0.8, radius * 0.8, [
+    { at: 0, color: glare(0.6) },
+    { at: 1, color: glare(0) },
+  ]);
+  r.pop();
+
+  // Avvolgimento: tre fasci di fili in direzioni diverse, come un gomitolo vero.
+  r.push();
+  r.setAlpha(0.55);
+  for (let i = -2; i <= 2; i++) {
+    const off = i * 3.2;
+    r.line([cx - radius + 1, cy + off * 0.6, cx, cy + off, cx + radius - 1, cy + off * 0.6], 1, PALETTE.hotDeep);
+    r.line([cx + off * 0.6, cy - radius + 1, cx + off, cy, cx + off * 0.6, cy + radius - 1], 1, alpha(PALETTE.paper, 0.5));
+  }
+  r.pop();
+
+  // Il capo del filo, che penzola e ondeggia piano.
+  const sway = Math.sin(ctx.tick / 18) * 3;
+  r.line(
+    [cx + radius - 2, cy + 3, cx + radius + 4 + sway, cy + 8, cx + radius + 1 + sway, cy + 13],
+    1.2,
+    PALETTE.yarn,
+  );
 }
 
 // ---------------------------------------------------------------- raccolte

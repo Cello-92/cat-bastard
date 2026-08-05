@@ -9,16 +9,19 @@ import { FEEL, PHYSICS, RULES, TILE_SIZE, VIEW_HEIGHT, VIEW_WIDTH } from './conf
 import { Effects } from './effects';
 import { Entity } from './entities/entity';
 import { Diver } from './entities/diver';
+import { Drone } from './entities/drone';
 import { FallingSpike } from './entities/falling-spike';
 import { Player } from './entities/player';
+import { Sentry } from './entities/sentry';
 import { Shroom } from './entities/shroom';
+import { Snowball } from './entities/snowball';
 import { Walker } from './entities/walker';
 import type { LevelDef } from './levels';
 import { drawBackground } from './render/background';
 import { drawTile, type OpenSides } from './render/tiles';
 import { MATERIAL, PALETTE, SKIES, alpha } from './theme';
 import { DEATH_CAUSE, tauntFor, type DeathCause } from './taunts';
-import { TILE, isDeadly, isEarth, isSolid, isSpawner } from './tiles';
+import { TILE, isDeadly, isSpawner, joins } from './tiles';
 
 /**
  * Il mondo di gioco: mappa, entità, regole, camera.
@@ -38,11 +41,15 @@ export interface RunStats {
   deaths: number;
   coins: number;
   ticks: number;
+  /** Il gomitolo nascosto è stato trovato in questo tentativo? */
+  secret: boolean;
 }
 
 export interface WorldCallbacks {
   onTaunt(text: string): void;
   onWin(stats: RunStats): void;
+  /** Gomitolo raccolto: va segnato subito, anche se poi il livello non finisce. */
+  onSecret?(): void;
 }
 
 /** Da quale tile letale è arrivata la morte: serve a scegliere la battuta. */
@@ -63,6 +70,16 @@ const causeOfTile = (tile: string): DeathCause => {
     default:
       return DEATH_CAUSE.generic;
   }
+};
+
+/** Ritardo di cedimento delle superfici che spariscono, per tile. */
+const VANISH_DELAY: Readonly<Record<string, number>> = {
+  [TILE.CRUMBLE]: RULES.crumbleDelayTicks,
+  // Un solo tick di vita: non trema, non si scurisce, non fa rumore finché è
+  // troppo tardi. Quando te ne accorgi sei già in caduta.
+  [TILE.GHOST]: RULES.ghostDelayTicks,
+  [TILE.FAKE_GROUND]: RULES.fakeGroundDelayTicks,
+  [TILE.BRITTLE_ICE]: RULES.brittleIceDelayTicks,
 };
 
 interface TrapBrick {
@@ -116,6 +133,16 @@ export class World {
   private discovered = new Set<string>();
   private checkpoint: { c: number; r: number } | null = null;
   private deathTimer = 0;
+  /**
+   * Tick in cui il gatto ha toccato l'ultimo getto spento.
+   *
+   * Serve solo a scegliere la battuta: chi cade subito dopo essersi buttato
+   * dentro un getto che non spingeva non è morto "nel vuoto", è morto per
+   * quella trappola lì, e il gioco glielo deve dire (CLAUDE.md, punto 7).
+   */
+  private lastDeadVent = -1000;
+  /** Il gomitolo di questo livello è già stato preso in questo tentativo. */
+  secretFound = false;
 
   constructor(
     public level: LevelDef,
@@ -132,6 +159,7 @@ export class World {
     this.coins = 0;
     this.ticks = 0;
     this.checkpoint = null;
+    this.secretFound = false;
     // Ricominciare da capo significa anche tornare a non sapere dove sono le
     // trappole invisibili: è l'unica cosa che il respawn non porta con sé.
     this.discovered.clear();
@@ -155,11 +183,7 @@ export class World {
     for (const { c, r, tile } of this.map.entries()) {
       if (isSpawner(tile)) {
         this.map.clear(c, r);
-        if (tile === TILE.DIVER) {
-          this.entities.push(new Diver(c * TILE_SIZE + 3, r * TILE_SIZE + 6));
-        } else {
-          this.entities.push(new Walker(c * TILE_SIZE + 3, r * TILE_SIZE + 6, tile === TILE.EVIL_WALKER));
-        }
+        this.entities.push(this.spawn(tile, c, r));
       } else if (tile === TILE.TRAP_BRICK) {
         this.trapBricks.push({ c, r, fired: false, instant: false });
       } else if (tile === TILE.COLLAPSE) {
@@ -174,6 +198,30 @@ export class World {
     const spawn = this.checkpoint ?? this.level.spawn;
     this.player.reset(spawn.c * TILE_SIZE + 5, spawn.r * TILE_SIZE);
     this.camera.snapTo(this.player.centerX, this.map.widthPx);
+    this.lastDeadVent = -1000;
+  }
+
+  /**
+   * Dal marcatore all'entità.
+   *
+   * Ogni nemico nasce già al posto giusto dentro la cella: qualche pixel di
+   * margine, così non compenetra il pavimento al primo tick.
+   */
+  private spawn(tile: string, c: number, r: number): Entity {
+    const x = c * TILE_SIZE + 3;
+    const y = r * TILE_SIZE + 6;
+    switch (tile) {
+      case TILE.DIVER:
+        return new Diver(x, y);
+      case TILE.SENTRY:
+        return new Sentry(c * TILE_SIZE + 2, r * TILE_SIZE + 4);
+      case TILE.DRONE:
+        return new Drone(c * TILE_SIZE + 3, r * TILE_SIZE + 8);
+      case TILE.SNOWBALL:
+        return new Snowball(c * TILE_SIZE + 1, r * TILE_SIZE + 2);
+      default:
+        return new Walker(x, y, tile === TILE.EVIL_WALKER);
+    }
   }
 
   // ---------------------------------------------------------------- ciclo
@@ -226,6 +274,17 @@ export class World {
     for (const { c, r, tile } of this.map.touching(this.player)) {
       if (tile === TILE.COIN) {
         this.collectCoin(c, r);
+      } else if (tile === TILE.YARN) {
+        this.collectYarn(c, r);
+      } else if (tile === TILE.FAKE_WALL) {
+        // Una volta che ci sei passato attraverso resta segnata per tutto il
+        // tentativo: il segreto è nasconderla la prima volta, non farti
+        // ricercare a memoria una parete che hai già trovato.
+        this.discovered.add(TileMap.key(c, r));
+      } else if (tile === TILE.DEAD_VENT) {
+        // Non fa niente. È esattamente questo il punto: se ne prende nota solo
+        // per poter dare la colpa a lui quando il gatto arriva in fondo.
+        this.lastDeadVent = this.ticks;
       } else if (tile === TILE.CHECKPOINT) {
         this.activateCheckpoint(c, r);
       } else if (tile === TILE.GOAL) {
@@ -263,6 +322,26 @@ export class World {
     this.effects.floatingText(x, y - 6, '+1', PALETTE.gold, 13);
   }
 
+  /**
+   * Il gomitolo: l'unica cosa nascosta del gioco che non ti ammazza.
+   *
+   * Ne esiste uno per livello, sempre dietro qualcosa che sembrava un muro.
+   * Vale per tutta la partita, non per il tentativo: raccoglierlo e poi morire
+   * non lo fa perdere — sarebbe l'ennesima cattiveria, e questa parte del gioco
+   * è deliberatamente gentile.
+   */
+  private collectYarn(c: number, r: number): void {
+    this.map.clear(c, r);
+    this.secretFound = true;
+    this.audio.play('win');
+    const x = c * TILE_SIZE + TILE_SIZE / 2;
+    const y = r * TILE_SIZE + TILE_SIZE / 2;
+    this.effects.ring(x, y, PALETTE.yarn, 4.2, 20);
+    this.effects.burst(x, y, PALETTE.yarn, { count: 18, speed: 3.4, size: 4, life: 34 });
+    this.effects.floatingText(x, y - 8, 'GOMITOLO', PALETTE.yarn, 13);
+    this.callbacks.onSecret?.();
+  }
+
   private activateCheckpoint(c: number, r: number): void {
     if (this.checkpoint?.c === c && this.checkpoint.r === r) return;
     this.checkpoint = { c, r };
@@ -284,34 +363,26 @@ export class World {
     for (const { c, r, tile } of groundTiles(this.player, this.map)) {
       if (tile === TILE.INVISIBLE) {
         this.reveal(c, r);
-      } else if (tile === TILE.CRUMBLE) {
-        const key = TileMap.key(c, r);
-        if (!this.crumbling.has(key)) {
-          this.crumbling.set(key, RULES.crumbleDelayTicks);
-          this.audio.play('crumble');
-        }
-      } else if (tile === TILE.GHOST) {
-        // Un solo tick di vita. Non trema, non si scurisce, non fa rumore
-        // finché è troppo tardi: quando te ne accorgi sei già in caduta.
-        const key = TileMap.key(c, r);
-        if (!this.crumbling.has(key)) {
-          this.crumbling.set(key, RULES.ghostDelayTicks);
-          this.audio.play('crumble');
-        }
-      } else if (tile === TILE.FAKE_GROUND) {
-        // Il pavimento cede quasi subito: il tempo di accorgersene e sei già giù.
-        const key = TileMap.key(c, r);
-        if (!this.crumbling.has(key)) {
-          this.crumbling.set(key, RULES.fakeGroundDelayTicks);
-          this.audio.play('crumble');
-          this.effects.burst(c * TILE_SIZE + TILE_SIZE / 2, r * TILE_SIZE + 4, PALETTE.dust, {
-            count: 6,
-            speed: 1.6,
-            size: 3,
-            life: 20,
-            shape: 'circle',
-          });
-        }
+        continue;
+      }
+
+      const delay = VANISH_DELAY[tile];
+      if (delay === undefined) continue;
+
+      const key = TileMap.key(c, r);
+      if (this.crumbling.has(key)) continue;
+
+      this.crumbling.set(key, delay);
+      this.audio.play('crumble');
+      // Polvere o schegge sotto le zampe: per il terreno finto e il ghiaccio
+      // sottile è l'unico avviso che arriva prima della caduta.
+      if (tile === TILE.FAKE_GROUND || tile === TILE.BRITTLE_ICE) {
+        this.effects.burst(
+          c * TILE_SIZE + TILE_SIZE / 2,
+          r * TILE_SIZE + 4,
+          tile === TILE.BRITTLE_ICE ? PALETTE.ice : PALETTE.dust,
+          { count: 6, speed: 1.6, size: 3, life: 20, shape: 'circle' },
+        );
       }
     }
   }
@@ -373,9 +444,12 @@ export class World {
       const [cs, rs] = key.split(',');
       const c = Number(cs);
       const r = Number(rs);
+      // I detriti sono del materiale che ha appena ceduto: legno per l'asse,
+      // ghiaccio per la lastra. Va letto prima di cancellare la cella.
+      const debris = this.map.get(c, r) === TILE.BRITTLE_ICE ? PALETTE.ice : PALETTE.wood;
       this.map.clear(c, r);
       this.crumbling.delete(key);
-      this.effects.burst(c * TILE_SIZE + TILE_SIZE / 2, r * TILE_SIZE + TILE_SIZE / 2, PALETTE.wood, {
+      this.effects.burst(c * TILE_SIZE + TILE_SIZE / 2, r * TILE_SIZE + TILE_SIZE / 2, debris, {
         count: 12,
         speed: 2.8,
         size: 5,
@@ -506,6 +580,12 @@ export class World {
   kill(cause: DeathCause = DEATH_CAUSE.generic): void {
     if (this.state !== 'playing') return;
 
+    // Chi è appena stato dentro un getto che non spingeva non è caduto "nel
+    // vuoto": è caduto per colpa di quello, e la battuta deve dirlo.
+    if (cause === DEATH_CAUSE.pit && this.ticks - this.lastDeadVent < RULES.deadVentBlameTicks) {
+      cause = DEATH_CAUSE.deadVent;
+    }
+
     this.deaths++;
     this.state = 'dying';
     this.deathTimer = RULES.deathFreezeTicks;
@@ -532,7 +612,12 @@ export class World {
     this.audio.play('win');
     this.effects.flash(0.5, PALETTE.paper);
     this.effects.ring(this.player.centerX, this.player.centerY, PALETTE.gold, 6, 24);
-    this.callbacks.onWin({ deaths: this.deaths, coins: this.coins, ticks: this.ticks });
+    this.callbacks.onWin({
+      deaths: this.deaths,
+      coins: this.coins,
+      ticks: this.ticks,
+      secret: this.secretFound,
+    });
   }
 
   // ---------------------------------------------------------------- disegno
@@ -625,16 +710,13 @@ export class World {
    * quadrati tutti uguali invece di una massa continua di terreno.
    */
   private openSidesOf(c: number, r: number, tile: string): OpenSides {
-    // Il terreno si "salda" con l'altro terreno; gli altri solidi con i solidi.
-    const joins = isEarth(tile)
-      ? (other: string): boolean => isEarth(other)
-      : (other: string): boolean => isSolid(other);
-
+    // Terra con terra, ghiaccio con ghiaccio, lamiera con lamiera: la regola
+    // completa sta in tiles.ts, qui si applica e basta.
     return {
-      up: !joins(this.map.get(c, r - 1)),
-      down: !joins(this.map.get(c, r + 1)),
-      left: !joins(this.map.get(c - 1, r)),
-      right: !joins(this.map.get(c + 1, r)),
+      up: !joins(tile, this.map.get(c, r - 1)),
+      down: !joins(tile, this.map.get(c, r + 1)),
+      left: !joins(tile, this.map.get(c - 1, r)),
+      right: !joins(tile, this.map.get(c + 1, r)),
     };
   }
 }

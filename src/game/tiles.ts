@@ -69,6 +69,45 @@ export const TILE = {
    */
   HIDDEN_SPIKES: '!',
 
+  // --- Mondo 2: il ghiaccio e la fabbrica. Vocabolario tutto suo.
+  /**
+   * Terreno innevato: si comporta esattamente come `#`, e infatti è il
+   * pavimento onesto del secondo mondo. Cambia solo il manto — neve al posto
+   * dell'erba — perché un mondo nuovo che riusa il terreno del vecchio non
+   * sembra un mondo nuovo.
+   */
+  SNOW: '+',
+  /**
+   * Ghiaccio: solido come il terreno, ma non ti tiene.
+   * Non è una trappola nascosta — si vede benissimo che è ghiaccio. È una
+   * regola nuova: da qui in poi fermarsi costa più che partire.
+   */
+  ICE: '~',
+  /**
+   * Ghiaccio sottile: identico a `~` finché non ci sali. Poi si crepa e cede.
+   * Ha il suo preavviso (le crepe), come l'asse marcia del primo mondo.
+   */
+  BRITTLE_ICE: ';',
+  /** Piastra d'acciaio: il pavimento della fabbrica. Solida e onesta. */
+  STEEL: '=',
+  /** Nastro trasportatore verso destra: ti porta dove vuole lui. */
+  BELT_RIGHT: '>',
+  /** Nastro trasportatore verso sinistra. Di solito verso qualcosa di brutto. */
+  BELT_LEFT: '<',
+  /** Getto di vapore: non è solido, ti solleva finché ci resti dentro. */
+  VENT: '^',
+  /**
+   * Getto identico al precedente, stesso vapore, stesso rumore: non spinge.
+   * Nessun modo di distinguerlo prima. Dopo, sì: sei caduto dentro.
+   */
+  DEAD_VENT: ',',
+
+  // --- Segreti: non uccidono, si nascondono.
+  /** Parete d'acciaio attraversabile: dietro c'è sempre qualcosa. */
+  FAKE_WALL: ':',
+  /** Gomitolo: uno per livello, ben nascosto. Sblocca i gatti. */
+  YARN: '*',
+
   // --- Marcatori: rimossi dalla griglia al caricamento e sostituiti da entità.
   /** Nemico che cammina, schiacciabile. */
   WALKER: 'G',
@@ -76,6 +115,12 @@ export const TILE = {
   EVIL_WALKER: 'J',
   /** Bestia appesa in alto che si tuffa quando le passi sotto. */
   DIVER: 'Z',
+  /** Sentinella corazzata: cammina piano, poi ti carica. Non si schiaccia. */
+  SENTRY: 'H',
+  /** Drone: vola su una rotta fissa. Schiacciarlo funziona, e a volte serve. */
+  DRONE: '%',
+  /** Palla di ghiaccio: quando entri nel suo raggio, rotola verso di te. */
+  SNOWBALL: '&',
 } as const;
 
 export type TileChar = (typeof TILE)[keyof typeof TILE];
@@ -83,6 +128,7 @@ export type TileChar = (typeof TILE)[keyof typeof TILE];
 /** Tile contro cui si collide. */
 const SOLID = new Set<string>([
   TILE.GROUND,
+  TILE.SNOW,
   TILE.ROCK,
   TILE.FAKE_GROUND,
   TILE.GHOST,
@@ -94,6 +140,11 @@ const SOLID = new Set<string>([
   TILE.INVISIBLE,
   TILE.TRAP_BRICK,
   TILE.CRUMBLE,
+  TILE.ICE,
+  TILE.BRITTLE_ICE,
+  TILE.STEEL,
+  TILE.BELT_RIGHT,
+  TILE.BELT_LEFT,
 ]);
 
 /** Tile che al contatto uccidono, sempre e comunque. */
@@ -106,7 +157,14 @@ const DEADLY = new Set<string>([
 ]);
 
 /** Tile che vengono convertiti in entità al caricamento del livello. */
-const SPAWNERS = new Set<string>([TILE.WALKER, TILE.EVIL_WALKER, TILE.DIVER]);
+const SPAWNERS = new Set<string>([
+  TILE.WALKER,
+  TILE.EVIL_WALKER,
+  TILE.DIVER,
+  TILE.SENTRY,
+  TILE.DRONE,
+  TILE.SNOWBALL,
+]);
 
 /**
  * Tile disegnati come massa di terreno.
@@ -115,16 +173,52 @@ const SPAWNERS = new Set<string>([TILE.WALKER, TILE.EVIL_WALKER, TILE.DIVER]);
  */
 const EARTH = new Set<string>([
   TILE.GROUND,
+  TILE.SNOW,
   TILE.ROCK,
   TILE.FAKE_GROUND,
   TILE.GHOST,
   TILE.COLLAPSE,
 ]);
 
+/** Ghiaccio: una superficie, non una trappola. Si distingue a vista. */
+const ICY = new Set<string>([TILE.ICE, TILE.BRITTLE_ICE]);
+
+/**
+ * Lamiera della fabbrica. Ci sta dentro anche la parete finta, ed è il punto:
+ * deve saldarsi alle altre esattamente come farebbe una parete vera.
+ */
+const METAL = new Set<string>([
+  TILE.STEEL,
+  TILE.BELT_RIGHT,
+  TILE.BELT_LEFT,
+  TILE.FAKE_WALL,
+]);
+
 export const isSolid = (tile: string): boolean => SOLID.has(tile);
 export const isDeadly = (tile: string): boolean => DEADLY.has(tile);
 export const isSpawner = (tile: string): boolean => SPAWNERS.has(tile);
 export const isEarth = (tile: string): boolean => EARTH.has(tile);
+export const isIcy = (tile: string): boolean => ICY.has(tile);
+export const isMetal = (tile: string): boolean => METAL.has(tile);
+
+/**
+ * Due celle si "saldano" (niente bordo, niente ombra tra loro)?
+ *
+ * La terra fa massa con la terra, il ghiaccio col ghiaccio, la lamiera con la
+ * lamiera; tutto il resto si limita a poggiare sul solido. Senza questa regola
+ * una parete d'acciaio incastrata nella roccia sembrerebbe un unico blocco, e
+ * il mondo nuovo non si distinguerebbe da quello vecchio.
+ */
+export const joins = (tile: string, other: string): boolean => {
+  if (isEarth(tile)) return isEarth(other);
+  if (isIcy(tile)) return isIcy(other);
+  if (isMetal(tile)) return isMetal(other);
+  return isSolid(other);
+};
 
 /** Il blocco invisibile è solido ma va disegnato solo dopo essere stato scoperto. */
 export const isHiddenUntilTouched = (tile: string): boolean => tile === TILE.INVISIBLE;
+
+/** Verso in cui il nastro trascina: -1, 0 o +1. */
+export const beltDirection = (tile: string): number =>
+  tile === TILE.BELT_RIGHT ? 1 : tile === TILE.BELT_LEFT ? -1 : 0;

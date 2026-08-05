@@ -7,6 +7,7 @@ import {
   loadProgress,
   loadSettings,
   recordClear,
+  recordSecret,
   resetProgress,
   saveSettings,
   type Progress,
@@ -17,8 +18,9 @@ import { bindFullscreenKey, isFullscreen, toggleFullscreen } from '@ui/fullscree
 import { Menu, type MenuItem } from '@ui/menu';
 import { Screens } from '@ui/screens';
 import { formatTicks, plural } from '@ui/format';
+import { CATS, catById, catRequirement, isCatUnlocked, type UnlockState } from './cats';
 import { VIEW_HEIGHT, VIEW_WIDTH } from './config';
-import { LEVELS, firstLevel } from './levels';
+import { LEVELS, SECRET_COUNT, firstLevel } from './levels';
 import { World, type RunStats } from './world';
 
 /**
@@ -94,10 +96,25 @@ export class Game {
   // ---------------------------------------------------------------- setup
   private createWorld(index: number): World {
     const level = LEVELS[index] ?? firstLevel();
-    return new World(level, this.audio, {
+    const world = new World(level, this.audio, {
       onTaunt: (text) => this.screens.showTaunt(text),
       onWin: (stats) => this.handleWin(stats),
+      // Il gomitolo si segna appena raccolto, non a fine livello: chi lo
+      // trova e poi muore l'ha comunque trovato.
+      onSecret: () => {
+        this.progress = recordSecret(this.progress, level.id);
+      },
     });
+    world.player.skin = catById(this.settings.cat);
+    return world;
+  }
+
+  /** Stato di sblocco dei gatti, ricavato dai progressi. */
+  private get unlockState(): UnlockState {
+    return {
+      yarn: this.progress.secrets.length,
+      everyLevelCleared: LEVELS.every((level) => this.progress.levels[level.id]?.cleared),
+    };
   }
 
   private bindTouchControls(root: ParentNode): void {
@@ -136,10 +153,11 @@ export class Game {
     const resume = this.resumeIndex;
     const started = resume > 0 || this.progress.totalDeaths > 0;
     const cleared = LEVELS.filter((level) => this.progress.levels[level.id]?.cleared).length;
+    const yarn = this.progress.secrets.length;
 
     this.menu.show({
       title: started
-        ? `${cleared} livelli su ${LEVELS.length} · ${plural(this.progress.totalDeaths, 'morte', 'morti')} in totale`
+        ? `${cleared} livelli su ${LEVELS.length} · ${plural(this.progress.totalDeaths, 'morte', 'morti')} in totale · ${plural(yarn, 'gomitolo', 'gomitoli')}`
         : 'Un platform che ti odia. Ogni blocco è sospetto, ogni fungo è una trappola, la bandiera potrebbe non essere la bandiera.',
       items: [
         {
@@ -152,6 +170,12 @@ export class Game {
           label: 'LIVELLI',
           hint: 'Rigioca quello che hai già sofferto, e guarda i record',
           onSelect: () => this.showLevelsMenu(),
+        },
+        {
+          label: 'GATTI',
+          value: catById(this.settings.cat).name,
+          hint: 'I gomitoli nascosti nei livelli servono a questo, e solo a questo',
+          onSelect: () => this.showCatsMenu(),
         },
         {
           label: 'SCHERMO INTERO',
@@ -186,13 +210,18 @@ export class Game {
     const items: MenuItem[] = LEVELS.map((level, index) => {
       const record = this.progress.levels[level.id];
       const unlocked = this.isUnlocked(index);
+      // Il gomitolo si segnala solo nei livelli che ne hanno uno: un livello
+      // senza segreti non deve sembrare un livello con un segreto mancato.
+      const hasSecret = level.rows.some((row) => row.includes('*'));
+      const gotSecret = this.progress.secrets.includes(level.id);
+      const yarnMark = hasSecret ? (gotSecret ? ' · GOMITOLO' : ' · ·') : '';
 
       return {
         label: `${level.name}   ${level.title}`,
         value: record?.cleared
-          ? `${plural(record.bestDeaths, 'morte', 'morti')} · ${formatTicks(record.bestTicks)}`
+          ? `${plural(record.bestDeaths, 'morte', 'morti')} · ${formatTicks(record.bestTicks)}${yarnMark}`
           : unlocked
-            ? 'MAI FINITO'
+            ? `MAI FINITO${yarnMark}`
             : 'BLOCCATO',
         hint: unlocked
           ? record?.cleared
@@ -208,6 +237,47 @@ export class Game {
 
     this.menu.show({
       title: 'LIVELLI',
+      items,
+      onBack: () => this.showRootMenu(),
+    });
+  }
+
+  /**
+   * La collezione.
+   *
+   * Cambiare gatto non cambia niente di quello che succede: è l'unica
+   * schermata del gioco che non nasconde nulla, e serve esattamente a questo —
+   * a far vedere che quando il gioco promette qualcosa di gratis, ogni tanto
+   * lo mantiene.
+   */
+  private showCatsMenu(): void {
+    const state = this.unlockState;
+
+    const items: MenuItem[] = CATS.map((cat) => {
+      const unlocked = isCatUnlocked(cat, state);
+      const current = this.settings.cat === cat.id;
+      return {
+        label: cat.name,
+        value: current ? 'IN USO' : unlocked ? '' : 'BLOCCATO',
+        hint: unlocked ? cat.blurb : catRequirement(cat, state),
+        locked: !unlocked,
+        onSelect: () => {
+          this.settings = { ...this.settings, cat: cat.id };
+          saveSettings(this.settings);
+          this.world.player.skin = cat;
+          this.showCatsMenu();
+        },
+      };
+    });
+
+    items.push({ label: 'INDIETRO', onSelect: () => this.showRootMenu() });
+
+    this.menu.show({
+      title: `GATTI · ${plural(state.yarn, 'gomitolo', 'gomitoli')} su ${SECRET_COUNT}`,
+      body: [
+        'Ogni livello nasconde un gomitolo dietro qualcosa che sembra un muro.',
+        'Non danno nessun vantaggio: cambiano solo la faccia di chi muore.',
+      ],
       items,
       onBack: () => this.showRootMenu(),
     });
@@ -304,7 +374,8 @@ export class Game {
     this.progress = recordClear(this.progress, this.world.level.id, stats);
 
     const isLast = this.levelIndex >= LEVELS.length - 1;
-    const summary = `${plural(stats.deaths, 'morte', 'morti')} · ${plural(stats.coins, 'moneta', 'monete')} · ${formatTicks(stats.ticks)} di sofferenza`;
+    const yarn = stats.secret ? ' · gomitolo trovato' : '';
+    const summary = `${plural(stats.deaths, 'morte', 'morti')} · ${plural(stats.coins, 'moneta', 'monete')} · ${formatTicks(stats.ticks)} di sofferenza${yarn}`;
 
     if (isLast) {
       this.screens.showLevelComplete({

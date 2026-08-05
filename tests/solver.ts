@@ -1,8 +1,8 @@
-import { PHYSICS, RULES, TILE_SIZE } from '@game/config';
+import { PHYSICS, RULES, SURFACE, TILE_SIZE } from '@game/config';
 import { LEVELS, type LevelDef } from '@game/levels';
-import { TILE, isSolid } from '@game/tiles';
+import { TILE, beltDirection, isIcy, isSolid } from '@game/tiles';
 import { TileMap } from '@engine/tilemap';
-import { applyGravity, moveX, moveY, updateGrounded } from '@engine/physics';
+import { applyGravity, groundTiles, moveX, moveY, updateGrounded } from '@engine/physics';
 import type { Body } from '@engine/types';
 
 /**
@@ -29,7 +29,14 @@ import type { Body } from '@engine/types';
 
 /** Tile su cui il risolutore si fida di poggiare: quelli che non spariscono. */
 const isStableSolid = (tile: string): boolean => {
-  if (tile === TILE.FAKE_GROUND || tile === TILE.GHOST || tile === TILE.COLLAPSE) return false;
+  if (
+    tile === TILE.FAKE_GROUND ||
+    tile === TILE.GHOST ||
+    tile === TILE.COLLAPSE ||
+    tile === TILE.BRITTLE_ICE
+  ) {
+    return false;
+  }
   return isSolid(tile);
 };
 
@@ -90,14 +97,43 @@ function step(state: SearchState, map: TileMap, action: { dir: number; jump: boo
   let coyote = state.coyote;
   let buffer = state.buffer;
 
+  // 0. superfici, campionate prima di muoversi — esattamente come fa
+  // `Player.sampleSurface`. Se qui si campionasse dopo, il risolutore
+  // troverebbe traiettorie che nel gioco non esistono.
+  const inVent = overlapsTile(body.x, body.y, map, TILE.VENT);
+  let onIce = false;
+  let belt = 0;
+  if (body.onGround) {
+    for (const { tile } of groundTiles(body, map)) {
+      if (isIcy(tile)) onIce = true;
+      const direction = beltDirection(tile);
+      if (direction !== 0) belt = direction;
+    }
+  }
+
   // 1. moto orizzontale
-  if (action.dir < 0) body.vx -= PHYSICS.acceleration;
-  if (action.dir > 0) body.vx += PHYSICS.acceleration;
-  if (action.dir === 0) body.vx *= body.onGround ? PHYSICS.groundFriction : PHYSICS.airFriction;
+  const push = onIce ? SURFACE.iceAcceleration : PHYSICS.acceleration;
+  if (action.dir < 0) body.vx -= push;
+  if (action.dir > 0) body.vx += push;
+  if (action.dir === 0) {
+    body.vx *= body.onGround
+      ? onIce
+        ? SURFACE.iceFriction
+        : PHYSICS.groundFriction
+      : PHYSICS.airFriction;
+  }
   body.vx = Math.max(-PHYSICS.maxSpeed, Math.min(PHYSICS.maxSpeed, body.vx));
   if (Math.abs(body.vx) < 0.05) body.vx = 0;
 
   moveX(body, map, isStableSolid);
+
+  // 1b. il nastro trascina, e non è opzionale più di quanto lo sia la molla.
+  if (belt !== 0) {
+    const own = body.vx;
+    body.vx = belt * SURFACE.beltSpeed;
+    moveX(body, map, isStableSolid);
+    body.vx = own;
+  }
 
   // 2. salto (con jump buffer e coyote time, come nel gioco)
   const justPressed = action.jump && !state.jumpHeld;
@@ -109,6 +145,11 @@ function step(state: SearchState, map: TileMap, action: { dir: number; jump: boo
     buffer = 0;
   }
   if (!action.jump && body.vy < 0) body.vy *= PHYSICS.jumpCut;
+
+  // 2b. getto di vapore: solleva dopo il taglio del salto, come nel gioco.
+  if (inVent) {
+    body.vy = Math.min(body.vy, Math.max(body.vy - SURFACE.ventLift, -SURFACE.ventMaxRise));
+  }
 
   // 3. gravità e moto verticale
   applyGravity(body, PHYSICS.gravity, PHYSICS.terminalVelocity);

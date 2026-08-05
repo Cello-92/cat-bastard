@@ -27,6 +27,14 @@ export const DEATH_CAUSE = {
   ghost: 'ghost',
   snapSpikes: 'snapSpikes',
   hiddenSpikes: 'hiddenSpikes',
+  // --- mondo 2
+  ice: 'ice',
+  brittleIce: 'brittleIce',
+  belt: 'belt',
+  deadVent: 'deadVent',
+  sentry: 'sentry',
+  drone: 'drone',
+  snowball: 'snowball',
   generic: 'generic',
 } as const;
 
@@ -94,6 +102,41 @@ const BY_CAUSE: Record<Exclude<DeathCause, 'generic'>, readonly string[]> = {
     'lì non c\'era niente. adesso lo vedi, però',
     'ora sono visibili. non ti servirà a molto, ma sono visibili',
     'invisibili. la seconda volta no',
+  ],
+  ice: [
+    'sul ghiaccio si frena prima. molto prima',
+    'quattro zampe e zero aderenza',
+    'volevi fermarti lì? il ghiaccio dice di no',
+  ],
+  brittleIce: [
+    'era sottile. si sentiva anche, scricchiolava',
+    'il ghiaccio si è crepato, poi ha smesso di esistere',
+    'un attimo in più fermo lì ed era sicuro. no, aspetta: il contrario',
+  ],
+  belt: [
+    'il nastro ti ha accompagnato. gentile',
+    'stavi fermo, ma il pavimento no',
+    'andava dall\'altra parte. sempre andato dall\'altra parte',
+  ],
+  deadVent: [
+    'quel getto era spento. lo era anche prima',
+    'vapore freddo: fa scena, non spinge',
+    'ti sei fidato di una nuvoletta',
+  ],
+  sentry: [
+    'ti ha visto, si è girata, ti è venuta addosso',
+    'l\'elmo ce l\'aveva in testa da sempre. si vedeva',
+    'quella non si schiaccia. mai potuta schiacciare',
+  ],
+  drone: [
+    'il drone passava di lì ogni tot. tu sei passato al tot sbagliato',
+    'andava avanti e indietro. sempre uguale. sempre',
+    'dovevi salirci sopra, non entrarci dentro',
+  ],
+  snowball: [
+    'rotolava verso di te da tre secondi',
+    'una palla di ghiaccio. correva più di te',
+    'era in salita per lei e in discesa per te, eppure',
   ],
 };
 

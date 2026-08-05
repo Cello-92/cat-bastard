@@ -33,6 +33,28 @@ export const PHYSICS = {
   springImpulse: 17.2,
 } as const;
 
+/**
+ * Le superfici del secondo mondo.
+ *
+ * Sono l'unica cosa del gioco che cambia *come risponde il gatto*, e per questo
+ * sono anche l'unica cosa che deve restare leggibile a vista: il ghiaccio si
+ * vede che è ghiaccio, il nastro si vede che scorre, il getto si sente. Il
+ * patto (CLAUDE.md, punto 5) vale sempre — i comandi non tradiscono, è il
+ * pavimento che ha regole diverse, e si vedono prima di calpestarlo.
+ */
+export const SURFACE = {
+  /** Attrito sul ghiaccio: quasi niente. Fermarsi diventa una manovra. */
+  iceFriction: 0.985,
+  /** E anche spingere serve a poco: gli artigli non fanno presa. */
+  iceAcceleration: 0.2,
+  /** Pixel al tick con cui il nastro trascina chi ci sta sopra. */
+  beltSpeed: 1.25,
+  /** Accelerazione verso l'alto dentro un getto di vapore. */
+  ventLift: 1.6,
+  /** Velocità massima di risalita dentro il getto. */
+  ventMaxRise: 7,
+} as const;
+
 export const RULES = {
   /** Durata del fermo immagine dopo la morte, prima del respawn. */
   deathFreezeTicks: 52,
@@ -42,6 +64,14 @@ export const RULES = {
   crumbleDelayTicks: 16,
   /** Tick prima che il finto terreno sparisca sotto le zampe. */
   fakeGroundDelayTicks: 6,
+  /** Tick prima che il ghiaccio sottile ceda: il tempo di sentirlo crepitare. */
+  brittleIceDelayTicks: 10,
+  /**
+   * Tick entro cui una caduta viene attribuita al getto spento invece che al
+   * vuoto. Serve solo a scegliere la battuta giusta: se sei morto perché un
+   * getto non ti ha sollevato, il gioco te lo deve dire.
+   */
+  deadVentBlameTicks: 40,
   /**
    * Tick prima che una piattaforma fantasma svanisca: quasi zero.
    * Non è reattivo — è memorizzabile. Chi sa che sta arrivando salta prima.

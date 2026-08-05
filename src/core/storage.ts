@@ -16,9 +16,17 @@ export interface LevelRecord {
 export interface Progress {
   levels: Record<string, LevelRecord>;
   totalDeaths: number;
+  /**
+   * Id dei livelli in cui il gomitolo nascosto è stato trovato.
+   *
+   * Sta nei progressi e non nel record del livello perché un segreto trovato
+   * non si perde più: rigiocare il livello e non prenderlo non lo cancella —
+   * sarebbe l'unica cattiveria del gioco senza una battuta a giustificarla.
+   */
+  secrets: string[];
 }
 
-const emptyProgress = (): Progress => ({ levels: {}, totalDeaths: 0 });
+const emptyProgress = (): Progress => ({ levels: {}, totalDeaths: 0, secrets: [] });
 
 export function loadProgress(): Progress {
   try {
@@ -28,6 +36,9 @@ export function loadProgress(): Progress {
     return {
       levels: parsed.levels ?? {},
       totalDeaths: parsed.totalDeaths ?? 0,
+      // Chi giocava prima che i gomitoli esistessero non ne ha nessuno, e va
+      // benissimo così: il salvataggio vecchio deve continuare a caricarsi.
+      secrets: parsed.secrets ?? [],
     };
   } catch {
     return emptyProgress();
@@ -37,16 +48,18 @@ export function loadProgress(): Progress {
 /** Preferenze del giocatore. Poche, e tutte con un default sensato. */
 export interface Settings {
   audio: boolean;
+  /** Id del gatto scelto (vedi game/cats.ts). */
+  cat: string;
 }
 
-const defaultSettings = (): Settings => ({ audio: true });
+const defaultSettings = (): Settings => ({ audio: true, cat: 'bastardo' });
 
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return defaultSettings();
     const parsed = JSON.parse(raw) as Partial<Settings>;
-    return { audio: parsed.audio ?? true };
+    return { audio: parsed.audio ?? true, cat: parsed.cat ?? 'bastardo' };
   } catch {
     return defaultSettings();
   }
@@ -92,9 +105,18 @@ export function recordClear(
     bestCoins: previous ? Math.max(previous.bestCoins, run.coins) : run.coins,
   };
   const updated: Progress = {
+    ...progress,
     levels: { ...progress.levels, [levelId]: next },
     totalDeaths: progress.totalDeaths + run.deaths,
   };
+  saveProgress(updated);
+  return updated;
+}
+
+/** Segna il gomitolo di un livello come trovato. Idempotente. */
+export function recordSecret(progress: Progress, levelId: string): Progress {
+  if (progress.secrets.includes(levelId)) return progress;
+  const updated: Progress = { ...progress, secrets: [...progress.secrets, levelId] };
   saveProgress(updated);
   return updated;
 }

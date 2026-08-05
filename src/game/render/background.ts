@@ -64,19 +64,24 @@ const ridgeAt = (x: number, layer: Layer): number => {
 };
 
 export function drawBackground(r: Renderer, camX: number, sky: SkyName, tick: number): void {
-  const theme = SKIES[sky];
+  // Il tipo esplicito serve: `SKIES` è dichiarato `as const`, quindi senza
+  // annotazione ogni cielo avrebbe il *suo* tipo letterale e i campi opzionali
+  // (neve, aurora, interno) non esisterebbero su quelli che non li usano.
+  const theme: SkyTheme = SKIES[sky];
   const { width: W, height: H } = r;
   const horizon = H * HORIZON;
 
   drawSky(r, theme, W, H, horizon);
 
   if (!theme.landscape) {
-    drawCaveDepth(r, theme, camX, tick, W, H);
+    if (theme.interior === 'factory') drawFactoryDepth(r, theme, camX, tick, W, H);
+    else drawCaveDepth(r, theme, camX, tick, W, H);
     drawGroundHaze(r, theme, horizon, W, H);
     return;
   }
 
   if (theme.stars) drawStars(r, theme, camX, tick, W, H);
+  if (theme.aurora) drawAurora(r, theme, camX, tick, W, H);
   drawCelestialBody(r, theme, tick, W, H);
   drawRange(r, theme, camX, FAR_RANGE, horizon, W);
   drawRange(r, theme, camX, MID_RANGE, horizon, W);
@@ -85,6 +90,9 @@ export function drawBackground(r: Renderer, camX: number, sky: SkyName, tick: nu
   drawForest(r, theme, camX, horizon, W);
   drawTreeLine(r, theme, camX, tick, horizon, W);
   drawGroundHaze(r, theme, horizon, W, H);
+  // La neve sta davanti a tutto, compreso il filare in primo piano: è l'aria
+  // tra il giocatore e il mondo, non un altro piano del paesaggio.
+  if (theme.snow) drawSnowfall(r, theme, camX, tick, W, H);
 }
 
 // ---------------------------------------------------------------- grotta
@@ -143,6 +151,186 @@ function drawCaveDepth(
       { at: 0, color: alpha(theme.sunGlow, 0.55) },
       { at: 1, color: alpha(theme.sunGlow, 0) },
     ]);
+  }
+  r.pop();
+}
+
+// ---------------------------------------------------------------- fabbrica
+/**
+ * Il fondo della fabbrica: nessun cielo, nessuna roccia. Macchine.
+ *
+ * La profondità qui non la dà né la foschia né il buio ma la **scala**: i
+ * blocchi lontani sono grandi, scuri e lenti, quelli vicini più piccoli, più
+ * definiti e più veloci. In mezzo, le uniche cose accese di tutto il livello —
+ * le bocche dei forni, che pulsano piano e proiettano un po' del loro arancione
+ * sui tubi davanti.
+ */
+function drawFactoryDepth(
+  r: Renderer,
+  theme: SkyTheme,
+  camX: number,
+  tick: number,
+  W: number,
+  H: number,
+): void {
+  const floors = [
+    { speed: 0.07, depth: 0.72, spacing: 190, height: 210, seed: 3.7 },
+    { speed: 0.19, depth: 0.42, spacing: 128, height: 150, seed: 8.3 },
+  ];
+
+  for (const floor of floors) {
+    const color = mix(theme.ridge, '#000000', floor.depth * 0.8);
+    const offset = camX * floor.speed;
+    const first = Math.floor(offset / floor.spacing) - 1;
+
+    for (let i = first; i < first + Math.ceil(W / floor.spacing) + 3; i++) {
+      const n = hash(i * 1.9 + floor.seed);
+      const x = i * floor.spacing - offset;
+      if (x < -floor.spacing || x > W + floor.spacing) continue;
+
+      const w = floor.spacing * (0.5 + n * 0.4);
+      const h = floor.height * (0.55 + hash(i * 3.3 + floor.seed) * 0.6);
+      const top = H - h;
+
+      // Corpo della macchina: un parallelepipedo con la sommità a gradoni.
+      r.rect(x, top, w, h, color);
+      r.rect(x + w * 0.15, top - 14 * (1 - floor.depth), w * 0.45, 14 * (1 - floor.depth), color);
+      // Camino o colonna di sfiato.
+      const stackX = x + w * (0.6 + n * 0.25);
+      r.rect(stackX, top - 46 * (1 - floor.depth), 9 * (1 - floor.depth) + 3, 46 * (1 - floor.depth), color);
+
+      // Bocca del forno: l'unica luce.
+      if (hash(i * 5.1 + floor.seed) > 0.45) {
+        const fx = x + w * 0.3;
+        const fy = top + h * 0.42;
+        r.push();
+        r.setBlend('add');
+        r.setAlpha((0.16 + Math.abs(Math.sin(tick / 90 + i)) * 0.12) * (1 - floor.depth * 0.6));
+        r.radial(fx, fy, 46, 34, [
+          { at: 0, color: alpha(theme.sunGlow, 0.8) },
+          { at: 1, color: alpha(theme.sunGlow, 0) },
+        ]);
+        r.pop();
+        r.rect(fx - 7, fy - 5, 14, 10, mix(theme.sunGlow, '#000000', 0.35 + floor.depth * 0.3));
+      }
+    }
+  }
+
+  // Tubazioni appese alla volta: corrono in orizzontale, con le staffe.
+  const pipeOffset = camX * 0.3;
+  for (let lane = 0; lane < 2; lane++) {
+    const y = 16 + lane * 26;
+    const color = mix(theme.ridge, '#000000', 0.5 - lane * 0.12);
+    r.rect(0, y, W, 9 - lane * 2, color);
+    r.rect(0, y, W, 1.5, alpha(mix(color, theme.sunTint, 0.4), 0.5));
+    for (let i = -1; i < W / 90 + 2; i++) {
+      const bx = i * 90 - (pipeOffset % 90) + lane * 30;
+      r.rect(bx, y - 4, 5, 13 - lane * 2, mix(color, '#000000', 0.3));
+    }
+  }
+}
+
+// ---------------------------------------------------------------- gelo
+/**
+ * Aurora boreale: tende verticali di luce che si spostano lentissime.
+ *
+ * Sono additive e sfumano verso l'alto perché è così che si comporta la luce
+ * che *emette* invece di riflettere. È l'unica cosa bella del secondo mondo,
+ * ed è lì apposta: si guarda in alto e si dimentica cosa c'è sotto i piedi.
+ */
+function drawAurora(
+  r: Renderer,
+  theme: SkyTheme,
+  camX: number,
+  tick: number,
+  W: number,
+  H: number,
+): void {
+  r.push();
+  r.setBlend('add');
+
+  for (let band = 0; band < 4; band++) {
+    const seed = hash(band * 6.7);
+    const drift = tick / (260 + seed * 200) + band * 1.3;
+    const baseX = ((band * 240 + seed * 180 - camX * 0.04) % (W + 380) + W + 380) % (W + 380) - 190;
+    const width = 110 + seed * 130;
+    const top = H * (0.03 + seed * 0.09);
+    const height = H * (0.32 + seed * 0.2);
+    const color = band % 2 ? theme.sunGlow : theme.sunTint;
+    const strength = 0.05 + Math.abs(Math.sin(drift * 0.7)) * 0.04;
+
+    // La tenda non è una forma piena: è una serie di veli verticali affiancati,
+    // ognuno sfumato ai due capi. Un poligono, per quanto ondulato, avrebbe i
+    // bordi netti — e la luce nell'aria non ha bordi.
+    const veils = 14;
+    for (let i = 0; i <= veils; i++) {
+      const t = i / veils;
+      // I veli ai lati della tenda sono più deboli: è quello che le dà una
+      // forma invece di una larghezza.
+      const edge = Math.sin(t * Math.PI);
+      const sway = Math.sin(drift + t * 3.4) * 30;
+      const x = baseX + t * width + sway;
+      const y = top + Math.sin(drift * 1.4 + t * 2.2) * 14;
+      const flicker = 0.6 + Math.abs(Math.sin(drift * 2.3 + t * 5.1)) * 0.4;
+
+      r.setAlpha(strength * edge * flicker);
+      r.radial(x, y + height * 0.45, 16 + seed * 10, height * 0.55, [
+        { at: 0, color: alpha(color, 0.85) },
+        { at: 0.55, color: alpha(color, 0.35) },
+        { at: 1, color: alpha(color, 0) },
+      ]);
+    }
+
+    // Il bordo inferiore è il più acceso: è lì che la scarica finisce.
+    r.setAlpha(strength * 0.9);
+    r.radial(baseX + width / 2 + Math.sin(drift + 1.7) * 20, top + height * 0.86, width * 0.42, 26, [
+      { at: 0, color: alpha(color, 0.8) },
+      { at: 1, color: alpha(color, 0) },
+    ]);
+  }
+
+  r.pop();
+}
+
+/**
+ * Neve.
+ *
+ * Deterministica come tutto il resto: ogni fiocco ha una posizione che è
+ * funzione del tempo e del suo indice, mai di un numero casuale. Tre piani con
+ * parallasse diversa — i fiocchi vicini sono grandi, veloci e sfocati, quelli
+ * lontani lenti e minuscoli — ed è la differenza tra "nevica" e "ci sono dei
+ * puntini bianchi sullo schermo".
+ */
+function drawSnowfall(
+  r: Renderer,
+  theme: SkyTheme,
+  camX: number,
+  tick: number,
+  W: number,
+  H: number,
+): void {
+  const layers = [
+    { count: 40, speed: 0.5, drift: 0.35, size: 1, parallax: 0.08, alpha: 0.4 },
+    { count: 26, speed: 0.95, drift: 0.6, size: 1.7, parallax: 0.22, alpha: 0.6 },
+    { count: 14, speed: 1.7, drift: 0.9, size: 2.6, parallax: 0.45, alpha: 0.75 },
+  ];
+
+  r.push();
+  for (const layer of layers) {
+    r.setAlpha(layer.alpha);
+    for (let i = 0; i < layer.count; i++) {
+      const seed = hash(i * 3.7 + layer.size);
+      const span = W + 80;
+      // Caduta: verticale col tempo, laterale con un'oscillazione lenta.
+      const fall = (tick * layer.speed + seed * (H + 60)) % (H + 60);
+      const swing = Math.sin(tick / (70 + seed * 60) + i) * 18 * layer.drift;
+      let sx = (seed * span + swing - camX * layer.parallax) % span;
+      if (sx < 0) sx += span;
+
+      const y = fall - 30;
+      const size = layer.size * (0.7 + seed * 0.6);
+      r.ellipse(sx - 40, y, size, size, theme.cloudLight);
+    }
   }
   r.pop();
 }

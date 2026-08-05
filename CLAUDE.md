@@ -85,6 +85,7 @@ src/
               taunts, effects (particelle/juice), world.ts (orchestratore),
               game.ts (composition root)
     entities/ player, walker, shroom, falling-spike, diver, boss, rubble
+              skins.ts (i gatti giocabili e come si sbloccano)
     levels/   level.ts (helper) + un file per livello + index.ts (registro)
     render/   background.ts (parallasse), tiles.ts (disegno dei tile)
   ui/         hud.ts, menu.ts, screens.ts, format.ts — l'unico codice che tocca il DOM
@@ -122,6 +123,7 @@ Ogni trappola sfrutta un'abitudine del giocatore, e ognuna ha il suo taunt in `t
 | `J` | il nemico normale (identico) | ha le punte sotto: schiacciarlo uccide |
 | `Z` | ombra sul soffitto | si tuffa quando le passi sotto |
 | `>` `<` | un nastro trasportatore (ed è esattamente quello) | ti trasporta: non è una trappola, ma decide dove sei quando scatta quella vera |
+| `*` | un cubo iridescente | sblocca un gatto, per sempre. È l'unica cosa del gioco che non mente e non uccide |
 | `H` | mattone del soffitto dell'arena | ci sali, trema, si stacca: è l'unica arma del gioco |
 | `=` | portone | solido finché il boss è vivo |
 | `@` | — | ci nasce il Padrone (marcatore) |
@@ -140,6 +142,32 @@ ingiocabile.
 | `O` | terreno normale, senza feritoia | spuntoni che scattano quando ci sei già sopra |
 | `!` | niente. Proprio niente | spuntoni invisibili. Dopo la prima morte restano visibili per tutto il tentativo |
 | `m` | una molla, identica a `M` | non lancia: si chiude. È una tagliola col piattello rosso |
+
+## Le skin
+
+Dieci gatti, in `game/skins.ts`. Cambiano **solo l'aspetto**: cassa, fisica e
+comandi sono identici per tutti, e devono restarlo — in un gioco che ti frega di
+continuo, la cosa che ti sei comprato col sudore non può anche darti un
+vantaggio. I colori dei manti stanno in `theme.ts` (`PELT`, `IRIS`), come tutti
+gli altri colori del gioco.
+
+Si sbloccano in cinque modi, e ognuno racconta una cosa diversa del giocatore:
+
+- **monete** — si incassano *finendo* un livello: quelle raccolte in un
+  tentativo finito male non entrano in tasca. È il motivo per cui raccogliere
+  una moneta è una scelta e non un riflesso, visto che una su tre è avvelenata;
+- **cubo nascosto** (`*`) — uno per livello, in un posto che non sta sulla
+  strada per l'arrivo. Quello di 1-3 si prende salendo sul blocco invisibile che
+  ti ha appena rovinato il salto; quello di 1-7 solo fidandosi di una molla;
+  quello di 1-9 è appeso dentro la fossa, e si paga con una morte certa;
+- **livello finito** — il gatto col mantello del Padrone si ha battendo 1-11;
+- **morti accumulate** — a trecento morti si sblocca il gatto invisibile. È
+  l'unico premio che si guadagna facendo schifo, e ci teniamo che esista;
+- **gratis** — il gatto di serie.
+
+Aggiungere una skin: una voce in `SKINS`, il suo mantello in `theme.ts`, e —
+se è di quelle segrete — un `*` nel livello che la custodisce. Il test
+controlla da solo che il cubo sia raggiungibile davvero.
 
 ### Aggiungere roba
 

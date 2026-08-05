@@ -52,6 +52,14 @@ per morire.
 
 Chi arriva in fondo ha imparato dove si muore. Non è la stessa cosa di essere bravo.
 
+## I gatti
+
+Dieci gatti da sbloccare, e nessuno di loro ti aiuta: cambiano solo l'aspetto.
+Qualcuno si compra con le monete — che si incassano **finendo** un livello, non
+raccogliendole — qualcuno è chiuso dentro un cubo nascosto in un livello
+preciso, uno si ha battendo il boss, e uno si sblocca a trecento morti. Quello
+è un premio o una diagnosi, decidi tu.
+
 ## Comandi
 
 | Azione | Tasti |

@@ -1,5 +1,7 @@
 import { Audio } from '@core/audio';
 import type { Input } from '@core/input';
+import { buySkin, equipSkin, recordClear, type Progress } from '@core/storage';
+import { SKINS, isSkinUnlocked } from '@game/skins';
 import { RULES, TILE_SIZE } from '@game/config';
 import { LEVELS } from '@game/levels';
 import { SEGMENT_COLS, LEVEL_ROWS } from '@game/config';
@@ -635,6 +637,143 @@ console.log('\nLo scontro col Padrone');
         world.update(idle);
         check(world.state === 'won', "dopo il portone l'arrivo è raggiungibile");
       }
+    }
+  }
+}
+
+// ---------------------------------------------------------------- i gatti
+//
+// Le skin non toccano il gioco — stessa cassa, stessa fisica, stessi comandi —
+// quindi qui non si verifica il gameplay ma tre cose che possono rompersi in
+// silenzio: che ogni gatto si disegni davvero (uno solo che esplode e il gioco
+// è inservibile per chi l'ha comprato), che i cubi nascosti siano *presi* dove
+// sono stati messi, e che le monete si comportino come un portafoglio.
+console.log('\nI gatti (skin)');
+{
+  const skinAudio = new Audio();
+  const idle = { isDown: () => false, justPressed: () => false, endTick: () => {} } as unknown as Input;
+
+  const ids = new Set(SKINS.map((skin) => skin.id));
+  check(ids.size === SKINS.length, `${SKINS.length} gatti, nessun id ripetuto`);
+  check(
+    SKINS.some((skin) => skin.unlock.kind === 'free'),
+    'almeno un gatto è disponibile da subito',
+  );
+
+  // Disegno: ogni mantello passa davanti al renderer che intercetta i NaN.
+  {
+    const level = LEVELS[0]!;
+    const world = new World(level, skinAudio, { onTaunt: () => {}, onWin: () => {} });
+    const renderer = new NullRenderer();
+    let crashed: unknown = null;
+    try {
+      for (const skin of SKINS) {
+        world.player.skin = skin;
+        world.draw(renderer, 0);
+        // Un tick diverso, e in corsa: baffi, coda e scia cambiano disegno.
+        world.player.vx = 4;
+        world.player.onGround = true;
+        world.draw(renderer, 37);
+      }
+    } catch (error) {
+      crashed = error;
+    }
+    check(crashed === null, `tutti i ${SKINS.length} gatti si disegnano senza eccezioni`);
+    if (crashed) console.error(crashed);
+    check(renderer.transformDepth === 0, 'disegnando i gatti, push/pop restano bilanciati');
+    check(
+      renderer.problems.length === 0,
+      `nessuna coordinata invalida in nessun gatto${renderer.problems.length ? ` (${renderer.problems.slice(0, 3).join('; ')})` : ''}`,
+    );
+  }
+
+  // I cubi nascosti: uno per livello dichiarato, e raggiungibile per davvero.
+  // Il controllo è lo stesso del risolutore, con l'arrivo spostato sul cubo e
+  // quello vero cancellato — altrimenti "ci si arriva" sarebbe una bugia
+  // comoda: si arriverebbe alla bandiera senza passare mai di lì.
+  for (const skin of SKINS) {
+    const unlock = skin.unlock;
+    if (unlock.kind !== 'secret') continue;
+    const level = LEVELS.find((l) => l.id === unlock.levelId);
+    check(level !== undefined, `${skin.name}: il livello ${unlock.levelId} esiste`);
+    if (!level) continue;
+
+    const cubes = level.rows.reduce(
+      (n, row) => n + [...row].filter((c) => c === TILE.SKIN_CUBE).length,
+      0,
+    );
+    check(cubes === 1, `${level.name}: contiene esattamente un cubo (trovati ${cubes})`);
+
+    const probe = level.rows.map((row) =>
+      [...row]
+        .map((c) => (c === TILE.SKIN_CUBE ? TILE.GOAL : c === TILE.GOAL ? TILE.EMPTY : c))
+        .join(''),
+    );
+    const result = solve({ ...level, id: `cube-${level.id}`, rows: probe });
+    check(
+      result.solved,
+      result.solved
+        ? `${level.name}: il cubo di ${skin.name} è raggiungibile davvero`
+        : `${level.name}: il cubo di ${skin.name} NON è raggiungibile (fermo alla colonna ${result.furthestColumn})`,
+    );
+  }
+
+  // Raccoglierlo avvisa chi sta fuori, e non è una moneta.
+  {
+    const level = defineLevel({
+      id: 'cube-test',
+      name: 'TEST',
+      title: 'cubo',
+      sky: 'day',
+      spawn: { c: 1, r: 12 },
+      segments: [segment({ ground: true, rows: { 12: '     *' } })],
+    });
+    const found: string[] = [];
+    const world = new World(level, skinAudio, {
+      onTaunt: () => {},
+      onWin: () => {},
+      onSecret: (id) => found.push(id),
+    });
+    world.player.x = 5 * TILE_SIZE;
+    world.player.y = 12 * TILE_SIZE;
+    world.update(idle);
+
+    check(found.length === 1 && found[0] === 'cube-test', 'raccogliere il cubo avvisa il mondo di fuori');
+    check(world.coins === 0, 'il cubo non è una moneta e non entra nel punteggio');
+    check(world.state === 'playing', 'il cubo non uccide: per una volta è quello che sembra');
+    check(world.map.get(5, 12) === TILE.EMPTY, 'il cubo sparisce dopo essere stato preso');
+
+    // Morire non lo rimette al suo posto: si prende una volta sola.
+    world.kill();
+    for (let tick = 0; tick < 120; tick++) world.update(idle);
+    check(world.map.get(5, 12) === TILE.EMPTY, 'morendo il cubo non ricompare');
+  }
+
+  // Il portafoglio.
+  {
+    const wallet: Progress = { levels: {}, totalDeaths: 0, coins: 100, skins: [], skin: 'classic' };
+
+    const bought = buySkin(wallet, 'soot', 20);
+    check(bought.coins === 80 && bought.skins.includes('soot'), 'comprare un gatto scala le monete');
+
+    const broke = buySkin(bought, 'gilded', 150);
+    check(broke === bought, 'senza monete abbastanza non si compra niente');
+
+    const twice = buySkin(bought, 'soot', 20);
+    check(twice === bought, 'un gatto già preso non si ricompra');
+
+    const worn = equipSkin(bought, 'soot');
+    check(worn.skin === 'soot', 'il gatto scelto resta scelto');
+
+    const paid = recordClear(bought, 'w1-1', { deaths: 2, ticks: 100, coins: 7 });
+    check(paid.coins === 87, 'le monete di un livello finito entrano in tasca');
+    check(paid.skins.includes('soot'), 'finire un livello non fa perdere la collezione');
+
+    const dead = { ...wallet, totalDeaths: 299 };
+    const grim = SKINS.find((skin) => skin.unlock.kind === 'deaths');
+    if (grim) {
+      check(!isSkinUnlocked(grim, dead), `${grim.name} non si sblocca un morto prima`);
+      check(isSkinUnlocked(grim, { ...dead, totalDeaths: 300 }), `${grim.name} si sblocca morendo abbastanza`);
     }
   }
 }

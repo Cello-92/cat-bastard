@@ -4,11 +4,14 @@ import { Input, type Action } from '@core/input';
 import { Canvas2DRenderer } from '@engine/render/canvas2d';
 import type { Renderer } from '@engine/render/renderer';
 import {
+  buySkin,
+  equipSkin,
   loadProgress,
   loadSettings,
   recordClear,
   resetProgress,
   saveSettings,
+  unlockSkin,
   type Progress,
   type Settings,
 } from '@core/storage';
@@ -19,6 +22,14 @@ import { Screens } from '@ui/screens';
 import { formatTicks, plural } from '@ui/format';
 import { VIEW_HEIGHT, VIEW_WIDTH } from './config';
 import { LEVELS, firstLevel } from './levels';
+import {
+  SKINS,
+  isSkinUnlocked,
+  secretSkinOf,
+  skinById,
+  skinRequirement,
+  type SkinDef,
+} from './skins';
 import { World, type RunStats } from './world';
 
 /**
@@ -94,10 +105,31 @@ export class Game {
   // ---------------------------------------------------------------- setup
   private createWorld(index: number): World {
     const level = LEVELS[index] ?? firstLevel();
-    return new World(level, this.audio, {
+    const world = new World(level, this.audio, {
       onTaunt: (text) => this.screens.showTaunt(text),
       onWin: (stats) => this.handleWin(stats),
+      onSecret: (levelId) => this.handleSecret(levelId),
     });
+    // Il mondo non sa cosa sia una skin: gliela si mette addosso da qui, che è
+    // l'unico posto che conosce sia il gatto sia i progressi salvati.
+    world.player.skin = this.currentSkin;
+    return world;
+  }
+
+  private get currentSkin(): SkinDef {
+    const skin = skinById(this.progress.skin);
+    // Un salvataggio può contenere una skin che non è più sbloccata (progressi
+    // azzerati, id vecchio): in quel caso si torna al gatto di serie invece di
+    // regalare qualcosa che non è stato guadagnato.
+    return isSkinUnlocked(skin, this.progress) ? skin : skinById('classic');
+  }
+
+  /** Cubo nascosto raccolto: sblocca la skin che quel livello custodisce. */
+  private handleSecret(levelId: string): void {
+    const skin = secretSkinOf(levelId);
+    if (!skin || this.progress.skins.includes(skin.id)) return;
+    this.progress = unlockSkin(this.progress, skin.id);
+    this.screens.showTaunt(`hai trovato ${skin.name}. non era in programma`);
   }
 
   private bindTouchControls(root: ParentNode): void {
@@ -152,6 +184,12 @@ export class Game {
           label: 'LIVELLI',
           hint: 'Rigioca quello che hai già sofferto, e guarda i record',
           onSelect: () => this.showLevelsMenu(),
+        },
+        {
+          label: 'GATTI',
+          value: `${SKINS.filter((skin) => isSkinUnlocked(skin, this.progress)).length}/${SKINS.length}`,
+          hint: `Cambia gatto. Hai ${plural(this.progress.coins, 'moneta', 'monete')} in tasca`,
+          onSelect: () => this.showSkinsMenu(),
         },
         {
           label: 'SCHERMO INTERO',
@@ -213,6 +251,63 @@ export class Game {
     });
   }
 
+  /**
+   * La collezione di gatti.
+   *
+   * Una voce sola per skin, e lo stato lo dice il valore a destra: in uso,
+   * pronto, comprabile, o cosa manca. Le skin che non si possono ancora avere
+   * restano *visibili* e bloccate — sapere che esiste un gatto che si sblocca
+   * a trecento morti è metà del premio.
+   */
+  private showSkinsMenu(): void {
+    const items: MenuItem[] = SKINS.map((skin) => {
+      const owned = isSkinUnlocked(skin, this.progress);
+      const equipped = owned && this.progress.skin === skin.id;
+      const price = skin.unlock.kind === 'coins' ? skin.unlock.price : 0;
+      const affordable = !owned && price > 0 && this.progress.coins >= price;
+
+      return {
+        label: skin.name,
+        value: equipped
+          ? 'IN USO'
+          : owned
+            ? 'PRONTO'
+            : affordable
+              ? `COMPRA · ${price}`
+              : skinRequirement(skin, this.progress).toUpperCase(),
+        hint: owned ? skin.hint : `${skin.hint}. Serve: ${skinRequirement(skin, this.progress)}`,
+        locked: !owned && !affordable,
+        onSelect: () => this.chooseSkin(skin),
+      };
+    });
+
+    items.push({ label: 'INDIETRO', onSelect: () => this.showRootMenu() });
+
+    this.menu.show({
+      // Niente paragrafo di spiegazione: con dieci gatti in lista lo spazio
+      // verticale serve tutto alle voci, e quello che c'è da sapere lo dice
+      // la riga di aiuto sotto la selezione.
+      title: `GATTI · ${plural(this.progress.coins, 'moneta', 'monete')} in tasca · si incassano finendo i livelli`,
+      items,
+      onBack: () => this.showRootMenu(),
+    });
+  }
+
+  private chooseSkin(skin: SkinDef): void {
+    if (!isSkinUnlocked(skin, this.progress) && skin.unlock.kind === 'coins') {
+      this.progress = buySkin(this.progress, skin.id, skin.unlock.price);
+      if (!this.progress.skins.includes(skin.id)) return;
+      this.audio.play('coin');
+    }
+    if (!isSkinUnlocked(skin, this.progress)) return;
+
+    this.progress = equipSkin(this.progress, skin.id);
+    // Il mondo continua a disegnarsi dietro al menu: il gatto nuovo si vede
+    // subito, ed è il modo più corto di far capire cosa si è appena comprato.
+    this.world.player.skin = this.currentSkin;
+    this.showSkinsMenu();
+  }
+
   private showHelpMenu(): void {
     this.menu.show({
       title: 'COMANDI',
@@ -233,7 +328,9 @@ export class Game {
     this.menu.show({
       compact: true,
       title: 'AZZERARE TUTTO?',
-      body: ['Record, morti totali e livelli sbloccati: sparisce tutto.'],
+      body: [
+        'Record, morti totali, monete, gatti sbloccati e livelli: sparisce tutto. Anche i cubi nascosti tornano dove erano.',
+      ],
       items: [
         { label: 'NO, LASCIA STARE', onSelect: () => this.showRootMenu() },
         {
@@ -301,10 +398,23 @@ export class Game {
 
   private handleWin(stats: RunStats): void {
     this.phase = 'between';
-    this.progress = recordClear(this.progress, this.world.level.id, stats);
+    const levelId = this.world.level.id;
+    const before = this.progress;
+    this.progress = recordClear(this.progress, levelId, stats);
 
     const isLast = this.levelIndex >= LEVELS.length - 1;
-    const summary = `${plural(stats.deaths, 'morte', 'morti')} · ${plural(stats.coins, 'moneta', 'monete')} · ${formatTicks(stats.ticks)} di sofferenza`;
+    // Un gatto che si sblocca finendo *questo* livello va annunciato: è un
+    // premio che nessuno andrebbe a cercare nel menu senza saperlo.
+    const earned = SKINS.find(
+      (skin) =>
+        skin.unlock.kind === 'clear' &&
+        skin.unlock.levelId === levelId &&
+        !isSkinUnlocked(skin, before) &&
+        isSkinUnlocked(skin, this.progress),
+    );
+    const summary =
+      `${plural(stats.deaths, 'morte', 'morti')} · ${plural(stats.coins, 'moneta', 'monete')} in tasca · ${formatTicks(stats.ticks)} di sofferenza` +
+      (earned ? `\nGatto sbloccato: ${earned.name}` : '');
 
     if (isLast) {
       this.screens.showLevelComplete({

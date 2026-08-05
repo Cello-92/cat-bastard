@@ -88,6 +88,50 @@ export const MATERIAL = {
 export type MaterialName = keyof typeof MATERIAL;
 
 /**
+ * I manti dei gatti giocabili.
+ *
+ * Stanno qui e non in `game/skins.ts` per la stessa ragione di tutto il resto:
+ * nel progetto i colori esistono in un posto solo. `skins.ts` decide *quale*
+ * mantello ha un gatto e come si sblocca; qui c'è solo di che pasta è fatto.
+ *
+ * Valgono le stesse regole degli altri materiali — faccia illuminata più calda,
+ * ombra virata al cielo — perché il gatto è illuminato dalla stessa luce di
+ * tutto il mondo, e un mantello che se ne dimenticasse sembrerebbe incollato
+ * sopra l'immagine invece che dentro.
+ */
+export const PELT = {
+  /** Il gatto di sempre: crema caldo. */
+  cream: MATERIAL.fur,
+  /** Nerofumo: grigio di cenere, non nero pieno — il nero pieno sparisce. */
+  soot: material('#3c3c46', '#70727f', '#1f1f27', '#0e0e13', '#a9adbb'),
+  /** Rosso: il gatto arancione da tetto. */
+  ginger: material('#c9762f', '#f2ab5f', '#8a4715', '#4d2609', '#ffd9a0'),
+  /** Siamese: corpo chiarissimo... */
+  siamese: material('#e8dfc8', '#fff9ea', '#b2a68a', '#6f6652', '#fffdf5'),
+  /** ...e le estremità scure, che è tutto il punto del siamese. */
+  siamesePoints: material('#4b392f', '#705745', '#2b1f19', '#150e0a', '#907459'),
+  /** Placcato: lo stesso oro dei blocchi premio, addosso. */
+  gilded: MATERIAL.gold,
+  /** Spirito: azzurro di ghiaccio, trasparente. */
+  spirit: material('#bed9e9', '#f2fcff', '#7ea0b9', '#4b6375', '#ffffff'),
+  /** Radioattivo: verde acido che si illumina da solo. */
+  neon: material('#7ee04a', '#caff9c', '#3e7b23', '#1c3e0f', '#ebffd1'),
+  /** Ombra: quasi nero, con un riflesso viola sul pelo. */
+  shadow: material('#27232f', '#4b4359', '#151119', '#09070d', '#9079b2'),
+  /** Il mantello del Padrone, in taglia gatto. */
+  master: MATERIAL.hide,
+} as const satisfies Record<string, Material>;
+
+/** Le iridi. Sono l'unica cosa che cambia davvero l'espressione di un gatto. */
+export const IRIS = {
+  green: MATERIAL.eye,
+  amber: material('#d19a2c', '#ffdf8e', '#7d5410', '#3a2606', '#fff7dd'),
+  blue: material('#4f8fd0', '#a8d6ff', '#1f4a7d', '#0c2340', '#eaf6ff'),
+  ember: material('#e0503a', '#ff9d7c', '#7d1f13', '#3d0d07', '#ffd9cc'),
+  gold: MATERIAL.gold,
+} as const satisfies Record<string, Material>;
+
+/**
  * Accenti dell'interfaccia e colori "non fisici".
  * Sono l'unica cosa nel gioco che non finge di essere un materiale: servono a
  * segnalare (il rosa) e a raccogliere (l'oro delle particelle).

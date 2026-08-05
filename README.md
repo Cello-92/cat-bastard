@@ -7,7 +7,7 @@
 Sembra *Super Mario*. Si comporta come *Cat Mario*.<br>
 Ogni blocco è sospetto, ogni fungo è una trappola, la bandiera potrebbe non essere la bandiera.
 
-### [▶︎ GIOCA ORA](https://diamond26.github.io/cat-bastard/)
+### [▶︎ GIOCA ORA](https://cat-bastard.com/)
 
 Niente installazione. Niente account. Niente pietà.
 

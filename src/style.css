@@ -175,11 +175,130 @@ canvas {
 }
 
 /* ---------------------------------------------------------------- menu */
+/*
+ * Le voci e l'anteprima. Quasi sempre c'è solo la lista e questo blocco non fa
+ * niente; nelle pagine "galleria" (i gatti) diventa due colonne.
+ */
+.menu__stage {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+  justify-content: center;
+  width: min(560px, 92%);
+  /* Senza, il contenitore si comprime sotto l'altezza delle voci e la lista
+     trabocca *sopra* il suggerimento e la riga dei tasti invece di scorrere:
+     con undici livelli si vedeva benissimo. */
+  min-height: 0;
+  flex: 0 1 auto;
+}
+
+/*
+ * La lista scorre da sé.
+ *
+ * Undici livelli, sedici gatti: prima o poi una lista è più alta dello schermo,
+ * e allora deve muoversi solo lei — titolo, suggerimento e riga dei tasti
+ * restano dove sono. È anche quello che si aspetta `scrollIntoView` in
+ * `ui/menu.ts`, che tiene la voce selezionata in vista mentre si scorre.
+ */
 .menu {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  width: min(560px, 92%);
+  flex: 1;
+  min-width: 0;
+  /* `100%` e non `vh`: il menu non vive nella finestra, vive dentro `#frame`,
+     che su un telefono in verticale è alto un terzo dello schermo. Con `vh` la
+     lista si prendeva più spazio di quanto ne esistesse e finiva *sopra* la
+     riga dei tasti — che a quel punto intercettava i tap sulle voci. */
+  max-height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  /* La voce corrente si sposta di 3px a destra: senza questo comparirebbe una
+     barra orizzontale solo perché è selezionata. */
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 46, 136, 0.5) transparent;
+}
+
+/*
+ * La barra di scorrimento resta visibile.
+ *
+ * Su un riquadro basso ci stanno tre voci su quattro, e le barre "a scomparsa"
+ * del browser compaiono solo mentre si scorre: senza, non c'è niente che dica
+ * che sotto c'è dell'altro. Sottile e rosa — è un'indicazione, non un widget.
+ */
+.menu::-webkit-scrollbar,
+.menu__rows::-webkit-scrollbar { width: 4px; }
+.menu::-webkit-scrollbar-track,
+.menu__rows::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); border-radius: 2px; }
+.menu::-webkit-scrollbar-thumb,
+.menu__rows::-webkit-scrollbar-thumb { background: rgba(255, 46, 136, 0.55); border-radius: 2px; }
+
+/* ---------------------------------------------------------------- anteprima */
+.preview {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 12px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+}
+.preview__canvas {
+  display: block;
+  width: clamp(88px, 17vw, 132px);
+  height: clamp(88px, 17vw, 132px);
+  border-radius: 8px;
+  background: var(--ink);
+}
+.preview__caption {
+  font-family: var(--mono-font);
+  font-size: clamp(8.5px, 1.6vw, 10.5px);
+  font-weight: 600;
+  letter-spacing: 1.4px;
+  text-align: center;
+  color: var(--gold);
+  opacity: 0.8;
+  max-width: 15ch;
+  line-height: 1.4;
+}
+
+/*
+ * Riquadro basso: il menu deve stare in poche centinaia di pixel.
+ *
+ * `#frame` è alto `min(100dvh, 100vw * 3/5)`, quindi "il riquadro è basso"
+ * vuol dire o finestra stretta (limita la larghezza) o finestra bassa. Sotto
+ * quella soglia il logo e la riga dei tasti sono le prime cose a togliersi di
+ * mezzo: sono decorazione e promemoria, mentre le voci sono il menu. Su touch
+ * la riga dei tasti non serviva comunque a niente — non c'è nessun ESC da
+ * premere.
+ */
+@media (max-width: 566px), (max-height: 340px) {
+  .screen--menu .logo,
+  .screen--menu .keys { display: none; }
+  .menu__item { padding-top: 6px; padding-bottom: 6px; }
+  .menu__body { padding: 8px 12px; line-height: 1.5; }
+  /* In galleria lo spazio serve tutto ai gatti: la spiegazione lunga se ne va
+     (ogni gatto ha già la sua riga di suggerimento) e il ritratto si stringe. */
+  .screen--menu.is-gallery .menu__body { display: none; }
+  .preview__canvas { width: 62px; height: 62px; }
+  /*
+   * Qui lo spazio è poco e va tutto alla lista: `0 1 auto` la faceva
+   * rimpicciolire insieme a tutto il resto, e restava alta una voce sola.
+   * Con `1 1 auto` si prende quello che avanza e scorre dentro di sé.
+   */
+  .menu__stage { flex: 1 1 auto; }
+}
+
+/* Su schermi stretti il ritratto sopra la lista, non accanto: 132px di canvas
+   accanto a una voce di menu lascerebbero due parole per riga. */
+@media (max-width: 560px) {
+  .screen--menu.is-gallery .menu__stage { flex-direction: column-reverse; align-items: center; }
+  .screen--menu.is-gallery .menu { width: 100%; }
+  .preview { flex-direction: row; gap: 12px; padding: 8px 12px; }
+  .preview__caption { max-width: 20ch; text-align: left; }
 }
 
 .menu__item {
@@ -221,7 +340,20 @@ canvas {
 .menu__item.is-locked { color: rgba(244, 241, 234, 0.26); cursor: not-allowed; }
 .menu__item:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
 
-.menu__label { flex: 1; }
+.menu__label { flex: 1; min-width: 0; }
+
+/* Il sottotitolo di una voce: il nome di un livello, il senso di un mondo.
+   Sta sotto l'etichetta e non accanto, così il valore a destra resta in colonna. */
+.menu__sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.72em;
+  font-weight: 500;
+  letter-spacing: 0.6px;
+  text-transform: none;
+  opacity: 0.52;
+}
+.menu__item.is-current .menu__sub { opacity: 0.75; }
 .menu__value {
   font-family: var(--mono-font);
   font-size: 0.78em;
@@ -254,6 +386,57 @@ canvas {
   border-radius: 8px;
 }
 .menu__body p { font-size: inherit !important; opacity: 0.8; max-width: none; }
+
+/*
+ * Dati in colonne: la classifica.
+ *
+ * Allineati da una griglia e non riempiendo di spazi una stringa: con `padEnd`
+ * bastava un nickname di larghezza inattesa per sfilare tutta la tabella, e i
+ * numeri non erano davvero incolonnati — sembravano esserlo.
+ */
+.menu__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: min(560px, 92%);
+  max-height: min(42vh, 340px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding: 10px 12px;
+  font-family: var(--mono-font);
+  font-size: clamp(9.5px, 1.85vw, 12px);
+  /* La schermata centra tutto; una tabella no, o le colonne non sono colonne. */
+  text-align: left;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+}
+.menu__row {
+  display: grid;
+  /* posizione · nome · tempo · morti */
+  grid-template-columns: 2.6em 1fr auto auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 4px 6px;
+  border-radius: 4px;
+  opacity: 0.8;
+}
+/* I numeri si leggono incolonnati a destra, i nomi a sinistra. */
+.menu__row span:nth-child(3),
+.menu__row span:nth-child(4) { text-align: right; }
+.menu__row span:nth-child(1) { color: var(--paper); opacity: 0.45; }
+.menu__row span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu__row span:nth-child(3) { color: var(--gold); font-variant-numeric: tabular-nums; }
+.menu__row span:nth-child(4) { opacity: 0.55; font-variant-numeric: tabular-nums; }
+
+/* La tua riga: è l'unica cosa che si cerca davvero in una classifica. */
+.menu__row.is-strong {
+  opacity: 1;
+  color: #fff;
+  background: linear-gradient(90deg, rgba(255, 46, 136, 0.22), rgba(255, 46, 136, 0.02));
+  box-shadow: inset 2px 0 0 var(--hot);
+}
+.menu__row.is-strong span:nth-child(1) { color: var(--hot); opacity: 1; }
 
 /* ---------------------------------------------------------------- bottoni */
 .btn {

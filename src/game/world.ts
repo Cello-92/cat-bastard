@@ -112,6 +112,22 @@ export class World {
   coins = 0;
   ticks = 0;
 
+  /**
+   * Il tentativo in corso, nella stessa forma che arriva a `onWin`.
+   *
+   * Esiste perché la pausa deve poter dire come sta andando *adesso*, e perché
+   * un solo posto che sa comporre queste quattro cose è meglio di due che
+   * possono scostarsi.
+   */
+  get stats(): RunStats {
+    return {
+      deaths: this.deaths,
+      coins: this.coins,
+      ticks: this.ticks,
+      secret: this.secretFound,
+    };
+  }
+
   private entities: Entity[] = [];
   private trapBricks: TrapBrick[] = [];
   /** Blocchi invisibili già scoperti, per chiave "c,r". */
@@ -883,12 +899,7 @@ export class World {
     this.audio.play('win');
     this.effects.flash(0.5, PALETTE.paper);
     this.effects.ring(this.player.centerX, this.player.centerY, PALETTE.gold, 6, 24);
-    this.callbacks.onWin({
-      deaths: this.deaths,
-      coins: this.coins,
-      ticks: this.ticks,
-      secret: this.secretFound,
-    });
+    this.callbacks.onWin(this.stats);
   }
 
   // ---------------------------------------------------------------- disegno

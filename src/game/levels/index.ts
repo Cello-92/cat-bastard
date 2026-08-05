@@ -40,6 +40,53 @@ export const LEVELS: readonly LevelDef[] = [
 ];
 
 /**
+ * I mondi, ricavati dagli id dei livelli.
+ *
+ * Il numero del mondo non è un campo da compilare: sta già nell'id (`w2-3` è il
+ * terzo livello del mondo 2), quindi si legge da lì. Vale la stessa regola di
+ * `SECRET_COUNT` — aggiungere un livello resta "un file e una riga nel registro",
+ * e un mondo nuovo nasce da solo il giorno in cui compare un `w3-1`.
+ *
+ * L'unica cosa scritta a mano è il sottotitolo, perché quello non si deduce.
+ */
+const WORLD_SUBTITLES: Record<number, string> = {
+  1: 'Prati, grotte, e un Padrone in fondo',
+  2: 'Gelo e fabbrica: qui cambia anche il pavimento',
+};
+
+export interface WorldDef {
+  /** 1, 2, … Ricavato dall'id dei livelli che contiene. */
+  number: number;
+  subtitle: string;
+  levels: readonly LevelDef[];
+  /** Indice del primo livello del mondo dentro `LEVELS`: serve per giocarlo. */
+  firstIndex: number;
+}
+
+export const WORLDS: readonly WorldDef[] = (() => {
+  const byNumber = new Map<number, { levels: LevelDef[]; firstIndex: number }>();
+
+  LEVELS.forEach((level, index) => {
+    // `w2-3` → 2. Un id che non ha questa forma finisce nel mondo 1: è la
+    // risposta meno sorprendente, e comunque `tests/smoke.ts` non gliela fa
+    // passare (il formato è anche un contratto col database).
+    const number = Number(/^w(\d+)-/.exec(level.id)?.[1] ?? 1);
+    const entry = byNumber.get(number);
+    if (entry) entry.levels.push(level);
+    else byNumber.set(number, { levels: [level], firstIndex: index });
+  });
+
+  return [...byNumber.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([number, { levels, firstIndex }]) => ({
+      number,
+      subtitle: WORLD_SUBTITLES[number] ?? '',
+      levels,
+      firstIndex,
+    }));
+})();
+
+/**
  * Quanti gomitoli esistono in tutto il gioco.
  *
  * Si conta dalle mappe invece di scriverlo a mano: aggiungere un livello col

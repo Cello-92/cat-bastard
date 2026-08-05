@@ -37,7 +37,18 @@
         <h1 class="logo">CAT<span>BASTARD</span></h1>
         <p class="tagline" data-menu-title></p>
         <div class="menu__body" data-menu-body hidden></div>
-        <nav class="menu" data-menu-list aria-label="Menu principale"></nav>
+        <div class="menu__rows" data-menu-rows hidden></div>
+        <!--
+          Le voci e l'anteprima stanno affiancate solo nelle pagine "galleria"
+          (i gatti). Altrove il riquadro è vuoto e il CSS lo toglie di mezzo.
+        -->
+        <div class="menu__stage">
+          <nav class="menu" data-menu-list aria-label="Menu principale"></nav>
+          <figure class="preview" data-preview hidden>
+            <canvas class="preview__canvas" data-preview-canvas width="150" height="150"></canvas>
+            <figcaption class="preview__caption" data-preview-caption></figcaption>
+          </figure>
+        </div>
         <p class="menu__hint" data-menu-hint></p>
         <p class="keys">↑ ↓ scegli · INVIO conferma · ESC indietro · F schermo intero</p>
       </section>

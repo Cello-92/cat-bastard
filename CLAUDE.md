@@ -7,8 +7,8 @@ sembra un platform classico e onesto, ma ogni elemento familiare è una trappola
 browser aprendo un link pubblico — niente installazione, niente account.
 
 Il gioco è strutturato **a livelli** su due mondi, con un menu di avvio navigabile (gioca,
-selezione livelli con i record, gatti sbloccabili, audio, comandi, azzeramento progressi) e la
-pausa su `ESC`. Il protagonista è un gatto — anzi, cinque, ma cambia solo il manto. Il tono è
+mondi e livelli con i record, la collezione dei gatti, classifica, account, opzioni) e la pausa
+su `ESC`. Il protagonista è un gatto — anzi, cinque, ma cambia solo il manto. Il tono è
 ironico e cattivo: il gioco ti prende in giro mentre muori. I testi in-game sono **in italiano**.
 
 Link pubblico: <https://diamond26.github.io/cat-bastard/>
@@ -97,7 +97,7 @@ src/
               payload.ts (traduzione locale<->server), config.ts
               Il backend. Opzionale per costruzione: se non è configurato,
               il gioco è esattamente quello di prima.
-  ui/         hud.ts, menu.ts, screens.ts, account-dialog.ts, format.ts
+  ui/         hud.ts, menu.ts, preview.ts, screens.ts, account-dialog.ts, format.ts
               L'unico codice che tocca il DOM
 tests/        smoke test headless, gira in CI
 legacy/       prototipo originale single-file, solo come riferimento
@@ -198,6 +198,37 @@ già aperto — quindi il contratto dello scontro si verifica in `smoke.ts`.
 erano già presi da `SENTRY` e `STEEL`: due tile diversi con lo stesso carattere
 non danno nessun errore, danno un livello che si carica sbagliato. Prima di
 battezzare un tile nuovo, guardare tutto `TILE`.
+
+### Il menu
+
+Il menu è un menu da console che vive nel DOM: frecce, Invio, Esc — e le stesse
+voci restano cliccabili e toccabili, perché il gioco gira in un browser e
+nessuno dei tre modi va penalizzato. `ui/menu.ts` non sa niente di Cat Bastard:
+riceve pagine (titolo, corpo, righe, voci) e le disegna. Chi decide *cosa* c'è
+in una pagina è `game.ts`, che è il composition root.
+
+Tre cose da sapere prima di toccarlo:
+
+- **La gerarchia è a due livelli, non piatta.** Radice → mondi → livelli. Con
+  sedici livelli una lista sola non è una lista, è uno scorrimento; e i mondi
+  esistono già nel gioco (cambiano cielo, tileset e regole del pavimento).
+  `WORLDS` in `levels/index.ts` si ricava dagli id (`w2-3` → mondo 2): un mondo
+  nuovo nasce da solo il giorno in cui compare un `w3-1`.
+- **`locked` vuol dire "non confermabile", non "non selezionabile".** La
+  selezione attraversa anche le voci chiuse, perché il motivo per cui sono
+  chiuse sta nel loro `hint` e un gatto da sbloccare ha una sagoma da mostrare:
+  saltandole, quella roba non la vedeva nessuno se non col mouse.
+- **Il menu vive dentro `#frame`, non nella finestra.** Su un telefono in
+  verticale il riquadro è alto un terzo dello schermo: le altezze si misurano
+  in `%` del contenitore, mai in `vh`, o la lista finisce sopra le altre righe
+  e ne intercetta i tap.
+
+La collezione dei gatti disegna il ritratto **col codice del gioco**
+(`game/render/cat-portrait.ts` riusa `Player.draw` su un canvas suo, via
+`Renderer` come tutto il resto). Costa poco e toglie all'unica schermata-premio
+del gioco l'unico modo che avrebbe di mentire: mostrare un gatto più bello di
+quello che poi ti ritrovi. Non è un negozio e non deve diventarlo — le monete
+sono un punteggio, non una valuta.
 
 ### I segreti e i gatti
 

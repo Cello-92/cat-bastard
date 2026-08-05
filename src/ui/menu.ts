@@ -18,17 +18,51 @@ export interface MenuItem {
   value?: string;
   /** Riga di spiegazione mostrata quando la voce è selezionata. */
   hint?: string;
-  /** Voce non ancora disponibile: si vede, non si sceglie. */
+  /** Riga sotto l'etichetta: il sottotitolo di un mondo, il nome di un livello. */
+  sub?: string;
+  /**
+   * Voce non ancora disponibile.
+   *
+   * Si può guardare ma non confermare. La differenza conta: il motivo per cui
+   * una voce è chiusa sta nel suo `hint`, e un gatto ancora da sbloccare ha una
+   * sagoma da mostrare — roba che nessuno vedrebbe mai se la selezione le
+   * saltasse a piè pari, com'è stato finché il mouse era l'unico modo di
+   * arrivarci.
+   */
   locked?: boolean;
+  /**
+   * La voce è diventata quella corrente.
+   *
+   * Serve alle pagine che mostrano qualcosa accanto alla lista — il gatto della
+   * collezione, per dirne una. Il menu non sa cosa ci sia da mostrare e non deve
+   * saperlo: dice solo *quando* è cambiata la selezione, e chi ha costruito la
+   * pagina disegna quello che gli pare.
+   */
+  onFocus?(): void;
   onSelect(): void;
+}
+
+/** Una riga di dati: la classifica, e qualunque cosa venga dopo. */
+export interface MenuRow {
+  cells: readonly string[];
+  /** Riga da far risaltare: in classifica è la tua. */
+  strong?: boolean;
 }
 
 export interface MenuPage {
   title?: string;
   /** Pagina "di servizio" (pausa, conferme): senza logo, va dritta al punto. */
   compact?: boolean;
+  /**
+   * Con `gallery` la lista si stringe e lascia posto al riquadro d'anteprima.
+   * È l'unica pagina del gioco in cui c'è qualcosa da *guardare* e non da
+   * leggere, e una lista a tutta larghezza le toglierebbe il senso.
+   */
+  layout?: 'list' | 'gallery';
   /** Righe di testo mostrate sopra le voci: istruzioni, crediti, avvertimenti. */
   body?: readonly string[];
+  /** Dati in colonne, sopra le voci. Allineati dal CSS, non con gli spazi. */
+  rows?: readonly MenuRow[];
   items: readonly MenuItem[];
   /** Chiamata su Esc / voce "indietro". Assente = pagina radice. */
   onBack?: () => void;
@@ -39,6 +73,8 @@ export interface MenuCallbacks {
   onMove(): void;
   /** Una voce è stata confermata. */
   onChoose(): void;
+  /** Invio su una voce chiusa: va detto, altrimenti sembra un tasto rotto. */
+  onDenied?(): void;
   /** Esc premuto a menu chiuso: il gioco decide se è una pausa. */
   onPauseRequest(): void;
   /**
@@ -56,6 +92,7 @@ export class Menu {
   private readonly list: HTMLElement;
   private readonly heading: HTMLElement | null;
   private readonly body: HTMLElement | null;
+  private readonly rows: HTMLElement | null;
   private readonly hint: HTMLElement | null;
 
   private items: readonly MenuItem[] = [];
@@ -70,6 +107,7 @@ export class Menu {
     this.list = panel.querySelector('[data-menu-list]') ?? panel;
     this.heading = panel.querySelector('[data-menu-title]');
     this.body = panel.querySelector('[data-menu-body]');
+    this.rows = panel.querySelector('[data-menu-rows]');
     this.hint = panel.querySelector('[data-menu-hint]');
 
     window.addEventListener('keydown', this.handleKey);
@@ -103,11 +141,32 @@ export class Menu {
       this.body.hidden = lines.length === 0;
     }
 
+    if (this.rows) {
+      const data = page.rows ?? [];
+      this.rows.replaceChildren(...data.map((row) => this.renderRow(row)));
+      this.rows.hidden = data.length === 0;
+    }
+
     this.list.replaceChildren(...this.items.map((item, i) => this.render(item, i)));
     this.panel.classList.toggle('is-compact', page.compact === true);
+    this.panel.classList.toggle('is-gallery', page.layout === 'gallery');
     this.panel.classList.remove('is-hidden');
     this.open = true;
     this.refresh();
+  }
+
+  private renderRow(row: MenuRow): HTMLElement {
+    const line = document.createElement('div');
+    line.className = 'menu__row';
+    if (row.strong) line.classList.add('is-strong');
+    line.replaceChildren(
+      ...row.cells.map((cell) => {
+        const span = document.createElement('span');
+        span.textContent = cell;
+        return span;
+      }),
+    );
+    return line;
   }
 
   hide(): void {
@@ -129,6 +188,16 @@ export class Menu {
     const label = document.createElement('span');
     label.className = 'menu__label';
     label.textContent = item.label;
+
+    if (item.sub) {
+      // Il sottotitolo sta *dentro* l'etichetta e non in una colonna sua: così
+      // la voce resta un blocco solo e il valore a destra continua ad allinearsi
+      // con quello delle altre righe, che è tutto il punto della colonna.
+      const sub = document.createElement('small');
+      sub.className = 'menu__sub';
+      sub.textContent = item.sub;
+      label.append(sub);
+    }
     button.append(label);
 
     if (item.value) {
@@ -189,18 +258,17 @@ export class Menu {
     }
   };
 
-  /** Salta le voci bloccate: selezionarle sarebbe un vicolo cieco. */
+  /**
+   * Scorre di una voce, girando in tondo.
+   *
+   * Le voci chiuse si attraversano come le altre: è l'unico modo di leggere
+   * perché sono chiuse, e nella collezione è l'unico modo di vedere la sagoma
+   * di quello che manca. Confermarle non fa niente (vedi `choose`).
+   */
   private step(direction: number): void {
     const total = this.items.length;
     if (total === 0) return;
-
-    for (let i = 1; i <= total; i++) {
-      const next = (((this.index + direction * i) % total) + total) % total;
-      if (!this.items[next]?.locked) {
-        this.moveTo(next, true);
-        return;
-      }
-    }
+    this.moveTo((((this.index + direction) % total) + total) % total, true);
   }
 
   private moveTo(index: number, sound: boolean): void {
@@ -212,7 +280,11 @@ export class Menu {
 
   private choose(): void {
     const item = this.items[this.index];
-    if (!item || item.locked) return;
+    if (!item) return;
+    if (item.locked) {
+      this.callbacks.onDenied?.();
+      return;
+    }
     this.callbacks.onChoose();
     item.onSelect();
   }
@@ -237,5 +309,9 @@ export class Menu {
       this.hint.textContent = text;
       this.hint.hidden = text.length === 0;
     }
+
+    // Per ultimo: chi ascolta il focus di solito disegna qualcosa, e deve
+    // trovare la pagina già a posto.
+    this.items[this.index]?.onFocus?.();
   }
 }

@@ -18,12 +18,14 @@ import { Account } from '@net/account';
 import { Hud } from '@ui/hud';
 import { AccountDialog } from '@ui/account-dialog';
 import { bindFullscreenKey, isFullscreen, toggleFullscreen } from '@ui/fullscreen';
-import { Menu, type MenuItem } from '@ui/menu';
+import { Menu, type MenuItem, type MenuPage, type MenuRow } from '@ui/menu';
+import { Preview } from '@ui/preview';
 import { Screens } from '@ui/screens';
 import { formatMs, formatTicksPrecise, plural } from '@ui/format';
 import { CATS, catById, catRequirement, isCatUnlocked, type UnlockState } from './cats';
 import { VIEW_HEIGHT, VIEW_WIDTH } from './config';
-import { LEVELS, SECRET_COUNT, firstLevel } from './levels';
+import { LEVELS, SECRET_COUNT, WORLDS, firstLevel, type WorldDef } from './levels';
+import { drawCatPortrait } from './render/cat-portrait';
 import { World, type RunStats } from './world';
 
 /**
@@ -47,6 +49,7 @@ export class Game {
   private readonly hud: Hud;
   private readonly screens: Screens;
   private readonly menu: Menu;
+  private readonly preview: Preview;
   private readonly loop: GameLoop;
   private readonly account = new Account();
   private readonly accountDialog: AccountDialog;
@@ -85,12 +88,20 @@ export class Game {
     this.menu = new Menu(panel, {
       onMove: () => this.audio.play('bump'),
       onChoose: () => this.audio.play('ui'),
+      // Un Invio che non fa niente sembra un tasto rotto: il tonfo dice "no".
+      onDenied: () => this.audio.play('block'),
       onPauseRequest: () => this.pause(),
       // Col popup dell'account aperto il menu resta visibile dietro: senza
       // questo, l'Invio che conferma la password confermerebbe anche la voce
       // selezionata sotto.
       isBlocked: () => this.accountDialog.isOpen,
     });
+
+    this.preview = new Preview(
+      panel.querySelector<HTMLElement>('[data-preview]'),
+      panel.querySelector<HTMLCanvasElement>('[data-preview-canvas]'),
+      panel.querySelector<HTMLElement>('[data-preview-caption]'),
+    );
 
     this.accountDialog = new AccountDialog(root, {
       onRegister: (nickname, password) => this.authenticate('register', nickname, password),
@@ -242,6 +253,34 @@ export class Game {
     this.showRootMenu();
   }
 
+  /**
+   * Tutte le pagine passano di qui.
+   *
+   * Serve a una cosa sola: spegnere l'anteprima quando la pagina non ne ha una.
+   * Farlo in ogni `show` sarebbe la stessa riga scritta dodici volte, e prima o
+   * poi una dimenticata — con un gatto che resta a respirare accanto alle
+   * opzioni audio.
+   */
+  private page(page: MenuPage): void {
+    if (page.layout !== 'gallery') this.preview.hide();
+    this.menu.show(page);
+  }
+
+  /** Quanti livelli di un mondo sono finiti, e quanti gomitoli ne sono usciti. */
+  private worldProgress(world: WorldDef): { cleared: number; yarn: number; secrets: number } {
+    let cleared = 0;
+    let yarn = 0;
+    let secrets = 0;
+    for (const level of world.levels) {
+      if (this.progress.levels[level.id]?.cleared) cleared++;
+      if (level.rows.some((row) => row.includes('*'))) {
+        secrets++;
+        if (this.progress.secrets.includes(level.id)) yarn++;
+      }
+    }
+    return { cleared, yarn, secrets };
+  }
+
   private showRootMenu(): void {
     const resume = this.resumeIndex;
     const started = resume > 0 || this.progress.totalDeaths > 0;
@@ -266,43 +305,95 @@ export class Game {
         ]
       : [];
 
-    this.menu.show({
+    this.page({
       title: started
         ? `${cleared} livelli su ${LEVELS.length} · ${plural(this.progress.totalDeaths, 'morte', 'morti')} in totale · ${plural(yarn, 'gomitolo', 'gomitoli')}`
         : 'Un platform che ti odia. Ogni blocco è sospetto, ogni fungo è una trappola, la bandiera potrebbe non essere la bandiera.',
       items: [
         {
           label: cleared > 0 ? 'CONTINUA' : 'GIOCA',
+          sub: LEVELS[resume]?.title ?? '',
           value: LEVELS[resume]?.name ?? '',
-          hint: LEVELS[resume]?.title ?? '',
+          hint: cleared > 0 ? 'Riprende dal primo livello che non hai ancora finito' : 'Si comincia da 1-1, come tutti',
           onSelect: () => this.startLevel(resume),
         },
         {
-          label: 'LIVELLI',
-          hint: 'Rigioca quello che hai già sofferto, e guarda i record',
-          onSelect: () => this.showLevelsMenu(),
+          label: 'MONDI E LIVELLI',
+          value: `${cleared}/${LEVELS.length}`,
+          hint: 'Scegli il mondo, poi il livello. Con i record e i gomitoli',
+          onSelect: () => this.showWorldsMenu(),
         },
         {
           label: 'GATTI',
+          sub: `${plural(yarn, 'gomitolo', 'gomitoli')} su ${SECRET_COUNT}`,
           value: catById(this.settings.cat).name,
           hint: 'I gomitoli nascosti nei livelli servono a questo, e solo a questo',
-          onSelect: () => this.showCatsMenu(),
+          onSelect: () => this.showCatsMenu(() => this.showRootMenu()),
         },
         ...online,
+        {
+          label: 'OPZIONI',
+          hint: 'Audio, schermo, comandi — e il tasto per buttare via tutto',
+          onSelect: () => this.showOptionsMenu(),
+        },
+      ],
+    });
+  }
+
+  /**
+   * I mondi.
+   *
+   * Con sedici livelli una lista sola non è più una lista: è uno scorrimento.
+   * I mondi esistono già nel gioco (cambiano cielo, tileset e regole del
+   * pavimento), quindi il menu smette di fingere che sia tutto di seguito.
+   */
+  private showWorldsMenu(): void {
+    const items: MenuItem[] = WORLDS.map((world) => {
+      const { cleared, yarn, secrets } = this.worldProgress(world);
+      const unlocked = this.isUnlocked(world.firstIndex);
+      const done = cleared === world.levels.length;
+
+      return {
+        label: `MONDO ${world.number}`,
+        sub: world.subtitle,
+        value: unlocked ? `${cleared}/${world.levels.length}${done ? ' ✓' : ''}` : 'BLOCCATO',
+        hint: unlocked
+          ? secrets > 0
+            ? `${plural(cleared, 'livello finito', 'livelli finiti')} · ${yarn} gomitoli su ${secrets}`
+            : `${plural(cleared, 'livello finito', 'livelli finiti')} su ${world.levels.length}`
+          : `Finisci il mondo ${world.number - 1} per arrivare qui`,
+        locked: !unlocked,
+        onSelect: () => this.showLevelsMenu(world),
+      };
+    });
+
+    items.push({ label: 'INDIETRO', onSelect: () => this.showRootMenu() });
+
+    this.page({
+      title: 'MONDI',
+      items,
+      onBack: () => this.showRootMenu(),
+    });
+  }
+
+  private showOptionsMenu(): void {
+    this.page({
+      title: 'OPZIONI',
+      items: [
+        {
+          label: 'AUDIO',
+          value: this.settings.audio ? 'ON' : 'OFF',
+          hint: 'Suoni sintetizzati, nessun file: si spengono e si riaccendono qui',
+          onSelect: () => this.toggleAudio(() => this.showOptionsMenu()),
+        },
         {
           label: 'SCHERMO INTERO',
           value: isFullscreen() ? 'ON' : 'OFF',
           hint: 'Anche col tasto F, in qualunque momento',
           onSelect: () => {
             toggleFullscreen();
-            this.showRootMenu();
+            this.showOptionsMenu();
           },
-        },
-        {
-          label: 'AUDIO',
-          value: this.settings.audio ? 'ON' : 'OFF',
-          hint: 'Suoni sintetizzati, nessun file: si spengono e si riaccendono qui',
-          onSelect: () => this.toggleAudio(),
         },
         {
           label: 'COMANDI',
@@ -314,30 +405,36 @@ export class Game {
           hint: 'Cancella record, morti e livelli sbloccati. Non si torna indietro',
           onSelect: () => this.showResetMenu(),
         },
+        { label: 'INDIETRO', onSelect: () => this.showRootMenu() },
       ],
+      onBack: () => this.showRootMenu(),
     });
   }
 
-  private showLevelsMenu(): void {
-    const items: MenuItem[] = LEVELS.map((level, index) => {
+  private showLevelsMenu(world: WorldDef): void {
+    const items: MenuItem[] = world.levels.map((level) => {
+      const index = LEVELS.indexOf(level);
       const record = this.progress.levels[level.id];
       const unlocked = this.isUnlocked(index);
       // Il gomitolo si segnala solo nei livelli che ne hanno uno: un livello
       // senza segreti non deve sembrare un livello con un segreto mancato.
       const hasSecret = level.rows.some((row) => row.includes('*'));
       const gotSecret = this.progress.secrets.includes(level.id);
-      const yarnMark = hasSecret ? (gotSecret ? ' · GOMITOLO' : ' · ·') : '';
+      // Stella piena = preso, stella vuota = c'è e non ce l'hai. Che il
+      // livello *abbia* un gomitolo si può dire: dove sta, no.
+      const yarnMark = hasSecret ? (gotSecret ? ' ✦' : ' ✧') : '';
 
       return {
-        label: `${level.name}   ${level.title}`,
+        label: level.name,
+        sub: unlocked ? level.title : '???',
         value: record?.cleared
-          ? `${plural(record.bestDeaths, 'morte', 'morti')} · ${formatTicksPrecise(record.bestTicks)}${yarnMark}`
+          ? `${formatTicksPrecise(record.bestTicks)}${yarnMark}`
           : unlocked
             ? `MAI FINITO${yarnMark}`
             : 'BLOCCATO',
         hint: unlocked
           ? record?.cleared
-            ? `Record: ${plural(record.bestDeaths, 'morte', 'morti')}, ${formatTicksPrecise(record.bestTicks)}, ${plural(record.bestCoins, 'moneta', 'monete')}`
+            ? `Record: ${formatTicksPrecise(record.bestTicks)} · ${plural(record.bestDeaths, 'morte', 'morti')} · ${plural(record.bestCoins, 'moneta', 'monete')}${hasSecret ? (gotSecret ? ' · gomitolo trovato' : ' · il gomitolo è ancora lì') : ''}`
             : 'Mai superato. Prima o poi.'
           : `Finisci ${LEVELS[index - 1]?.name ?? ''} per sbloccarlo`,
         locked: !unlocked,
@@ -345,12 +442,13 @@ export class Game {
       };
     });
 
-    items.push({ label: 'INDIETRO', onSelect: () => this.showRootMenu() });
+    items.push({ label: 'INDIETRO', onSelect: () => this.showWorldsMenu() });
 
-    this.menu.show({
-      title: 'LIVELLI',
+    const { cleared, yarn, secrets } = this.worldProgress(world);
+    this.page({
+      title: `MONDO ${world.number} · ${cleared} su ${world.levels.length}${secrets > 0 ? ` · ${yarn}/${secrets} gomitoli` : ''}`,
       items,
-      onBack: () => this.showRootMenu(),
+      onBack: () => this.showWorldsMenu(),
     });
   }
 
@@ -359,7 +457,8 @@ export class Game {
     const items: MenuItem[] = LEVELS.map((level) => {
       const record = this.progress.levels[level.id];
       return {
-        label: `${level.name}   ${level.title}`,
+        label: level.name,
+        sub: level.title,
         value: record?.cleared ? formatTicksPrecise(record.bestTicks) : '—',
         hint: record?.cleared
           ? 'Il valore a destra è il tuo tempo: guarda quanto sei lontano'
@@ -370,7 +469,7 @@ export class Game {
 
     items.push({ label: 'INDIETRO', onSelect: () => this.showRootMenu() });
 
-    this.menu.show({
+    this.page({
       title: 'CLASSIFICA · i venti tempi migliori di ogni livello',
       items,
       onBack: () => this.showRootMenu(),
@@ -381,11 +480,12 @@ export class Game {
     const request = ++this.leaderboardRequest;
     const back: MenuItem = { label: 'INDIETRO', onSelect: () => this.showLeaderboardMenu() };
 
-    const page = (body: readonly string[]): void => {
-      this.menu.show({
+    const page = (body: readonly string[], rows: readonly MenuRow[] = []): void => {
+      this.page({
         compact: true,
         title: `${name} — ${title}`,
         body,
+        rows,
         items: [back],
         onBack: () => this.showLeaderboardMenu(),
       });
@@ -413,21 +513,28 @@ export class Game {
       return;
     }
 
+    // Le colonne le allinea il CSS con una griglia. Prima erano stringhe
+    // riempite di spazi: bastava un nickname più lungo del previsto per
+    // sfilare tutta la tabella, e i tempi non erano incolonnati davvero.
     const mine = this.account.nickname?.toLowerCase();
     page(
-      rows.map((row, i) => {
-        const rank = `${String(i + 1).padStart(2, ' ')}.`;
-        const who = row.nickname.length > 16 ? `${row.nickname.slice(0, 15)}…` : row.nickname;
-        const marker = mine && row.nickname.toLowerCase() === mine ? '◂ tu' : '';
-        return `${rank} ${who.padEnd(17, ' ')}${formatMs(row.ms).padStart(9, ' ')}   ${plural(row.deaths, 'morte', 'morti')} ${marker}`;
-      }),
+      [],
+      rows.map((row, i) => ({
+        cells: [
+          `${i + 1}.`,
+          row.nickname,
+          formatMs(row.ms),
+          plural(row.deaths, 'morte', 'morti'),
+        ],
+        strong: mine !== undefined && row.nickname.toLowerCase() === mine,
+      })),
     );
   }
 
   // --------------------------------------------------------------- account
   private showAccountMenu(): void {
     if (this.account.isLogged) {
-      this.menu.show({
+      this.page({
         compact: true,
         title: `ACCOUNT · ${this.account.nickname ?? ''}`,
         body: [
@@ -455,7 +562,7 @@ export class Game {
       return;
     }
 
-    this.menu.show({
+    this.page({
       compact: true,
       title: 'ACCOUNT',
       body: [
@@ -492,41 +599,59 @@ export class Game {
    * a far vedere che quando il gioco promette qualcosa di gratis, ogni tanto
    * lo mantiene.
    */
-  private showCatsMenu(): void {
+  private showCatsMenu(back: () => void): void {
     const state = this.unlockState;
 
     const items: MenuItem[] = CATS.map((cat) => {
       const unlocked = isCatUnlocked(cat, state);
       const current = this.settings.cat === cat.id;
       return {
-        label: cat.name,
-        value: current ? 'IN USO' : unlocked ? '' : 'BLOCCATO',
+        label: unlocked ? cat.name : '???',
+        value: current ? 'IN USO' : unlocked ? '' : `${cat.yarn} ✦`,
         hint: unlocked ? cat.blurb : catRequirement(cat, state),
         locked: !unlocked,
+        // Scorrere la lista cambia il ritratto: è l'unico posto del gioco in
+        // cui si guarda qualcosa invece di leggerlo, e una galleria che non
+        // mostra la merce non è una galleria.
+        onFocus: () => {
+          this.preview.show(
+            (r, tick) => drawCatPortrait(r, cat, tick, { locked: !unlocked, current }),
+            unlocked ? cat.name : 'CHIUSO',
+          );
+        },
         onSelect: () => {
+          if (!unlocked) return;
           this.settings = { ...this.settings, cat: cat.id };
           saveSettings(this.settings);
           this.world.player.skin = cat;
-          this.showCatsMenu();
+          this.showCatsMenu(back);
         },
       };
     });
 
-    items.push({ label: 'INDIETRO', onSelect: () => this.showRootMenu() });
+    items.push({
+      label: 'INDIETRO',
+      // Anche l'ultima voce ha il suo focus: senza, uscendo dalla lista il
+      // ritratto resterebbe fermo sull'ultimo gatto guardato, e sembrerebbe
+      // che "INDIETRO" sia un gatto.
+      onFocus: () => this.preview.show((r, tick) => drawCatPortrait(r, catById(this.settings.cat), tick, { current: true }), 'IN USO'),
+      onSelect: back,
+    });
 
-    this.menu.show({
+    this.page({
+      layout: 'gallery',
       title: `GATTI · ${plural(state.yarn, 'gomitolo', 'gomitoli')} su ${SECRET_COUNT}`,
       body: [
-        'Ogni livello nasconde un gomitolo dietro qualcosa che sembra un muro.',
-        'Non danno nessun vantaggio: cambiano solo la faccia di chi muore.',
+        `${SECRET_COUNT} livelli nascondono un gomitolo dietro qualcosa che sembra un muro. Quali, si scopre andandoci a sbattere.`,
+        'Non danno nessun vantaggio: cambiano solo la faccia di chi muore. Non c\'è niente da comprare, e le monete non servono a questo.',
       ],
       items,
-      onBack: () => this.showRootMenu(),
+      onBack: back,
     });
   }
 
   private showHelpMenu(): void {
-    this.menu.show({
+    this.page({
       title: 'COMANDI',
       body: [
         'A D  oppure  ← →     muoversi',
@@ -536,20 +661,20 @@ export class Game {
         'F     schermo intero',
         'I comandi non tradiscono mai: niente ritardi, niente tasti invertiti. Se sei morto è colpa del livello, ed era voluto.',
       ],
-      items: [{ label: 'INDIETRO', onSelect: () => this.showRootMenu() }],
-      onBack: () => this.showRootMenu(),
+      items: [{ label: 'INDIETRO', onSelect: () => this.showOptionsMenu() }],
+      onBack: () => this.showOptionsMenu(),
     });
   }
 
   private showResetMenu(): void {
-    this.menu.show({
+    this.page({
       compact: true,
       title: 'AZZERARE TUTTO?',
       body: [
-        'Record, morti totali, monete, gatti sbloccati e livelli: sparisce tutto. Anche i cubi nascosti tornano dove erano.',
+        'Record, morti totali, monete, gomitoli e livelli sbloccati: sparisce tutto. Anche i gomitoli già trovati tornano dove erano, e con loro i gatti.',
       ],
       items: [
-        { label: 'NO, LASCIA STARE', onSelect: () => this.showRootMenu() },
+        { label: 'NO, LASCIA STARE', onSelect: () => this.showOptionsMenu() },
         {
           label: 'SÌ, CANCELLA',
           hint: 'Si riparte da 1-1 come il primo giorno',
@@ -567,17 +692,21 @@ export class Game {
           },
         },
       ],
-      onBack: () => this.showRootMenu(),
+      onBack: () => this.showOptionsMenu(),
     });
   }
 
-  private toggleAudio(): void {
+  /**
+   * L'audio si spegne da due posti (opzioni e pausa) e deve tornare da dove è
+   * stato toccato: `after` è la pagina che ha chiesto il cambio.
+   */
+  private toggleAudio(after: () => void): void {
     this.settings = { ...this.settings, audio: !this.settings.audio };
     this.audio.setEnabled(this.settings.audio);
     saveSettings(this.settings);
     if (this.settings.audio) this.audio.play('ui');
     // La voce mostra il proprio stato: va ridisegnata dopo averlo cambiato.
-    this.showRootMenu();
+    after();
   }
 
   /** Pausa: esiste solo durante il gioco. */
@@ -585,9 +714,33 @@ export class Game {
     if (this.phase !== 'playing') return;
     this.phase = 'menu';
     this.input.releaseAll();
-    this.menu.show({
+    this.pauseMenu();
+  }
+
+  /**
+   * La pagina della pausa, separata dall'atto di mettere in pausa.
+   *
+   * Servono due cose distinte perché dai sottomenu della pausa (i gatti,
+   * l'audio) si torna *qui*, e a quel punto il gioco è già fermo: `pause()`
+   * rifiuterebbe di fare qualunque cosa, e si finirebbe nel menu principale
+   * con il livello perso.
+   */
+  private pauseMenu(): void {
+    const level = this.world.level;
+    const stats = this.world.stats;
+    const record = this.progress.levels[level.id];
+
+    this.page({
       compact: true,
-      title: `PAUSA · ${this.world.level.name} — ${this.world.level.title}`,
+      title: `PAUSA · ${level.name} — ${level.title}`,
+      // In pausa la domanda è sempre la stessa: "quanto sto andando male?".
+      // Il HUD lo dice mentre si corre, ma correndo non si legge niente.
+      body: [
+        `In questo tentativo: ${plural(stats.deaths, 'morte', 'morti')} · ${plural(stats.coins, 'moneta', 'monete')} · ${formatTicksPrecise(stats.ticks)}`,
+        record?.cleared
+          ? `Il tuo record qui: ${formatTicksPrecise(record.bestTicks)} con ${plural(record.bestDeaths, 'morte', 'morti')}`
+          : 'Non hai mai finito questo livello.',
+      ],
       items: [
         { label: 'RIPRENDI', onSelect: () => this.resume() },
         {
@@ -598,14 +751,38 @@ export class Game {
             this.resume();
           },
         },
-        { label: 'MENU PRINCIPALE', onSelect: () => this.openMenu() },
+        {
+          label: 'GATTI',
+          value: catById(this.settings.cat).name,
+          hint: 'Cambiare manto qui non fa ricominciare niente',
+          onSelect: () => this.showCatsMenu(() => this.pauseMenu()),
+        },
+        {
+          label: 'AUDIO',
+          value: this.settings.audio ? 'ON' : 'OFF',
+          hint: 'Il posto in cui si spegne senza uscire dal livello',
+          onSelect: () => this.toggleAudio(() => this.pauseMenu()),
+        },
+        { label: 'MENU PRINCIPALE', hint: 'Il livello ricomincia da capo la prossima volta', onSelect: () => this.openMenu() },
       ],
       onBack: () => this.resume(),
     });
   }
 
-  private resume(): void {
+  /**
+   * Chiude il menu e spegne l'anteprima.
+   *
+   * L'anteprima disegna a frame liberi: nascosta dal CSS resterebbe comunque a
+   * girare sotto al gioco, cioè un secondo canvas animato per niente proprio
+   * mentre serve tutto il tempo di frame che c'è.
+   */
+  private closeMenu(): void {
+    this.preview.hide();
     this.menu.hide();
+  }
+
+  private resume(): void {
+    this.closeMenu();
     this.screens.hideAll();
     this.phase = 'playing';
   }
@@ -615,7 +792,7 @@ export class Game {
     this.audio.unlock();
     this.levelIndex = index;
     this.world = this.createWorld(index);
-    this.menu.hide();
+    this.closeMenu();
     this.screens.hideAll();
     this.screens.clearTaunt();
     this.phase = 'playing';

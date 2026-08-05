@@ -202,6 +202,29 @@ export class World {
    */
   private beltGrace = 0;
 
+  /**
+   * Monete già contate e gomitoli già presi, per cella.
+   *
+   * Esistono perché la mappa non sopravvive alla morte: `rebuild()` la
+   * ricostruisce dalle righe del livello, quindi ogni moneta e ogni gomitolo
+   * tornavano al loro posto a ogni respawn. Bastava morire accanto a una
+   * moneta per raccoglierla altre mille volte — e le monete di un livello
+   * finiscono in `bestCoins`, che va in classifica.
+   *
+   * Le due cose si comportano in modo diverso di proposito:
+   *
+   *  - il **gomitolo** sparisce e non torna. È un segreto: una volta trovato
+   *    non c'è più niente da trovare, e vederlo ancora lì sarebbe una bugia;
+   *  - la **moneta** torna al suo posto e si può riprendere, ma non conta.
+   *    Toglierla lascerebbe buchi in un livello che il giocatore sta
+   *    imparando a memoria, e la memoria di un livello è il gameplay.
+   *
+   * Sopravvivono alla morte, non a `restart()`: ricominciare da capo azzera
+   * anche il contatore, quindi è un tentativo nuovo e non un raccolto in più.
+   */
+  private countedCoins = new Set<string>();
+  private takenYarn = new Set<string>();
+
   constructor(
     public level: LevelDef,
     readonly audio: Audio,
@@ -221,6 +244,10 @@ export class World {
     // Ricominciare da capo significa anche tornare a non sapere dove sono le
     // trappole invisibili: è l'unica cosa che il respawn non porta con sé.
     this.discovered.clear();
+    // Le monete tornano a contare e il gomitolo torna al suo posto: il
+    // contatore è appena stato azzerato, quindi non si regala niente.
+    this.countedCoins.clear();
+    this.takenYarn.clear();
     this.rebuild();
   }
 
@@ -243,6 +270,13 @@ export class World {
     this.brickRespawn.clear();
     this.gateCells = [];
     this.gateOpen = false;
+
+    // Il gomitolo già preso non torna: la mappa è appena stata ricostruita
+    // dalle righe del livello, e lì lui c'è ancora.
+    for (const key of this.takenYarn) {
+      const [c, r] = cellOf(key);
+      this.map.clear(c, r);
+    }
 
     // I marcatori nella mappa diventano entità e spariscono dalla griglia.
     for (const { c, r, tile } of this.map.entries()) {
@@ -399,10 +433,31 @@ export class World {
 
   private collectCoin(c: number, r: number): void {
     this.map.clear(c, r);
-    this.coins++;
+    this.countCoin(TileMap.key(c, r), c * TILE_SIZE + TILE_SIZE / 2, r * TILE_SIZE + TILE_SIZE / 2);
+  }
+
+  /**
+   * Segna una moneta, se non era già stata segnata.
+   *
+   * Una moneta si raccoglie quante volte si vuole — muore il gatto, torna la
+   * moneta — ma la seconda volta non vale: `bestCoins` è il massimo raccolto
+   * in un tentativo, non quante volte si è passati di lì.
+   *
+   * Il riscontro però c'è lo stesso, ed è diverso: senza, un giocatore che
+   * vede il contatore fermo penserebbe a un bug invece che a una regola (vedi
+   * CLAUDE.md, punto 7: quello che succede dev'essere leggibile).
+   */
+  private countCoin(key: string, x: number, y: number): void {
     this.audio.play('coin');
-    const x = c * TILE_SIZE + TILE_SIZE / 2;
-    const y = r * TILE_SIZE + TILE_SIZE / 2;
+
+    if (this.countedCoins.has(key)) {
+      this.effects.burst(x, y, PALETTE.dust, { count: 5, speed: 1.8, size: 3, life: 18 });
+      this.effects.floatingText(x, y - 6, 'GIÀ PRESA', PALETTE.stone, 11);
+      return;
+    }
+
+    this.countedCoins.add(key);
+    this.coins++;
     this.effects.burst(x, y, PALETTE.gold, { count: 10, speed: 3, size: 4, life: 26 });
     this.effects.floatingText(x, y - 6, '+1', PALETTE.gold, 13);
   }
@@ -417,6 +472,9 @@ export class World {
    */
   private collectYarn(c: number, r: number): void {
     this.map.clear(c, r);
+    // Da qui in poi non torna più, nemmeno morendo: è la differenza tra un
+    // segreto e una moneta.
+    this.takenYarn.add(TileMap.key(c, r));
     this.secretFound = true;
     this.audio.play('win');
     const x = c * TILE_SIZE + TILE_SIZE / 2;
@@ -505,11 +563,12 @@ export class World {
 
       case TILE.HONEST:
         // Questo invece è onesto. Serve a rendere credibile l'altro.
+        //
+        // La sua moneta passa dallo stesso contatore di quelle sparse: il
+        // blocco torna intatto a ogni respawn, quindi senza sarebbe la
+        // sorgente di monete infinite più comoda del gioco.
         this.map.set(c, r, TILE.USED);
-        this.coins++;
-        this.audio.play('coin');
-        this.effects.burst(x, y - TILE_SIZE, PALETTE.gold, { count: 12, speed: 3.4, size: 4 });
-        this.effects.floatingText(x, y - TILE_SIZE - 8, '+1', PALETTE.gold, 13);
+        this.countCoin(TileMap.key(c, r), x, y - TILE_SIZE);
         break;
 
       default:

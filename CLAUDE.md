@@ -243,6 +243,31 @@ mappa già tarata su `config.ts`, e una collezione che dà vantaggi smette di es
 una ricompensa e diventa una scorciatoia. I gomitoli trovati stanno nei progressi
 (`core/storage.ts`) e non si perdono più.
 
+### Cosa succede alla roba raccolta quando muori
+
+La morte non ricarica il livello: lo **ricostruisce** (`World.rebuild`) dalle
+righe, che sono immutabili. Quindi tutto quello che era stato raccolto tornava
+al suo posto, e ammazzarsi accanto a una moneta era il modo più comodo del gioco
+per farsi un punteggio — con le monete di un livello che finiscono in
+`bestCoins`, cioè in classifica.
+
+Le due cose raccoglibili si comportano in modo diverso, e la differenza è
+voluta:
+
+| | Dopo la morte | Perché |
+|---|---|---|
+| gomitolo `*` | **non torna** | trovato una volta non è più un segreto, e rivederlo lì sarebbe una bugia |
+| moneta `C`, blocco `Q` | **torna, ma non conta più** | toglierla lascerebbe buchi in un livello che il giocatore sta imparando a memoria, e la memoria del livello è il gameplay |
+
+Il ricordo è **per cella** (`countedCoins`, `takenYarn` in `world.ts`), non "una
+moneta l'hai già presa": due monete diverse restano due monete diverse.
+Sopravvive alla morte ma non a `restart()`, che azzera anche il contatore — un
+tentativo nuovo riparte da zero da entrambe le parti, quindi non regala niente.
+
+Una moneta già contata si raccoglie lo stesso e lo dice (`GIÀ PRESA` invece di
+`+1`): un contatore che non si muove senza spiegazione è un bug agli occhi di
+chi gioca, ed è la regola 7 del patto.
+
 ### Aggiungere roba
 
 - **Un livello**: nuovo file in `game/levels/`, poi appenderlo a `LEVELS` in `levels/index.ts`.

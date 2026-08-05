@@ -575,6 +575,141 @@ console.log('\nSegreti');
   }
 }
 
+// ------------------------------------------------------- raccolta e respawn
+//
+// La mappa non sopravvive alla morte: `rebuild()` la ricostruisce dalle righe
+// del livello, e per un po' questo ha voluto dire che ogni moneta e ogni
+// gomitolo tornavano al loro posto a ogni respawn. Bastava ammazzarsi accanto
+// a una moneta per raccoglierla all'infinito, e le monete di un livello vanno
+// in `bestCoins`, che finisce in classifica.
+//
+// Le due cose ora si comportano in modo diverso, ed è voluto: il gomitolo
+// sparisce (un segreto trovato non è più un segreto), la moneta torna ma non
+// conta (toglierla lascerebbe buchi in un livello che si impara a memoria).
+// Nessuna delle due si vede fallire giocando — si vede solo in classifica, a
+// danno fatto — quindi va provata qui.
+console.log('\nRaccolta e respawn');
+{
+  const farmAudio = new Audio();
+
+  const withRows = (rows: Record<number, string>) => {
+    const level = defineLevel({
+      id: 'farm-test',
+      name: 'TEST',
+      title: 'raccolta',
+      sky: 'day',
+      spawn: { c: 1, r: 12 },
+      segments: [segment({ ground: true, rows })],
+    });
+    let secrets = 0;
+    const world = new World(level, farmAudio, {
+      onTaunt: () => {},
+      onWin: () => {},
+      onSecret: () => secrets++,
+    });
+    return { world, secrets: () => secrets };
+  };
+
+  const idle = {
+    isDown: () => false,
+    justPressed: () => false,
+    endTick: () => {},
+  } as unknown as Input;
+
+  /** Ammazza il gatto e aspetta che il livello si ricomponga. */
+  const dieAndRespawn = (world: World): void => {
+    world.kill();
+    for (let tick = 0; tick < RULES.deathFreezeTicks + 20; tick++) world.update(idle);
+  };
+
+  /** Mette il gatto sulla cella indicata e lascia passare un tick. */
+  const touch = (world: World, c: number, r: number): void => {
+    world.player.x = c * TILE_SIZE;
+    world.player.y = r * TILE_SIZE;
+    world.update(idle);
+  };
+
+  // La moneta sparsa: torna al suo posto, ma la seconda volta non vale.
+  {
+    const { world } = withRows({ 12: '    C' });
+    touch(world, 4, 12);
+    check(world.coins === 1, 'la prima raccolta conta');
+
+    dieAndRespawn(world);
+    check(world.map.get(4, 12) === TILE.COIN, 'dopo la morte la moneta è tornata al suo posto');
+
+    touch(world, 4, 12);
+    check(world.coins === 1, 'riprenderla dopo la morte non la conta una seconda volta');
+    check(world.map.get(4, 12) === TILE.EMPTY, 'si raccoglie lo stesso: sparisce come sempre');
+
+    // E non basta insistere.
+    for (let i = 0; i < 5; i++) {
+      dieAndRespawn(world);
+      touch(world, 4, 12);
+    }
+    check(world.coins === 1, 'nemmeno morendo sei volte di fila');
+  }
+
+  // Il blocco onesto: stessa regola, ed è la sorgente più comoda di tutte
+  // perché il blocco torna intatto e basta saltarci sotto.
+  {
+    const { world } = withRows({ 10: '    Q' });
+    world.onPlayerHeadbutt(4, 10, TILE.HONEST);
+    check(world.coins === 1, 'il blocco onesto dà la sua moneta');
+
+    dieAndRespawn(world);
+    check(world.map.get(4, 10) === TILE.HONEST, 'dopo la morte il blocco è di nuovo pieno');
+
+    world.onPlayerHeadbutt(4, 10, TILE.HONEST);
+    check(world.coins === 1, 'ma la sua moneta non si conta due volte');
+  }
+
+  // Due monete diverse restano due monete diverse: il ricordo è per cella, non
+  // "una moneta l'hai già presa".
+  {
+    const { world } = withRows({ 12: '    CC' });
+    touch(world, 4, 12);
+    touch(world, 5, 12);
+    check(world.coins === 2, 'monete diverse contano tutte');
+
+    dieAndRespawn(world);
+    touch(world, 4, 12);
+    touch(world, 5, 12);
+    check(world.coins === 2, 'e dopo la morte nessuna delle due conta di nuovo');
+  }
+
+  // Il gomitolo invece non torna proprio.
+  {
+    const { world, secrets } = withRows({ 12: '    *' });
+    touch(world, 4, 12);
+    check(secrets() === 1, 'il gomitolo si prende');
+
+    dieAndRespawn(world);
+    check(world.map.get(4, 12) === TILE.EMPTY, 'dopo la morte il gomitolo non è tornato');
+    check(world.secretFound, 'e resta preso: morire non lo fa perdere');
+
+    touch(world, 4, 12);
+    check(secrets() === 1, 'non c\'è più niente da raccogliere lì');
+  }
+
+  // `restart()` è un tentativo nuovo: rimette tutto in gioco, ma azzera anche
+  // il contatore. Senza questo secondo pezzo sarebbe di nuovo una scorciatoia.
+  {
+    const { world } = withRows({ 12: '    C*' });
+    touch(world, 4, 12);
+    touch(world, 5, 12);
+    check(world.coins === 1 && world.secretFound, 'presi entrambi');
+
+    world.restart();
+    check(world.coins === 0, 'ricominciando il contatore riparte da zero');
+    check(world.map.get(4, 12) === TILE.COIN, 'e la moneta torna in gioco');
+    check(world.map.get(5, 12) === TILE.YARN, 'e anche il gomitolo');
+
+    touch(world, 4, 12);
+    check(world.coins === 1, 'la moneta torna a contare, ma da un totale azzerato');
+  }
+}
+
 // ---------------------------------------------------------------- nemici del mondo 2
 //
 // Tre nemici nuovi, tre contratti diversi, e l'unica cosa che il giocatore può

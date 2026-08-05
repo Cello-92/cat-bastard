@@ -31,6 +31,15 @@ export const PHYSICS = {
   stompBounce: 7.4,
   /** Spinta della molla: molto più di un salto, e non si può dosare. */
   springImpulse: 17.2,
+  /**
+   * Quanto trascina un nastro trasportatore, in pixel per tick.
+   *
+   * Meno di un terzo della velocità massima: contro il nastro si avanza
+   * comunque, ma piano; nel verso del nastro si arriva più lanciati di quanto
+   * si sia chiesto. Il nastro non toglie mai il controllo — sposta il terreno,
+   * non i comandi (vedi CLAUDE.md).
+   */
+  beltSpeed: 1.4,
 } as const;
 
 export const RULES = {
@@ -55,6 +64,12 @@ export const RULES = {
   snapSpikeChargeTicks: 3,
   /** E si attivano solo quando ci sei già praticamente sopra. */
   snapSpikeRange: 20,
+  /**
+   * Per quanti tick dopo un nastro una caduta è ancora colpa sua.
+   * Serve solo a scegliere la battuta giusta: è il tempo di arrivare in fondo
+   * al buco in cui il nastro ti ha spinto.
+   */
+  beltBlameTicks: 48,
   /** Quanto sotto il livello si muore. */
   fallDeathMargin: 160,
   /** Distanza verticale massima per considerare valido uno stomp. */

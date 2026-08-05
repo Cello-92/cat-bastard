@@ -1,8 +1,8 @@
 import { PHYSICS, RULES, TILE_SIZE } from '@game/config';
 import { LEVELS, type LevelDef } from '@game/levels';
-import { TILE, isSolid } from '@game/tiles';
+import { TILE, beltDirection, isSolid } from '@game/tiles';
 import { TileMap } from '@engine/tilemap';
-import { applyGravity, moveX, moveY, updateGrounded } from '@engine/physics';
+import { applyGravity, groundTiles, moveX, moveY, updateGrounded } from '@engine/physics';
 import type { Body } from '@engine/types';
 
 /**
@@ -43,6 +43,7 @@ const KILLS = new Set<string>([
   TILE.FAKE_FLAG,
   TILE.LURE_COIN,
   TILE.FAKE_CHECKPOINT,
+  TILE.TRAP_SPRING,
 ]);
 
 interface SearchState {
@@ -98,6 +99,19 @@ function step(state: SearchState, map: TileMap, action: { dir: number; jump: boo
   if (Math.abs(body.vx) < 0.05) body.vx = 0;
 
   moveX(body, map, isStableSolid);
+
+  // 1-bis. nastro trasportatore, identico a `Player.rideBelt` e nello stesso
+  // punto del tick: se il risolutore ignorasse il trasporto crederebbe
+  // percorribili traiettorie che il nastro rende impossibili — e viceversa.
+  if (body.onGround) {
+    let belt = 0;
+    for (const { tile } of groundTiles(body, map)) belt += beltDirection(tile);
+    if (belt !== 0) {
+      const carrier: Body = { ...body, vx: Math.sign(belt) * PHYSICS.beltSpeed, vy: 0, hitWall: false };
+      moveX(carrier, map, isStableSolid);
+      body.x = carrier.x;
+    }
+  }
 
   // 2. salto (con jump buffer e coyote time, come nel gioco)
   const justPressed = action.jump && !state.jumpHeld;
@@ -210,7 +224,16 @@ export interface SolveResult {
  * Ricerca in ampiezza guidata: si espandono prima gli stati più avanti nel
  * livello. Non serve il percorso ottimo, serve sapere se ne esiste uno.
  */
-export function solve(level: LevelDef, budget = 400_000): SolveResult {
+/**
+ * Il budget deve essere abbondante, non stretto.
+ *
+ * Un livello denso costa qualche centinaio di migliaia di stati (1-5 ne
+ * chiede 254.000), e con il budget vecchio bastava aggiungere due trappole
+ * perché il risolutore si fermasse *per esaurimento* e dichiarasse impossibile
+ * un livello che si attraversa benissimo. Un referto sbagliato è peggio di un
+ * referto lento: qui si paga qualche secondo in CI per averlo giusto.
+ */
+export function solve(level: LevelDef, budget = 1_500_000): SolveResult {
   const map = new TileMap(level.rows, TILE_SIZE);
   const start: SearchState = {
     x: level.spawn.c * TILE_SIZE + 5,

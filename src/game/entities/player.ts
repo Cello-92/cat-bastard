@@ -1,11 +1,11 @@
 import type { Input } from '@core/input';
 import { clamp } from '@core/math';
-import { applyGravity, moveX, moveY, updateGrounded } from '@engine/physics';
+import { applyGravity, groundTiles, moveX, moveY, updateGrounded } from '@engine/physics';
 import type { Renderer } from '@engine/render/renderer';
 import type { Body } from '@engine/types';
 import { PHYSICS } from '../config';
 import { MATERIAL, PALETTE, alpha, glare, mix, shade } from '../theme';
-import { isSolid } from '../tiles';
+import { beltDirection, isSolid } from '../tiles';
 import type { World } from '../world';
 
 /**
@@ -89,6 +89,7 @@ export class Player implements Body {
   update(world: World, input: Input): void {
     this.handleHorizontal(input);
     moveX(this, world.map, isSolid);
+    this.rideBelt(world);
 
     this.handleJump(world, input);
     applyGravity(this, PHYSICS.gravity, PHYSICS.terminalVelocity);
@@ -125,6 +126,38 @@ export class Player implements Body {
 
     this.vx = clamp(this.vx, -PHYSICS.maxSpeed, PHYSICS.maxSpeed);
     if (Math.abs(this.vx) < 0.05) this.vx = 0;
+  }
+
+  /**
+   * Nastro trasportatore.
+   *
+   * Trasporta, non comanda: il gatto viene spostato insieme al terreno e la
+   * sua velocità resta esattamente quella che ha chiesto il giocatore. È la
+   * differenza tra "il pavimento si muove" e "i comandi non rispondono" — la
+   * prima è una trappola, la seconda sarebbe un bug (vedi CLAUDE.md).
+   *
+   * Lo spostamento passa comunque per `moveX`, quindi il nastro non incastra
+   * mai il gatto dentro un muro: contro un ostacolo si limita a spingerlo.
+   */
+  private rideBelt(world: World): void {
+    if (!this.onGround) return;
+
+    let direction = 0;
+    for (const { tile } of groundTiles(this, world.map)) direction += beltDirection(tile);
+    if (direction === 0) return;
+
+    const carrier: Body = {
+      x: this.x,
+      y: this.y,
+      w: this.w,
+      h: this.h,
+      vx: Math.sign(direction) * PHYSICS.beltSpeed,
+      vy: 0,
+      onGround: true,
+      hitWall: false,
+    };
+    moveX(carrier, world.map, isSolid);
+    this.x = carrier.x;
   }
 
   private handleJump(world: World, input: Input): void {

@@ -34,7 +34,7 @@ esattamente cosa ti ha fregato.
 
 ## Cosa ti aspetta
 
-Quattro livelli, un gatto, e un numero imbarazzante di modi per morire.
+Dieci livelli, un gatto, e un numero imbarazzante di modi per morire.
 
 | | |
 |---|---|
@@ -45,6 +45,8 @@ Quattro livelli, un gatto, e un numero imbarazzante di modi per morire.
 | 🕳️ **Il pavimento** | a volte non c'è. Te ne accorgi mentre cadi |
 | 🏮 **Il checkpoint** | quella lanterna non si accende mai, sai |
 | 🔻 **Gli spuntoni invisibili** | la prima morte è gratis. La seconda è colpa tua |
+| 🪃 **La molla** | qualcuna lancia, qualcuna si chiude. Sono identiche |
+| ⚙️ **Il nastro** | l'unica cosa onesta della fabbrica: ti porta esattamente dove ha deciso |
 
 Chi arriva in fondo ha imparato dove si muore. Non è la stessa cosa di essere bravo.
 

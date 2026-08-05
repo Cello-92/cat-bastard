@@ -27,6 +27,8 @@ export const DEATH_CAUSE = {
   ghost: 'ghost',
   snapSpikes: 'snapSpikes',
   hiddenSpikes: 'hiddenSpikes',
+  trapSpring: 'trapSpring',
+  belt: 'belt',
   generic: 'generic',
 } as const;
 
@@ -94,6 +96,16 @@ const BY_CAUSE: Record<Exclude<DeathCause, 'generic'>, readonly string[]> = {
     'lì non c\'era niente. adesso lo vedi, però',
     'ora sono visibili. non ti servirà a molto, ma sono visibili',
     'invisibili. la seconda volta no',
+  ],
+  trapSpring: [
+    'quella molla non lanciava niente. si chiudeva',
+    'era una tagliola col piattello rosso',
+    'ci sono molle e molle. quella era dell\'altro tipo',
+  ],
+  belt: [
+    'il nastro ti ha accompagnato. fin laggiù',
+    'correvi. il pavimento correva più di te',
+    'il nastro andava di là. tu pensavi di andare di qua',
   ],
 };
 

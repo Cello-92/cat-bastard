@@ -3,10 +3,10 @@ import { clamp } from '@core/math';
 import { applyGravity, groundTiles, moveX, moveY, updateGrounded } from '@engine/physics';
 import type { Renderer } from '@engine/render/renderer';
 import type { Body } from '@engine/types';
-import { PHYSICS } from '../config';
-import { DEFAULT_SKIN, skinById, type SkinDef } from '../skins';
-import { MATERIAL, PALETTE, alpha, glare, mix, shade, type Material } from '../theme';
-import { beltDirection, isSolid } from '../tiles';
+import { PHYSICS, SURFACE } from '../config';
+import { catById, type CatSkin } from '../cats';
+import { PALETTE, alpha, glare, mix, shade, type Material } from '../theme';
+import { TILE, beltDirection, isIcy, isSolid } from '../tiles';
 import type { World } from '../world';
 
 /**
@@ -15,6 +15,12 @@ import type { World } from '../world';
  * Regola non negoziabile: i controlli non tradiscono mai. Coyote time e jump
  * buffer esistono proprio per questo — il salto deve rispondere anche quando
  * il giocatore lo chiede un frame prima o un frame dopo il momento perfetto.
+ *
+ * Il secondo mondo aggiunge superfici che *cambiano la fisica* — ghiaccio,
+ * nastri, getti di vapore — e non è una violazione del patto: rispondono
+ * sempre allo stesso modo, si vedono prima di calpestarle, e il gatto fa
+ * esattamente quello che gli si chiede. È il pavimento ad avere regole nuove,
+ * non i comandi.
  */
 
 const WIDTH = 22;
@@ -44,14 +50,13 @@ export class Player implements Body {
   /** -1 sinistra, +1 destra. */
   facing = 1;
 
-  /**
-   * Il gatto che si sta usando.
-   *
-   * Cambia solo l'aspetto: cassa, fisica e comandi sono identici per tutti, e
-   * devono restarlo. In un gioco che ti frega di continuo, la cosa che ti sei
-   * comprato col sudore non può anche darti un vantaggio (vedi game/skins.ts).
-   */
-  skin: SkinDef = skinById(DEFAULT_SKIN);
+  /** Il manto scelto nel menu: cambia solo l'aspetto, mai la fisica. */
+  skin: CatSkin = catById(undefined);
+
+  /** Superfici sotto e attorno al gatto, campionate una volta per tick. */
+  private onIce = false;
+  private belt = 0;
+  private inVent = false;
 
   private coyote = 0;
   private jumpBuffer = 0;
@@ -81,6 +86,9 @@ export class Player implements Body {
     this.squashY = 1;
     this.runPhase = 0;
     this.stepParity = 0;
+    this.onIce = false;
+    this.belt = 0;
+    this.inVent = false;
   }
 
   get centerX(): number {
@@ -96,12 +104,24 @@ export class Player implements Body {
     return this.onGround && Math.abs(this.vx) > RUN_THRESHOLD;
   }
 
+  /** Sta scivolando: la corsa non risponde come dovrebbe, e si deve vedere. */
+  get isSliding(): boolean {
+    return this.onIce && this.onGround;
+  }
+
   update(world: World, input: Input): void {
+    // Le superfici si campionano PRIMA di muoversi: quello su cui il gatto
+    // poggia adesso è quello che decide come risponderà questo tick.
+    this.sampleSurface(world);
+
     this.handleHorizontal(input);
     moveX(this, world.map, isSolid);
-    this.rideBelt(world);
+    this.applyBelt(world);
 
     this.handleJump(world, input);
+    // Il getto agisce dopo il taglio del salto e prima della gravità: se
+    // agisse prima, rilasciare il tasto azzererebbe anche la spinta del vapore.
+    this.applyVent();
     applyGravity(this, PHYSICS.gravity, PHYSICS.terminalVelocity);
     moveY(this, world.map, isSolid, {
       onCeiling: (c, r, tile) => world.onPlayerHeadbutt(c, r, tile),
@@ -118,20 +138,55 @@ export class Player implements Body {
   }
 
   // ---------------------------------------------------------------- moto
+  /**
+   * Cosa c'è sotto le zampe e attorno al corpo.
+   *
+   * Sono tre domande sole — è ghiaccio? è un nastro? sono dentro un getto? — e
+   * si fanno una volta per tick, così il resto dell'update non deve più
+   * interrogare la mappa e la fisica resta leggibile.
+   */
+  private sampleSurface(world: World): void {
+    this.onIce = false;
+    this.belt = 0;
+    if (this.onGround) {
+      for (const { tile } of groundTiles(this, world.map)) {
+        if (isIcy(tile)) this.onIce = true;
+        const direction = beltDirection(tile);
+        if (direction !== 0) this.belt = direction;
+      }
+    }
+
+    this.inVent = false;
+    for (const { tile } of world.map.touching(this)) {
+      // Il getto spento è identico a questo, e non compare qui: è tutta la
+      // trappola. Vedi TILE.DEAD_VENT.
+      if (tile === TILE.VENT) {
+        this.inVent = true;
+        break;
+      }
+    }
+  }
+
   private handleHorizontal(input: Input): void {
     const left = input.isDown('left');
     const right = input.isDown('right');
+    // Sul ghiaccio gli artigli non mordono: si accelera piano e non si frena.
+    const push = this.onIce ? SURFACE.iceAcceleration : PHYSICS.acceleration;
 
     if (left) {
-      this.vx -= PHYSICS.acceleration;
+      this.vx -= push;
       this.facing = -1;
     }
     if (right) {
-      this.vx += PHYSICS.acceleration;
+      this.vx += push;
       this.facing = 1;
     }
     if (left === right) {
-      this.vx *= this.onGround ? PHYSICS.groundFriction : PHYSICS.airFriction;
+      this.vx *= this.onGround
+        ? this.onIce
+          ? SURFACE.iceFriction
+          : PHYSICS.groundFriction
+        : PHYSICS.airFriction;
     }
 
     this.vx = clamp(this.vx, -PHYSICS.maxSpeed, PHYSICS.maxSpeed);
@@ -139,35 +194,24 @@ export class Player implements Body {
   }
 
   /**
-   * Nastro trasportatore.
-   *
-   * Trasporta, non comanda: il gatto viene spostato insieme al terreno e la
-   * sua velocità resta esattamente quella che ha chiesto il giocatore. È la
-   * differenza tra "il pavimento si muove" e "i comandi non rispondono" — la
-   * prima è una trappola, la seconda sarebbe un bug (vedi CLAUDE.md).
-   *
-   * Lo spostamento passa comunque per `moveX`, quindi il nastro non incastra
-   * mai il gatto dentro un muro: contro un ostacolo si limita a spingerlo.
+   * Il nastro trasportatore trascina, non accelera: sposta il corpo di una
+   * quantità fissa e restituisce al gatto la sua velocità intatta. È la
+   * differenza tra "stare su un nastro" e "avere i comandi alterati".
    */
-  private rideBelt(world: World): void {
-    if (!this.onGround) return;
+  private applyBelt(world: World): void {
+    if (this.belt === 0) return;
+    const own = this.vx;
+    this.vx = this.belt * SURFACE.beltSpeed;
+    moveX(this, world.map, isSolid);
+    this.vx = own;
+  }
 
-    let direction = 0;
-    for (const { tile } of groundTiles(this, world.map)) direction += beltDirection(tile);
-    if (direction === 0) return;
-
-    const carrier: Body = {
-      x: this.x,
-      y: this.y,
-      w: this.w,
-      h: this.h,
-      vx: Math.sign(direction) * PHYSICS.beltSpeed,
-      vy: 0,
-      onGround: true,
-      hitWall: false,
-    };
-    moveX(carrier, world.map, isSolid);
-    this.x = carrier.x;
+  /** Getto di vapore: solleva finché ci resti dentro, e non si può dosare. */
+  private applyVent(): void {
+    if (!this.inVent) return;
+    const lifted = Math.max(this.vy - SURFACE.ventLift, -SURFACE.ventMaxRise);
+    // Non rallenta mai chi sale già più forte (una molla, per dire).
+    this.vy = Math.min(this.vy, lifted);
   }
 
   private handleJump(world: World, input: Input): void {
@@ -307,25 +351,45 @@ export class Player implements Body {
     const bodyY = top + 10;
     const bodyH = feet - bodyY - 5;
 
-    // Le estremità (coda, zampe, orecchie) hanno un mantello loro solo se la
-    // skin lo dichiara: è quello che distingue un siamese da un gatto crema.
-    const paws = this.skin.points ?? this.skin.fur;
+    // Il manto decide solo *quali* materiali usare: la logica di luce, gli
+    // strati e le proporzioni restano identiche per tutti i gatti.
+    const leg = this.skin.pattern === 'points' ? this.skin.marks : this.skin.fur;
+    const paw = this.skin.pattern === 'tux' ? this.skin.marks : leg;
 
     this.drawTail(r, cx, bodyY, face, tick, running);
     // Zampe posteriori: più scure, stanno dietro al corpo.
-    drawLeg(r, cx - face * 7, feet, Math.max(0, -swing) * 3, 0.55, paws, this.fade());
-    drawLeg(r, cx + face * 2, feet, Math.max(0, swing) * 3, 0.55, paws, this.fade());
+    drawLeg(r, cx - face * 7, feet, Math.max(0, -swing) * 3, 0.55, leg, paw);
+    drawLeg(r, cx + face * 2, feet, Math.max(0, swing) * 3, 0.55, leg, paw);
 
     this.drawBody(r, cx, bodyY, bodyH, face);
 
     // Zampe anteriori: in piena luce, davanti a tutto il corpo.
-    drawLeg(r, cx + face * 6, feet, Math.max(0, swing) * 3.2, 1, paws, this.fade());
-    drawLeg(r, cx - face * 2, feet, Math.max(0, -swing) * 3.2, 1, paws, this.fade());
+    drawLeg(r, cx + face * 6, feet, Math.max(0, swing) * 3.2, 1, leg, paw);
+    drawLeg(r, cx - face * 2, feet, Math.max(0, -swing) * 3.2, 1, leg, paw);
 
     this.drawHead(r, cx + face * 3, top + 7.5, face, tick);
     if (this.skin.crown) this.drawCrown(r, cx + face * 3, top - 6, tick);
     r.pop();
     r.pop();
+
+    // Sul ghiaccio le zampe non mordono: sotto i piedi resta una striscia
+    // lucida e qualche scaglia. Serve a far vedere *perché* non sta frenando,
+    // che è l'unica cosa che il giocatore deve capire di questa superficie.
+    if (this.isSliding && Math.abs(this.vx) > 1.4) {
+      const back = -Math.sign(this.vx);
+      r.push();
+      r.setAlpha(0.35);
+      r.radial(cx + back * 10, feet - 1, 14, 2.4, [
+        { at: 0, color: alpha(PALETTE.ice, 0.9) },
+        { at: 1, color: alpha(PALETTE.ice, 0) },
+      ]);
+      r.setAlpha(0.5);
+      for (let i = 0; i < 3; i++) {
+        const shard = ((tick * 2 + i * 9) % 14) + 2;
+        r.ellipse(cx + back * (6 + shard), feet - 2 - (shard % 5), 1.2, 1, PALETTE.ice);
+      }
+      r.pop();
+    }
 
     // Scia d'aria alle spalle quando è lanciato: due strappi di luce, non una
     // riga continua — si legge come velocità, non come un errore di disegno.
@@ -407,6 +471,8 @@ export class Player implements Body {
     }
     r.pop();
 
+    this.drawMarkings(r, cx, y, h, face);
+
     // Luce di contorno sul lato illuminato: separa il gatto dal fondale.
     r.push();
     r.setAlpha(this.fade(0.5));
@@ -431,12 +497,72 @@ export class Player implements Body {
     r.pop();
   }
 
+  /**
+   * Marcature del manto: strisce, pettorina, punte.
+   *
+   * Vengono disegnate DOPO le luci del corpo e prima del contorno, così
+   * ricevono la stessa illuminazione della pelliccia sotto invece di sembrare
+   * un adesivo appiccicato sopra.
+   */
+  private drawMarkings(r: Renderer, cx: number, y: number, h: number, face: number): void {
+    const halfW = this.w / 2;
+    const marks = this.skin.marks;
+
+    if (this.skin.pattern === 'tabby') {
+      // Strisce sulla groppa: si stringono verso la coda, come quelle vere.
+      r.push();
+      r.setAlpha(0.55);
+      for (let i = 0; i < 4; i++) {
+        const sy = y + 2 + i * (h / 5.5);
+        const width = halfW * (0.9 - i * 0.12);
+        r.line(
+          [cx - face * width, sy + 2.5, cx - face * width * 0.2, sy, cx + face * width * 0.35, sy + 1.5],
+          2.2,
+          marks.base,
+        );
+      }
+      r.pop();
+      return;
+    }
+
+    if (this.skin.pattern === 'tux') {
+      // Pettorina: una macchia bianca sul davanti, con la punta verso il muso.
+      r.push();
+      r.setAlpha(0.95);
+      r.blob(
+        [
+          cx + face * halfW * 0.62, y + h * 0.18,
+          cx + face * halfW * 0.78, y + h * 0.55,
+          cx + face * halfW * 0.45, y + h * 0.95,
+          cx + face * halfW * 0.02, y + h * 0.7,
+          cx + face * halfW * 0.2, y + h * 0.28,
+        ],
+        marks.base,
+      );
+      r.setAlpha(0.45);
+      r.radial(cx + face * halfW * 0.4, y + h * 0.4, halfW * 0.5, h * 0.3, [
+        { at: 0, color: alpha(marks.light, 0.9) },
+        { at: 1, color: alpha(marks.light, 0) },
+      ]);
+      r.pop();
+      return;
+    }
+
+    if (this.skin.pattern === 'points') {
+      // Il siamese non ha macchie sul tronco: sfuma verso le estremità.
+      r.push();
+      r.setAlpha(0.32);
+      r.radial(cx - face * halfW * 0.7, y + h * 0.75, halfW * 0.8, h * 0.5, [
+        { at: 0, color: alpha(marks.base, 0.8) },
+        { at: 1, color: alpha(marks.base, 0) },
+      ]);
+      r.pop();
+    }
+  }
+
   /** Testa: cranio, orecchie con padiglione, occhi, muso, baffi. */
   private drawHead(r: Renderer, cx: number, cy: number, face: number, tick: number): void {
-    // Le orecchie seguono le estremità, non il corpo: su un siamese sono la
-    // prima cosa che si guarda.
-    const fur = this.skin.points ?? this.skin.fur;
-    const coat = this.skin.fur;
+    const fur = this.skin.pattern === 'points' ? this.skin.marks : this.skin.fur;
     const skin = this.skin.nose;
     const eye = this.skin.eye;
     const rx = 7.6;
@@ -470,6 +596,16 @@ export class Player implements Body {
       { at: 1, color: alpha(coat.dark, 0) },
     ]);
     r.pop();
+
+    // La "M" del soriano in mezzo alla fronte: piccola, ma è la firma del manto.
+    if (this.skin.pattern === 'tabby') {
+      r.push();
+      r.setAlpha(0.5);
+      for (const side of [-1, 1] as const) {
+        r.line([cx + side * 1.4, cy - ry + 1, cx + side * 2.6, cy - ry + 4.4], 1.1, this.skin.marks.base);
+      }
+      r.pop();
+    }
 
     // Occhi: bulbo scuro, iride, pupilla verticale, riflesso.
     const eyeY = cy - 0.4;
@@ -554,7 +690,7 @@ export class Player implements Body {
    * punta arriva sempre dopo la base. Sferza più veloce quando corre.
    */
   private drawTail(r: Renderer, cx: number, bodyY: number, face: number, tick: number, running: boolean): void {
-    const fur = this.skin.points ?? this.skin.fur;
+    const fur = this.skin.pattern === 'points' ? this.skin.marks : this.skin.fur;
     const rate = running ? 5 : 11;
     const amplitude = running ? 4.2 : 2.8;
     const rootX = cx - face * (this.w / 2 - 3);
@@ -579,6 +715,20 @@ export class Player implements Body {
     r.setAlpha(this.fade(0.55));
     r.line(points.slice(0, 6), 1, fur.light);
     r.pop();
+
+    // Anelli sulla coda: li ha solo il soriano, e sono la prima cosa che si
+    // vede quando il gatto scappa verso destra.
+    if (this.skin.pattern === 'tabby') {
+      r.push();
+      r.setAlpha(0.6);
+      for (let i = 1; i < 4; i++) {
+        const px = points[i * 2] ?? rootX;
+        const py = points[i * 2 + 1] ?? rootY;
+        r.ellipse(px, py, 1.9, 1.6, this.skin.marks.base);
+      }
+      r.pop();
+    }
+
     r.ellipse(points[8] ?? rootX, points[9] ?? rootY, 1.6, 1.5, fur.light);
   }
 }
@@ -586,6 +736,8 @@ export class Player implements Body {
 /**
  * Una zampa: `lift` la stacca da terra durante la falcata, `exposure` dice
  * quanta luce le arriva (le posteriori sono in ombra dietro al corpo).
+ * `fur` e `paw` arrivano dal manto scelto: certi gatti hanno le zampe di un
+ * colore e i cuscinetti di un altro.
  */
 function drawLeg(
   r: Renderer,
@@ -594,7 +746,7 @@ function drawLeg(
   lift: number,
   exposure: number,
   fur: Material,
-  opacity: number,
+  paw: Material,
 ): void {
   const height = 7 - lift;
   if (height <= 0.5) return;
@@ -605,7 +757,7 @@ function drawLeg(
   // Gamba.
   r.line([x, top, x, feet - 1.6], 4.4, body);
   // Zampa: una piccola ellisse schiacciata, con l'ombra sotto.
-  r.ellipse(x, feet - 1.4, 3.2, 1.9, exposure < 1 ? mix(fur.base, fur.dark, 0.4) : fur.light);
+  r.ellipse(x, feet - 1.4, 3.2, 1.9, exposure < 1 ? mix(paw.base, paw.dark, 0.4) : paw.light);
   r.push();
   r.setAlpha(0.35 * exposure * opacity);
   r.line([x - 1.6, top + 1, x - 1.6, feet - 2.4], 1, alpha(fur.light, 0.9));

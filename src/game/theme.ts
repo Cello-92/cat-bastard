@@ -83,6 +83,40 @@ export const MATERIAL = {
   eye: material('#4f9e5c', '#95dd8a', '#1f4a2a', '#0c1f12', '#f0fff0'),
   /** Membrana alare della bestia che si tuffa. */
   membrane: material('#6b3550', '#a35f7a', '#3a1a2c', '#1d0d16', '#d69ab0'),
+
+  // --- Mondo 2: il gelo e la fabbrica.
+  /**
+   * Ghiaccio: l'unico materiale del gioco che si vede *attraverso*.
+   * La faccia in ombra è più satura della base, non meno: è il colore che si
+   * accumula nello spessore, ed è quello che lo distingue da un vetro.
+   */
+  ice: material('#93c9e0', '#e2f6ff', '#3d7fa2', '#1b4159', '#ffffff'),
+  /** Neve compatta: quasi bianca, ma con l'ombra azzurra del cielo dentro. */
+  snow: material('#dfe9f3', '#ffffff', '#9db3c9', '#67809a', '#ffffff'),
+  /** Lamiera zincata della fabbrica: fredda, opaca, sporca di ruggine. */
+  plate: material('#6f7a85', '#b3c0cc', '#3a4149', '#1c2026', '#dbe6f0'),
+  /** Gomma del nastro trasportatore: nera, opaca, mangia la luce. */
+  rubber: material('#2b2d33', '#53575f', '#141519', '#08090b', '#858b95'),
+  /** Rame degli impianti: caldo, l'unica cosa tiepida quaggiù. */
+  copper: material('#a4653a', '#e2a071', '#5c3319', '#2e180b', '#ffd7ae'),
+
+  // --- Manti e occhi dei gatti sbloccabili (vedi game/cats.ts).
+  /** Nero fuliggine: mai davvero nero, altrimenti sparisce sul fondo scuro. */
+  soot: material('#2f3038', '#5c5f6b', '#17171c', '#0b0b0e', '#9aa0ad'),
+  /** Rosso soriano. */
+  ginger: material('#c47a3c', '#f0b071', '#84491b', '#4a2609', '#ffd9a8'),
+  /** Crema chiarissimo del siamese. */
+  mist: material('#e6dbc6', '#fffaf0', '#b0a08a', '#6f6455', '#ffffff'),
+  /** Punte scure del siamese: muso, orecchie, zampe, coda. */
+  sable: material('#5a4436', '#876951', '#33251c', '#1a120d', '#a98a6c'),
+  /** Bianco del gatto spettro: quasi ghiaccio, quasi niente. */
+  spectre: material('#d8e6ef', '#ffffff', '#93a8ba', '#5b6c7d', '#ffffff'),
+  /** Iride ambra. */
+  amber: material('#c98b1f', '#f5c85e', '#7a4d08', '#3c2603', '#fff2c8'),
+  /** Iride blu ghiaccio. */
+  sapphire: material('#3d7fc4', '#8dc4f2', '#1a3f70', '#0b1e39', '#e8f6ff'),
+  /** Iride del gatto spettro: rosa acceso, l'unica cosa viva che gli resta. */
+  ghostEye: material('#d63f7d', '#ff8fb8', '#7c1741', '#3d0a21', '#ffe0ec'),
 } as const satisfies Record<string, Material>;
 
 export type MaterialName = keyof typeof MATERIAL;
@@ -151,6 +185,12 @@ export const PALETTE = {
   shroom: MATERIAL.cap.base,
   fur: MATERIAL.hide.base,
   stone: MATERIAL.rock.light,
+  /** Schegge di ghiaccio e neve alzata dai passi nel secondo mondo. */
+  ice: MATERIAL.ice.light,
+  /** Vapore dei getti: quello che si vede quando il gioco ti solleva. */
+  steam: '#e7f1f8',
+  /** Lana del gomitolo: l'unico oggetto del gioco che non è una trappola. */
+  yarn: '#e2607f',
 } as const;
 
 // ---------------------------------------------------------------- atmosfera
@@ -191,6 +231,12 @@ export interface SkyTheme {
    * disegnata la profondità della grotta.
    */
   landscape: boolean;
+  /** Cosa disegnare al posto del paesaggio quando `landscape` è false. */
+  interior?: 'cave' | 'factory';
+  /** Nevica. La neve è deterministica come tutto il resto: non è rumore. */
+  snow?: boolean;
+  /** Aurora boreale: tende di luce lente sopra l'orizzonte. */
+  aurora?: boolean;
 }
 
 /** Ogni mondo ha la sua ora del giorno: cielo, luce, foschia, creste. */
@@ -364,6 +410,103 @@ export const SKIES = {
     stars: false,
     rays: false,
     landscape: false,
+    interior: 'cave',
+  },
+
+  // ---------------------------------------------------------------- mondo 2
+  /**
+   * Gelo diurno: sole basso e bianco che non scalda niente, cielo lattiginoso,
+   * neve che cade piano. Il contrario esatto del mattino di 1-1 — stessa ora
+   * del giorno, nessun calore.
+   */
+  frost: {
+    stops: [
+      { at: 0, color: '#4d7fa8' },
+      { at: 0.32, color: '#83aec9' },
+      { at: 0.6, color: '#b9d2e0' },
+      { at: 0.82, color: '#dee9ef' },
+      { at: 1, color: '#f2f5f5' },
+    ],
+    sunX: 0.28,
+    sunY: 0.2,
+    sunRadius: 30,
+    sunCore: '#ffffff',
+    sunGlow: '#dbeaf6',
+    fog: '#dfe9f0',
+    ridge: '#6f8296',
+    canopy: '#41586a',
+    cloudLight: '#ffffff',
+    cloudShade: '#a8bccd',
+    sunTint: '#e8f3ff',
+    sunTintAmount: 0.12,
+    ambient: '#8fb0cc',
+    haze: 0.42,
+    stars: false,
+    rays: true,
+    landscape: true,
+    snow: true,
+  },
+  /**
+   * Notte polare: l'aurora fa più luce della luna, e la fa del colore
+   * sbagliato. È il cielo più bello del gioco, e serve a distrarre.
+   */
+  aurora: {
+    stops: [
+      { at: 0, color: '#03060f' },
+      { at: 0.34, color: '#08182e' },
+      { at: 0.66, color: '#0e2c45' },
+      { at: 0.88, color: '#1b4258' },
+      { at: 1, color: '#2c5a66' },
+    ],
+    sunX: 0.2,
+    sunY: 0.14,
+    sunRadius: 22,
+    sunCore: '#eef7ff',
+    sunGlow: '#8fd4d0',
+    fog: '#1d4356',
+    ridge: '#22415a',
+    canopy: '#14293c',
+    cloudLight: '#6fa7b4',
+    cloudShade: '#152c40',
+    sunTint: '#93e0d2',
+    sunTintAmount: 0.18,
+    ambient: '#1f4a63',
+    haze: 0.4,
+    stars: true,
+    rays: false,
+    landscape: true,
+    snow: true,
+    aurora: true,
+  },
+  /**
+   * Dentro la fabbrica: niente cielo, niente foschia, solo lamiera e la luce
+   * arancione dei forni che filtra da qualche parte in fondo.
+   */
+  foundry: {
+    stops: [
+      { at: 0, color: '#0a0c12' },
+      { at: 0.42, color: '#141821' },
+      { at: 0.76, color: '#1e242e' },
+      { at: 1, color: '#2b2822' },
+    ],
+    sunX: 0.5,
+    sunY: 0.12,
+    sunRadius: 16,
+    sunCore: '#ffd7a0',
+    sunGlow: '#ff7a2f',
+    fog: '#232a35',
+    ridge: '#2a323e',
+    canopy: '#1a1f28',
+    cloudLight: '#3d4653',
+    cloudShade: '#13171e',
+    sunTint: '#ffa657',
+    sunTintAmount: 0.16,
+    ambient: '#2b3340',
+    haze: 0.5,
+    stars: false,
+    rays: false,
+    landscape: false,
+    interior: 'factory',
   },
 } as const satisfies Record<string, SkyTheme>;
 

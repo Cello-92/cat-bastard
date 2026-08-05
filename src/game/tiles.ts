@@ -82,6 +82,29 @@ export const TILE = {
    */
   HIDDEN_SPIKES: '!',
 
+  // --- Roba del boss: esiste solo dentro l'arena di 1-11.
+  /**
+   * Mattone del soffitto dell'arena.
+   *
+   * È l'unica arma che il gatto ha contro il Padrone, ed è anche l'unico posto
+   * in cui il gioco chiede al giocatore di fidarsi di una piattaforma che sta
+   * per cedere: ci sali sopra, quello trema, e poco dopo si stacca portandosi
+   * dietro tutto il peso della muratura. Dove cade non lo decide lui.
+   */
+  BOSS_BRICK: 'H',
+  /**
+   * Il portone in fondo all'arena: solido finché il Padrone è vivo, aperto
+   * nell'istante in cui smette di esserlo. Non è una trappola, è una serratura.
+   */
+  BOSS_GATE: '=',
+
+  /**
+   * Cubo delle skin: l'unica cosa nel gioco che si può raccogliere una volta
+   * sola per sempre. Non uccide, non aiuta, non conta nel punteggio — sblocca
+   * un gatto. Sta sempre in un posto che nessuno attraverserebbe per caso.
+   */
+  SKIN_CUBE: '*',
+
   // --- Marcatori: rimossi dalla griglia al caricamento e sostituiti da entità.
   /** Nemico che cammina, schiacciabile. */
   WALKER: 'G',
@@ -89,6 +112,8 @@ export const TILE = {
   EVIL_WALKER: 'J',
   /** Bestia appesa in alto che si tuffa quando le passi sotto. */
   DIVER: 'Z',
+  /** Il Padrone: il boss di 1-11. Ne esiste uno solo per livello. */
+  BOSS: '@',
 } as const;
 
 export type TileChar = (typeof TILE)[keyof typeof TILE];
@@ -109,6 +134,8 @@ const SOLID = new Set<string>([
   TILE.CRUMBLE,
   TILE.BELT_RIGHT,
   TILE.BELT_LEFT,
+  TILE.BOSS_BRICK,
+  TILE.BOSS_GATE,
 ]);
 
 /** Tile che al contatto uccidono, sempre e comunque. */
@@ -122,7 +149,7 @@ const DEADLY = new Set<string>([
 ]);
 
 /** Tile che vengono convertiti in entità al caricamento del livello. */
-const SPAWNERS = new Set<string>([TILE.WALKER, TILE.EVIL_WALKER, TILE.DIVER]);
+const SPAWNERS = new Set<string>([TILE.WALKER, TILE.EVIL_WALKER, TILE.DIVER, TILE.BOSS]);
 
 /**
  * Tile disegnati come massa di terreno.

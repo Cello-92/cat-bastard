@@ -5,12 +5,14 @@ import { groundTiles } from '@engine/physics';
 import type { Renderer } from '@engine/render/renderer';
 import { TileMap } from '@engine/tilemap';
 import { overlaps } from '@engine/types';
-import { FEEL, PHYSICS, RULES, TILE_SIZE, VIEW_HEIGHT, VIEW_WIDTH } from './config';
+import { BOSS, FEEL, PHYSICS, RULES, TILE_SIZE, VIEW_HEIGHT, VIEW_WIDTH } from './config';
 import { Effects } from './effects';
 import { Entity } from './entities/entity';
+import { Boss } from './entities/boss';
 import { Diver } from './entities/diver';
 import { FallingSpike } from './entities/falling-spike';
 import { Player } from './entities/player';
+import { Rubble } from './entities/rubble';
 import { Shroom } from './entities/shroom';
 import { Walker } from './entities/walker';
 import type { LevelDef } from './levels';
@@ -34,6 +36,12 @@ import { TILE, beltDirection, isDeadly, isEarth, isSolid, isSpawner } from './ti
 
 export type WorldState = 'playing' | 'dying' | 'won';
 
+/** Riporta una chiave "c,r" alle sue due coordinate. */
+const cellOf = (key: string): [number, number] => {
+  const [cs, rs] = key.split(',');
+  return [Number(cs), Number(rs)];
+};
+
 export interface RunStats {
   deaths: number;
   coins: number;
@@ -43,6 +51,15 @@ export interface RunStats {
 export interface WorldCallbacks {
   onTaunt(text: string): void;
   onWin(stats: RunStats): void;
+  /**
+   * Il gatto ha preso il cubo nascosto di questo livello.
+   *
+   * Il mondo non sa cosa sia una skin e non deve saperlo: dice solo che è
+   * successo, e chi sta fuori decide se sbloccare qualcosa. È lo stesso patto
+   * di `onWin` — qui dentro non entra mai niente che sappia di DOM o di
+   * salvataggi.
+   */
+  onSecret?(levelId: string): void;
 }
 
 /** Da quale tile letale è arrivata la morte: serve a scegliere la battuta. */
@@ -118,6 +135,31 @@ export class World {
   private discovered = new Set<string>();
   private checkpoint: { c: number; r: number } | null = null;
   private deathTimer = 0;
+
+  // -------------------------------------------------------------- il boss
+  /**
+   * Il Padrone, se questo livello ne ha uno.
+   *
+   * È l'unica entità che il mondo tiene anche per nome invece che solo nella
+   * lista: il combattimento ha bisogno di sapere dov'è, se è vulnerabile e se
+   * è morto, e sono tutte cose che nessun'altra entità può chiedergli senza
+   * passare da qui (vedi CLAUDE.md: le entità non si coordinano tra loro).
+   *
+   * È pubblico perché lo scontro è l'unica parte del gioco che ha uno stato
+   * osservabile dall'esterno — i test ci verificano il contratto del
+   * combattimento, che è troppo importante per essere solo "non esplode".
+   */
+  boss: Boss | null = null;
+  /** Celle in cui la muratura del soffitto ricompare: le posizioni originali. */
+  private bossBricks: { c: number; r: number }[] = [];
+  /** Mattoni che stanno per staccarsi: chiave -> tick rimasti. */
+  private brickFalling = new Map<string, number>();
+  /** Mattoni caduti che si stanno ricomponendo: chiave -> tick rimasti. */
+  private brickRespawn = new Map<string, number>();
+  private gateCells: { c: number; r: number }[] = [];
+  private gateOpen = false;
+  /** Cubo segreto già raccolto in questo tentativo: si prende una volta sola. */
+  private secretTaken = false;
   /**
    * Tick di "colpa del nastro" rimasti.
    *
@@ -143,6 +185,7 @@ export class World {
     this.coins = 0;
     this.ticks = 0;
     this.checkpoint = null;
+    this.secretTaken = false;
     // Ricominciare da capo significa anche tornare a non sapere dove sono le
     // trappole invisibili: è l'unica cosa che il respawn non porta con sé.
     this.discovered.clear();
@@ -162,6 +205,12 @@ export class World {
     this.state = 'playing';
     this.deathTimer = 0;
     this.beltGrace = 0;
+    this.boss = null;
+    this.bossBricks = [];
+    this.brickFalling.clear();
+    this.brickRespawn.clear();
+    this.gateCells = [];
+    this.gateOpen = false;
 
     // I marcatori nella mappa diventano entità e spariscono dalla griglia.
     for (const { c, r, tile } of this.map.entries()) {
@@ -169,13 +218,29 @@ export class World {
         this.map.clear(c, r);
         if (tile === TILE.DIVER) {
           this.entities.push(new Diver(c * TILE_SIZE + 3, r * TILE_SIZE + 6));
+        } else if (tile === TILE.BOSS) {
+          // Il marcatore sta nella cella *sopra* il pavimento: il Padrone ci
+          // poggia i piedi, non ci sta dentro.
+          this.boss = new Boss(
+            c * TILE_SIZE + (TILE_SIZE - BOSS.width) / 2,
+            (r + 1) * TILE_SIZE - BOSS.height,
+          );
+          this.entities.push(this.boss);
         } else {
           this.entities.push(new Walker(c * TILE_SIZE + 3, r * TILE_SIZE + 6, tile === TILE.EVIL_WALKER));
         }
+      } else if (tile === TILE.BOSS_BRICK) {
+        this.bossBricks.push({ c, r });
+      } else if (tile === TILE.BOSS_GATE) {
+        this.gateCells.push({ c, r });
       } else if (tile === TILE.TRAP_BRICK) {
         this.trapBricks.push({ c, r, fired: false, instant: false });
       } else if (tile === TILE.COLLAPSE) {
         this.trapBricks.push({ c, r, fired: false, instant: true });
+      } else if (tile === TILE.SKIN_CUBE && this.secretTaken) {
+        // Già preso in questo tentativo: non deve ricomparire a ogni morte,
+        // altrimenti il giocatore crede di poterlo raccogliere di nuovo.
+        this.map.clear(c, r);
       } else if (tile === TILE.POP_SPIKES) {
         this.popSpikes.push({ c, r, snap: false });
       } else if (tile === TILE.SNAP_SPIKES) {
@@ -226,9 +291,13 @@ export class World {
 
     this.handleStandingTiles();
     this.handleCrumbling();
+    this.handleBossBricks();
     this.handlePopSpikes();
     this.handleTrapBricks();
     this.handleEntities();
+    if (this.state !== 'playing') return;
+
+    this.handleBossFight();
     if (this.state !== 'playing') return;
 
     this.effects.update();
@@ -243,6 +312,8 @@ export class World {
         this.collectCoin(c, r);
       } else if (tile === TILE.CHECKPOINT) {
         this.activateCheckpoint(c, r);
+      } else if (tile === TILE.SKIN_CUBE) {
+        this.collectSkinCube(c, r);
       } else if (tile === TILE.GOAL) {
         this.win();
         return;
@@ -276,6 +347,26 @@ export class World {
     const y = r * TILE_SIZE + TILE_SIZE / 2;
     this.effects.burst(x, y, PALETTE.gold, { count: 10, speed: 3, size: 4, life: 26 });
     this.effects.floatingText(x, y - 6, '+1', PALETTE.gold, 13);
+  }
+
+  /**
+   * Cubo delle skin: l'unica cosa che si porta fuori dal livello.
+   *
+   * Non conta come moneta e non entra nelle statistiche del tentativo: è un
+   * oggetto da collezione, e mescolarlo al punteggio farebbe credere che sia
+   * roba da rigiocare per fare il record.
+   */
+  private collectSkinCube(c: number, r: number): void {
+    this.map.clear(c, r);
+    this.secretTaken = true;
+    this.audio.play('win');
+    const x = c * TILE_SIZE + TILE_SIZE / 2;
+    const y = r * TILE_SIZE + TILE_SIZE / 2;
+    this.effects.flash(0.3, PALETTE.hot);
+    this.effects.ring(x, y, PALETTE.hot, 5, 22);
+    this.effects.burst(x, y, PALETTE.paper, { count: 20, speed: 4.2, size: 4, life: 44, light: true });
+    this.effects.floatingText(x, y - 14, 'GATTO SBLOCCATO', PALETTE.hot, 14);
+    this.callbacks.onSecret?.(this.level.id);
   }
 
   private activateCheckpoint(c: number, r: number): void {
@@ -314,6 +405,15 @@ export class World {
         if (!this.crumbling.has(key)) {
           this.crumbling.set(key, RULES.ghostDelayTicks);
           this.audio.play('crumble');
+        }
+      } else if (tile === TILE.BOSS_BRICK) {
+        // Salirci sopra è l'unico modo di caricare l'arma: da qui parte il
+        // conto alla rovescia, e il mattone lo dice tremando.
+        const key = TileMap.key(c, r);
+        if (!this.brickFalling.has(key)) {
+          this.brickFalling.set(key, RULES.bossBrickDelayTicks);
+          this.audio.play('crumble');
+          this.camera.shake(2);
         }
       } else if (tile === TILE.FAKE_GROUND) {
         // Il pavimento cede quasi subito: il tempo di accorgersene e sei già giù.
@@ -387,9 +487,7 @@ export class World {
         this.crumbling.set(key, remaining - 1);
         continue;
       }
-      const [cs, rs] = key.split(',');
-      const c = Number(cs);
-      const r = Number(rs);
+      const [c, r] = cellOf(key);
       this.map.clear(c, r);
       this.crumbling.delete(key);
       this.effects.burst(c * TILE_SIZE + TILE_SIZE / 2, r * TILE_SIZE + TILE_SIZE / 2, PALETTE.wood, {
@@ -489,6 +587,196 @@ export class World {
         { count: 10, speed: 2.6, size: 4 },
       );
     }
+  }
+
+  // ---------------------------------------------------------------- boss
+  /**
+   * La muratura dell'arena: quella che sta cedendo e quella che si ricompone.
+   *
+   * Il ciclo è chiuso apposta — un mattone che cade torna sempre, dopo un po'.
+   * Senza, un giocatore che sbaglia tutti i tiri resterebbe chiuso in una
+   * stanza con un boss e niente con cui colpirlo, e non sarebbe una partita
+   * persa: sarebbe una partita finita.
+   */
+  private handleBossBricks(): void {
+    for (const [key, remaining] of [...this.brickFalling]) {
+      if (remaining > 0) {
+        this.brickFalling.set(key, remaining - 1);
+        continue;
+      }
+      this.brickFalling.delete(key);
+      const [c, r] = cellOf(key);
+      this.dropBrick(c, r);
+    }
+
+    for (const [key, remaining] of [...this.brickRespawn]) {
+      if (remaining > 0) {
+        this.brickRespawn.set(key, remaining - 1);
+        continue;
+      }
+      const [c, r] = cellOf(key);
+      // Mai murare il gatto dentro un solido: se è lì sotto, si aspetta.
+      if (this.playerOverlapsCell(c, r)) {
+        this.brickRespawn.set(key, 6);
+        continue;
+      }
+      this.brickRespawn.delete(key);
+      this.map.set(c, r, TILE.BOSS_BRICK);
+      this.audio.play('block');
+      this.effects.burst(c * TILE_SIZE + TILE_SIZE / 2, r * TILE_SIZE + TILE_SIZE, PALETTE.dust, {
+        count: 6,
+        speed: 1.8,
+        size: 3,
+        life: 18,
+        shape: 'circle',
+      });
+    }
+  }
+
+  /** Stacca il mattone: da qui in poi è un masso, e non è più di nessuno. */
+  private dropBrick(c: number, r: number): void {
+    if (this.map.get(c, r) !== TILE.BOSS_BRICK) return;
+
+    this.map.clear(c, r);
+    this.brickRespawn.set(TileMap.key(c, r), RULES.bossBrickRespawnTicks);
+    this.entities.push(new Rubble(c * TILE_SIZE + 2, r * TILE_SIZE + 4));
+    this.audio.play('trap');
+    this.camera.shake(FEEL.screenShakeOnTrap);
+    this.effects.burst(c * TILE_SIZE + TILE_SIZE / 2, r * TILE_SIZE, PALETTE.dust, {
+      count: 8,
+      speed: 2.2,
+      size: 3.5,
+      life: 22,
+      shape: 'circle',
+    });
+  }
+
+  /**
+   * Il combattimento vero e proprio: chi colpisce chi.
+   *
+   * Sta qui e non dentro le entità perché è esattamente il tipo di cosa che
+   * richiede di sapere due cose insieme — dove sta il masso e dove sta il
+   * Padrone — e nel progetto quel posto è uno solo.
+   */
+  private handleBossFight(): void {
+    const boss = this.boss;
+    if (!boss) return;
+
+    for (const entity of this.entities) {
+      if (!(entity instanceof Rubble) || entity.expired) continue;
+
+      const overlapping =
+        entity.x < boss.x + boss.w &&
+        entity.x + entity.w > boss.x &&
+        entity.y < boss.y + boss.h &&
+        entity.y + entity.h > boss.y;
+
+      if (overlapping) {
+        if (boss.takeHit(this)) entity.shatter(this);
+        continue;
+      }
+
+      // Non l'ha ancora preso ma gli sta arrivando in testa: se in quel momento
+      // può permetterselo, si sposta. È il suo modo di barare, ed è anche il
+      // motivo per cui va colpito mentre è occupato a fare altro.
+      const above = entity.y + entity.h < boss.y;
+      const dx = entity.x + entity.w / 2 - boss.centerX;
+      if (above && Math.abs(dx) < BOSS.dodgeRange && boss.canDodge) {
+        // Se il masso è decentrato scarta dalla parte opposta; se invece gli
+        // sta esattamente sulla testa fa un passo indietro, che è quello che
+        // farebbe chiunque e soprattutto è quello che si vede meglio.
+        boss.dodge(Math.abs(dx) < 6 ? 0 : -Math.sign(dx));
+        this.audio.play('bump');
+        this.effects.floatingText(boss.centerX, boss.y - 8, 'ops', PALETTE.paper, 12);
+      }
+    }
+
+    if (boss.isDead && !this.gateOpen) this.openGate();
+  }
+
+  /**
+   * Fase 2: il Padrone batte a terra e fa cadere il mattone sopra al gatto.
+   *
+   * È l'unica trappola del gioco che si può rigirare: il masso arriva dove sta
+   * il *giocatore*, e per un secondo abbondante dopo la botta il Padrone resta
+   * lì fermo. Chi ha capito il trucco si mette accanto a lui e lo lascia fare.
+   */
+  bossSlam(boss: Boss): void {
+    let best: { c: number; r: number } | null = null;
+    let bestDistance = Infinity;
+    const target = this.player.centerX;
+
+    for (const { c, r } of this.bossBricks) {
+      if (this.map.get(c, r) !== TILE.BOSS_BRICK) continue;
+      if (this.brickFalling.has(TileMap.key(c, r))) continue;
+      const distance = Math.abs(c * TILE_SIZE + TILE_SIZE / 2 - target);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = { c, r };
+      }
+    }
+
+    if (!best) return;
+    this.effects.floatingText(boss.centerX, boss.y - 10, 'GIÙ', PALETTE.hot, 14);
+    this.dropBrick(best.c, best.r);
+  }
+
+  /** Cambio di fase: si rifà il soffitto, perché può. */
+  onBossRage(): void {
+    this.brickFalling.clear();
+    for (const { c, r } of this.bossBricks) {
+      this.brickRespawn.delete(TileMap.key(c, r));
+      if (this.map.get(c, r) === TILE.BOSS_BRICK) continue;
+      if (this.playerOverlapsCell(c, r)) continue;
+      this.map.set(c, r, TILE.BOSS_BRICK);
+      this.effects.burst(c * TILE_SIZE + TILE_SIZE / 2, r * TILE_SIZE + TILE_SIZE, PALETTE.stone, {
+        count: 8,
+        speed: 2.4,
+        size: 4,
+        life: 24,
+      });
+    }
+    this.callbacks.onTaunt('si è rifatto il soffitto. certo che sì');
+  }
+
+  /** Il Padrone è caduto: il portone non ha più motivo di stare chiuso. */
+  private openGate(): void {
+    this.gateOpen = true;
+    for (const { c, r } of this.gateCells) {
+      this.map.clear(c, r);
+      this.effects.burst(c * TILE_SIZE + TILE_SIZE / 2, r * TILE_SIZE + TILE_SIZE / 2, PALETTE.stone, {
+        count: 6,
+        speed: 3,
+        size: 4,
+        life: 30,
+        gravity: 0.4,
+      });
+    }
+    if (this.gateCells.length === 0) return;
+
+    this.audio.play('coin');
+    this.camera.shake(6);
+    const first = this.gateCells[0];
+    if (first) {
+      this.effects.floatingText(
+        first.c * TILE_SIZE + TILE_SIZE / 2,
+        first.r * TILE_SIZE - 6,
+        'APERTO',
+        PALETTE.gold,
+        14,
+      );
+    }
+  }
+
+  private playerOverlapsCell(c: number, r: number): boolean {
+    const x = c * TILE_SIZE;
+    const y = r * TILE_SIZE;
+    return (
+      this.player.x < x + TILE_SIZE &&
+      this.player.x + this.player.w > x &&
+      this.player.y < y + TILE_SIZE &&
+      this.player.y + this.player.h > y
+    );
   }
 
   // ---------------------------------------------------------------- entità
@@ -624,7 +912,7 @@ export class World {
           col,
           row,
           revealed: this.revealed.has(key) || this.discovered.has(key),
-          crumbling: this.crumbling.has(key),
+          crumbling: this.crumbling.has(key) || this.brickFalling.has(key),
           checkpointActive: this.checkpoint?.c === col && this.checkpoint.r === row,
           hasFlagAbove: above === tile && (tile === TILE.FAKE_FLAG || tile === TILE.GOAL),
           extension: this.extensions.get(key) ?? 0,

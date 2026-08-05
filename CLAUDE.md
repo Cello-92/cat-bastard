@@ -84,7 +84,7 @@ src/
   game/       config (costanti), theme (palette), tiles (vocabolario),
               taunts, effects (particelle/juice), world.ts (orchestratore),
               game.ts (composition root)
-    entities/ player, walker, shroom, falling-spike, diver
+    entities/ player, walker, shroom, falling-spike, diver, boss, rubble
     levels/   level.ts (helper) + un file per livello + index.ts (registro)
     render/   background.ts (parallasse), tiles.ts (disegno dei tile)
   ui/         hud.ts, menu.ts, screens.ts, format.ts — l'unico codice che tocca il DOM
@@ -122,6 +122,9 @@ Ogni trappola sfrutta un'abitudine del giocatore, e ognuna ha il suo taunt in `t
 | `J` | il nemico normale (identico) | ha le punte sotto: schiacciarlo uccide |
 | `Z` | ombra sul soffitto | si tuffa quando le passi sotto |
 | `>` `<` | un nastro trasportatore (ed è esattamente quello) | ti trasporta: non è una trappola, ma decide dove sei quando scatta quella vera |
+| `H` | mattone del soffitto dell'arena | ci sali, trema, si stacca: è l'unica arma del gioco |
+| `=` | portone | solido finché il boss è vivo |
+| `@` | — | ci nasce il Padrone (marcatore) |
 
 Queste invece non danno **nessun preavviso**: la prima volta uccidono e basta.
 Sono deterministiche come tutte le altre — stesso punto, stessa morte — quindi
@@ -195,6 +198,12 @@ npm run build   # typecheck + build
 - **il disegno di tutto il vocabolario**, perché la simulazione disegna solo le
   colonne inquadrate e un tile che compare a metà livello potrebbe non essere mai
   disegnato da nessun test;
+- **il contratto del boss**, che il risolutore non può verificare perché non
+  conosce le entità: che toccarlo uccida, che un masso spenga una gemma, che
+  quattro gemme aprano il portone, che il soffitto si ricomponga e che scansi
+  mentre cammina ma non mentre è impegnato. C'è anche un controllo che rifà il
+  giro del risolutore su ogni singolo mattone dell'arena: un mattone
+  irraggiungibile è un boss imbattibile;
 - **il risolutore** (`tests/solver.ts`), che *gioca* ogni livello: cerca con la fisica vera
   una sequenza di comandi dallo spawn all'arrivo, considerando perso in partenza tutto ciò
   che sparisce sotto le zampe e già scattata ogni trappola. Serve perché un livello può
@@ -219,4 +228,28 @@ e allegare uno zip offline: non servono a ospitare la pagina.
 4. ~~Schermata di selezione livelli con record e morti~~ ✅ (dentro il menu)
 5. ~~Più trappole e più nemici~~ ✅ — resta il secondo mondo con un tileset davvero diverso
 6. ~~Dieci livelli: i nastri (`>` `<`), la molla-tagliola (`m`) e i cieli `dawn` e `storm`~~ ✅
-7. Un boss finale che ovviamente bara.
+7. ~~Un boss finale che ovviamente bara~~ ✅ — 1-11, *Il Padrone*
+
+## Il boss (1-11)
+
+Il primo livello del gioco che non si vince andando a destra. Vale la pena
+sapere perché è fatto così, prima di toccarlo:
+
+- **Niente barra della vita.** La salute del Padrone è la corona: quattro
+  gemme, una per masso incassato. Si guarda lui, non l'interfaccia.
+- **L'arma è il soffitto.** Salire su un mattone (`H`) lo stacca dopo
+  `RULES.bossBrickDelayTicks`. Dove cade lo decide il giocatore, perché il
+  boss cammina *sempre* verso di lui: è un boss che si guida, non che si
+  insegue.
+- **Bara, e bara in un modo solo.** Mentre cammina scansa qualunque masso gli
+  stia arrivando in testa. Lo si colpisce solo quando è impegnato — carica,
+  capogiro contro il muro, botta a terra — ed è tutta lì la strategia.
+- **La fase 2 gli si ritorce contro.** La botta a terra fa crollare il mattone
+  sopra al *gatto*, e dopo lui resta fermo un secondo abbondante: chi ha capito
+  gli si mette accanto e lo lascia fare.
+- **Niente checkpoint**, ed è dichiarato nel livello (`boss: true`). Uno
+  scontro si impara da capo, non si consuma a pezzi. Il patto regge lo stesso
+  perché si rinasce *dentro* l'arena, che è larga quanto uno schermo.
+- **La muratura si ricompone** (`RULES.bossBrickRespawnTicks`): senza, chi
+  sbaglia tutti i tiri resterebbe chiuso in una stanza senza più niente con cui
+  colpire — non una partita persa, una partita finita.

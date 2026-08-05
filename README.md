@@ -34,7 +34,8 @@ esattamente cosa ti ha fregato.
 
 ## Cosa ti aspetta
 
-Dieci livelli, un gatto, e un numero imbarazzante di modi per morire.
+Undici livelli, un gatto, un boss che bara, e un numero imbarazzante di modi
+per morire.
 
 | | |
 |---|---|
@@ -47,6 +48,7 @@ Dieci livelli, un gatto, e un numero imbarazzante di modi per morire.
 | 🔻 **Gli spuntoni invisibili** | la prima morte è gratis. La seconda è colpa tua |
 | 🪃 **La molla** | qualcuna lancia, qualcuna si chiude. Sono identiche |
 | ⚙️ **Il nastro** | l'unica cosa onesta della fabbrica: ti porta esattamente dove ha deciso |
+| 👑 **Il Padrone** | il boss finale. Non si tocca e non si schiaccia: gli si fa cadere il soffitto in testa. E schiva, ovviamente |
 
 Chi arriva in fondo ha imparato dove si muore. Non è la stessa cosa di essere bravo.
 

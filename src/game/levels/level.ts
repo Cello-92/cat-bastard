@@ -29,6 +29,17 @@ export interface LevelDef {
   sky: SkyName;
   spawn: { c: number; r: number };
   rows: readonly string[];
+  /**
+   * Arena di un boss.
+   *
+   * Cambia una cosa sola, ma è una regola del gioco: qui il checkpoint non
+   * c'è. Non è una dimenticanza — un boss si combatte dall'inizio ogni volta,
+   * altrimenti la seconda metà dello scontro si vince consumandola invece che
+   * imparandola. Il patto resta in piedi lo stesso perché l'arena è larga
+   * quanto uno schermo: si rimuore *dentro* il combattimento, non trenta
+   * secondi prima (vedi CLAUDE.md).
+   */
+  boss?: boolean;
 }
 
 const GROUND_ROWS = [LEVEL_ROWS - 2, LEVEL_ROWS - 1];
@@ -59,6 +70,7 @@ export interface LevelSpec {
   sky: SkyName;
   spawn?: { c: number; r: number };
   segments: string[][];
+  boss?: boolean;
 }
 
 /** Concatena i segmenti in un livello pronto da caricare. */
@@ -69,10 +81,11 @@ export function defineLevel({
   sky,
   spawn = { c: 2, r: 12 },
   segments,
+  boss = false,
 }: LevelSpec): LevelDef {
   const rows: string[] = [];
   for (let r = 0; r < LEVEL_ROWS; r++) {
     rows.push(segments.map((s) => s[r] ?? ' '.repeat(SEGMENT_COLS)).join(''));
   }
-  return { id, name, title, sky, spawn, rows };
+  return { id, name, title, sky, spawn, rows, boss };
 }

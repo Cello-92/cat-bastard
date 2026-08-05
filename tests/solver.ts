@@ -224,7 +224,16 @@ export interface SolveResult {
  * Ricerca in ampiezza guidata: si espandono prima gli stati più avanti nel
  * livello. Non serve il percorso ottimo, serve sapere se ne esiste uno.
  */
-export function solve(level: LevelDef, budget = 400_000): SolveResult {
+/**
+ * Il budget deve essere abbondante, non stretto.
+ *
+ * Un livello denso costa qualche centinaio di migliaia di stati (1-5 ne
+ * chiede 254.000), e con il budget vecchio bastava aggiungere due trappole
+ * perché il risolutore si fermasse *per esaurimento* e dichiarasse impossibile
+ * un livello che si attraversa benissimo. Un referto sbagliato è peggio di un
+ * referto lento: qui si paga qualche secondo in CI per averlo giusto.
+ */
+export function solve(level: LevelDef, budget = 1_500_000): SolveResult {
   const map = new TileMap(level.rows, TILE_SIZE);
   const start: SearchState = {
     x: level.spawn.c * TILE_SIZE + 5,

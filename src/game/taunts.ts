@@ -27,12 +27,14 @@ export const DEATH_CAUSE = {
   ghost: 'ghost',
   snapSpikes: 'snapSpikes',
   hiddenSpikes: 'hiddenSpikes',
-  trapSpring: 'trapSpring',
+  // --- mondo 2
+  ice: 'ice',
+  brittleIce: 'brittleIce',
   belt: 'belt',
-  boss: 'boss',
-  bossCharge: 'bossCharge',
-  bossStomp: 'bossStomp',
-  bossRubble: 'bossRubble',
+  deadVent: 'deadVent',
+  sentry: 'sentry',
+  drone: 'drone',
+  snowball: 'snowball',
   generic: 'generic',
 } as const;
 
@@ -101,35 +103,40 @@ const BY_CAUSE: Record<Exclude<DeathCause, 'generic'>, readonly string[]> = {
     'ora sono visibili. non ti servirà a molto, ma sono visibili',
     'invisibili. la seconda volta no',
   ],
-  trapSpring: [
-    'quella molla non lanciava niente. si chiudeva',
-    'era una tagliola col piattello rosso',
-    'ci sono molle e molle. quella era dell\'altro tipo',
+  ice: [
+    'sul ghiaccio si frena prima. molto prima',
+    'quattro zampe e zero aderenza',
+    'volevi fermarti lì? il ghiaccio dice di no',
+  ],
+  brittleIce: [
+    'era sottile. si sentiva anche, scricchiolava',
+    'il ghiaccio si è crepato, poi ha smesso di esistere',
+    'un attimo in più fermo lì ed era sicuro. no, aspetta: il contrario',
   ],
   belt: [
-    'il nastro ti ha accompagnato. fin laggiù',
-    'correvi. il pavimento correva più di te',
-    'il nastro andava di là. tu pensavi di andare di qua',
+    'il nastro ti ha accompagnato. gentile',
+    'stavi fermo, ma il pavimento no',
+    'andava dall\'altra parte. sempre andato dall\'altra parte',
   ],
-  boss: [
-    'gli sei andato addosso. lui era lì da prima',
-    'toccarlo non era il piano, vero?',
-    'il Padrone non si tocca. il Padrone tocca',
+  deadVent: [
+    'quel getto era spento. lo era anche prima',
+    'vapore freddo: fa scena, non spinge',
+    'ti sei fidato di una nuvoletta',
   ],
-  bossCharge: [
-    'te l\'ha annunciato. ha ruggito e tutto',
-    'correva dritto. tu pure',
-    'i mensoloni servivano a quello, sai',
+  sentry: [
+    'ti ha visto, si è girata, ti è venuta addosso',
+    'l\'elmo ce l\'aveva in testa da sempre. si vedeva',
+    'quella non si schiaccia. mai potuta schiacciare',
   ],
-  bossStomp: [
-    'saltargli in testa. certo. come no',
-    'ha una corona. le corone pungono',
-    'ha funzionato con i funghi, doveva funzionare anche qui',
+  drone: [
+    'il drone passava di lì ogni tot. tu sei passato al tot sbagliato',
+    'andava avanti e indietro. sempre uguale. sempre',
+    'dovevi salirci sopra, non entrarci dentro',
   ],
-  bossRubble: [
-    'quello era il TUO mattone',
-    'l\'hai staccato tu. è caduto dove eri tu',
-    'il soffitto non distingue chi lo ha fatto cadere',
+  snowball: [
+    'rotolava verso di te da tre secondi',
+    'una palla di ghiaccio. correva più di te',
+    'era in salita per lei e in discesa per te, eppure',
   ],
 };
 

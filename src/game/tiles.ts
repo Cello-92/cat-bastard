@@ -82,28 +82,44 @@ export const TILE = {
    */
   HIDDEN_SPIKES: '!',
 
-  // --- Roba del boss: esiste solo dentro l'arena di 1-11.
+  // --- Mondo 2: il ghiaccio e la fabbrica. Vocabolario tutto suo.
   /**
-   * Mattone del soffitto dell'arena.
-   *
-   * È l'unica arma che il gatto ha contro il Padrone, ed è anche l'unico posto
-   * in cui il gioco chiede al giocatore di fidarsi di una piattaforma che sta
-   * per cedere: ci sali sopra, quello trema, e poco dopo si stacca portandosi
-   * dietro tutto il peso della muratura. Dove cade non lo decide lui.
+   * Terreno innevato: si comporta esattamente come `#`, e infatti è il
+   * pavimento onesto del secondo mondo. Cambia solo il manto — neve al posto
+   * dell'erba — perché un mondo nuovo che riusa il terreno del vecchio non
+   * sembra un mondo nuovo.
    */
-  BOSS_BRICK: 'H',
+  SNOW: '+',
   /**
-   * Il portone in fondo all'arena: solido finché il Padrone è vivo, aperto
-   * nell'istante in cui smette di esserlo. Non è una trappola, è una serratura.
+   * Ghiaccio: solido come il terreno, ma non ti tiene.
+   * Non è una trappola nascosta — si vede benissimo che è ghiaccio. È una
+   * regola nuova: da qui in poi fermarsi costa più che partire.
    */
-  BOSS_GATE: '=',
+  ICE: '~',
+  /**
+   * Ghiaccio sottile: identico a `~` finché non ci sali. Poi si crepa e cede.
+   * Ha il suo preavviso (le crepe), come l'asse marcia del primo mondo.
+   */
+  BRITTLE_ICE: ';',
+  /** Piastra d'acciaio: il pavimento della fabbrica. Solida e onesta. */
+  STEEL: '=',
+  /** Nastro trasportatore verso destra: ti porta dove vuole lui. */
+  BELT_RIGHT: '>',
+  /** Nastro trasportatore verso sinistra. Di solito verso qualcosa di brutto. */
+  BELT_LEFT: '<',
+  /** Getto di vapore: non è solido, ti solleva finché ci resti dentro. */
+  VENT: '^',
+  /**
+   * Getto identico al precedente, stesso vapore, stesso rumore: non spinge.
+   * Nessun modo di distinguerlo prima. Dopo, sì: sei caduto dentro.
+   */
+  DEAD_VENT: ',',
 
-  /**
-   * Cubo delle skin: l'unica cosa nel gioco che si può raccogliere una volta
-   * sola per sempre. Non uccide, non aiuta, non conta nel punteggio — sblocca
-   * un gatto. Sta sempre in un posto che nessuno attraverserebbe per caso.
-   */
-  SKIN_CUBE: '*',
+  // --- Segreti: non uccidono, si nascondono.
+  /** Parete d'acciaio attraversabile: dietro c'è sempre qualcosa. */
+  FAKE_WALL: ':',
+  /** Gomitolo: uno per livello, ben nascosto. Sblocca i gatti. */
+  YARN: '*',
 
   // --- Marcatori: rimossi dalla griglia al caricamento e sostituiti da entità.
   /** Nemico che cammina, schiacciabile. */
@@ -112,8 +128,12 @@ export const TILE = {
   EVIL_WALKER: 'J',
   /** Bestia appesa in alto che si tuffa quando le passi sotto. */
   DIVER: 'Z',
-  /** Il Padrone: il boss di 1-11. Ne esiste uno solo per livello. */
-  BOSS: '@',
+  /** Sentinella corazzata: cammina piano, poi ti carica. Non si schiaccia. */
+  SENTRY: 'H',
+  /** Drone: vola su una rotta fissa. Schiacciarlo funziona, e a volte serve. */
+  DRONE: '%',
+  /** Palla di ghiaccio: quando entri nel suo raggio, rotola verso di te. */
+  SNOWBALL: '&',
 } as const;
 
 export type TileChar = (typeof TILE)[keyof typeof TILE];
@@ -121,6 +141,7 @@ export type TileChar = (typeof TILE)[keyof typeof TILE];
 /** Tile contro cui si collide. */
 const SOLID = new Set<string>([
   TILE.GROUND,
+  TILE.SNOW,
   TILE.ROCK,
   TILE.FAKE_GROUND,
   TILE.GHOST,
@@ -132,10 +153,11 @@ const SOLID = new Set<string>([
   TILE.INVISIBLE,
   TILE.TRAP_BRICK,
   TILE.CRUMBLE,
+  TILE.ICE,
+  TILE.BRITTLE_ICE,
+  TILE.STEEL,
   TILE.BELT_RIGHT,
   TILE.BELT_LEFT,
-  TILE.BOSS_BRICK,
-  TILE.BOSS_GATE,
 ]);
 
 /** Tile che al contatto uccidono, sempre e comunque. */
@@ -149,7 +171,14 @@ const DEADLY = new Set<string>([
 ]);
 
 /** Tile che vengono convertiti in entità al caricamento del livello. */
-const SPAWNERS = new Set<string>([TILE.WALKER, TILE.EVIL_WALKER, TILE.DIVER, TILE.BOSS]);
+const SPAWNERS = new Set<string>([
+  TILE.WALKER,
+  TILE.EVIL_WALKER,
+  TILE.DIVER,
+  TILE.SENTRY,
+  TILE.DRONE,
+  TILE.SNOWBALL,
+]);
 
 /**
  * Tile disegnati come massa di terreno.
@@ -158,26 +187,52 @@ const SPAWNERS = new Set<string>([TILE.WALKER, TILE.EVIL_WALKER, TILE.DIVER, TIL
  */
 const EARTH = new Set<string>([
   TILE.GROUND,
+  TILE.SNOW,
   TILE.ROCK,
   TILE.FAKE_GROUND,
   TILE.GHOST,
   TILE.COLLAPSE,
 ]);
 
+/** Ghiaccio: una superficie, non una trappola. Si distingue a vista. */
+const ICY = new Set<string>([TILE.ICE, TILE.BRITTLE_ICE]);
+
 /**
- * Verso in cui il nastro trascina chi ci poggia sopra: -1, 0 o +1.
- * Vive qui e non nella fisica perché è semantica del tile, non del motore.
+ * Lamiera della fabbrica. Ci sta dentro anche la parete finta, ed è il punto:
+ * deve saldarsi alle altre esattamente come farebbe una parete vera.
  */
-export const beltDirection = (tile: string): number => {
-  if (tile === TILE.BELT_RIGHT) return 1;
-  if (tile === TILE.BELT_LEFT) return -1;
-  return 0;
-};
+const METAL = new Set<string>([
+  TILE.STEEL,
+  TILE.BELT_RIGHT,
+  TILE.BELT_LEFT,
+  TILE.FAKE_WALL,
+]);
 
 export const isSolid = (tile: string): boolean => SOLID.has(tile);
 export const isDeadly = (tile: string): boolean => DEADLY.has(tile);
 export const isSpawner = (tile: string): boolean => SPAWNERS.has(tile);
 export const isEarth = (tile: string): boolean => EARTH.has(tile);
+export const isIcy = (tile: string): boolean => ICY.has(tile);
+export const isMetal = (tile: string): boolean => METAL.has(tile);
+
+/**
+ * Due celle si "saldano" (niente bordo, niente ombra tra loro)?
+ *
+ * La terra fa massa con la terra, il ghiaccio col ghiaccio, la lamiera con la
+ * lamiera; tutto il resto si limita a poggiare sul solido. Senza questa regola
+ * una parete d'acciaio incastrata nella roccia sembrerebbe un unico blocco, e
+ * il mondo nuovo non si distinguerebbe da quello vecchio.
+ */
+export const joins = (tile: string, other: string): boolean => {
+  if (isEarth(tile)) return isEarth(other);
+  if (isIcy(tile)) return isIcy(other);
+  if (isMetal(tile)) return isMetal(other);
+  return isSolid(other);
+};
 
 /** Il blocco invisibile è solido ma va disegnato solo dopo essere stato scoperto. */
 export const isHiddenUntilTouched = (tile: string): boolean => tile === TILE.INVISIBLE;
+
+/** Verso in cui il nastro trascina: -1, 0 o +1. */
+export const beltDirection = (tile: string): number =>
+  tile === TILE.BELT_RIGHT ? 1 : tile === TILE.BELT_LEFT ? -1 : 0;

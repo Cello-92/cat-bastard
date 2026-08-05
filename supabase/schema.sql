@@ -26,15 +26,16 @@ create extension if not exists pgcrypto with schema extensions;
 -- --------------------------------------------------------------- tabelle ---
 
 -- Un giocatore: il nickname, la password (bcrypt) e tutto ciò che nel gioco
--- non è legato a un livello singolo (monete in tasca, morti totali, gatti).
+-- non è legato a un livello singolo (morti totali, gomitoli trovati).
 create table if not exists public.players (
   id            uuid primary key default gen_random_uuid(),
   nickname      text not null,
   password_hash text not null,
-  coins         integer not null default 0,
   total_deaths  integer not null default 0,
-  skins         text[] not null default '{}',
-  skin          text not null default 'classic',
+  -- Id dei livelli in cui il gomitolo nascosto è stato trovato. I gatti si
+  -- sbloccano contando questi, quindi sincronizzare i gomitoli sincronizza già
+  -- i gatti: non c'è nessuna lista di gatti da farsi mandare e da credere.
+  secrets       text[] not null default '{}',
   -- Difesa minima contro chi prova password a raffica: la chiave anon è
   -- pubblica, quindi l'endpoint di login è pubblico per definizione.
   failed_logins integer not null default 0,
@@ -141,10 +142,8 @@ as $$
   select json_build_object(
     'ok',           true,
     'nickname',     p.nickname,
-    'coins',        p.coins,
     'total_deaths', p.total_deaths,
-    'skin',         p.skin,
-    'skins',        to_jsonb(p.skins),
+    'secrets',      to_jsonb(p.secrets),
     'levels', coalesce((
       select jsonb_object_agg(
         s.level_id,
@@ -312,10 +311,8 @@ $$;
 --   tempo, morti  -> il minore. Sono record: il più basso ha vinto.
 --   monete del livello -> la maggiore. È il massimo raccolto in un tentativo.
 --   morti totali  -> la maggiore. Il contatore sale e basta, non si azzera.
---   monete in tasca -> quelle mandate dal client. NON la maggiore: le monete
---                      si spendono, e prendere il massimo significherebbe
---                      restituire a ogni sincronizzazione quelle già spese.
---   gatti         -> l'unione. Uno sbloccato resta sbloccato per sempre.
+--   gomitoli      -> l'unione. Uno trovato non si perde più, ed è la stessa
+--                    regola che vale in locale (`recordSecret`).
 --
 -- Nessuna di queste è una verifica anti-imbroglio, e non finge di esserlo: i
 -- controlli sui valori servono a non farsi riempire il database di spazzatura,
@@ -332,10 +329,10 @@ declare
   v_levels jsonb;
   v_key    text;
   v_entry  jsonb;
-  v_ms     integer;
-  v_deaths integer;
-  v_coins  integer;
-  v_skins  text[];
+  v_ms      integer;
+  v_deaths  integer;
+  v_coins   integer;
+  v_secrets text[];
 begin
   v_player := public.cb_session_player(p_token);
   if v_player is null then
@@ -389,13 +386,13 @@ begin
           updated_at  = now();
   end loop;
 
-  -- I gatti: unione, e solo id plausibili. Il client ne conosce dieci.
-  v_skins := '{}';
-  if jsonb_typeof(p_payload -> 'skins') = 'array' then
+  -- I gomitoli: unione, e solo id di livello plausibili.
+  v_secrets := '{}';
+  if jsonb_typeof(p_payload -> 'secrets') = 'array' then
     select coalesce(array_agg(distinct s), '{}')
-      into v_skins
-      from jsonb_array_elements_text(p_payload -> 'skins') as t(s)
-     where s ~ '^[a-z0-9_-]{1,32}$';
+      into v_secrets
+      from jsonb_array_elements_text(p_payload -> 'secrets') as t(s)
+     where s ~ '^[0-9]{1,3}-[0-9]{1,3}$';
   end if;
 
   update public.players p
@@ -405,14 +402,10 @@ begin
                 then least(greatest(floor((p_payload ->> 'total_deaths')::numeric)::integer, 0), 100000000)
                 else 0 end
          ),
-         coins = case when jsonb_typeof(p_payload -> 'coins') = 'number'
-                      then least(greatest(floor((p_payload ->> 'coins')::numeric)::integer, 0), 1000000)
-                      else p.coins end,
-         skins = (select coalesce(array_agg(distinct x), '{}') from unnest(p.skins || v_skins) as u(x)),
-         skin  = case when jsonb_typeof(p_payload -> 'skin') = 'string'
-                       and (p_payload ->> 'skin') ~ '^[a-z0-9_-]{1,32}$'
-                      then p_payload ->> 'skin'
-                      else p.skin end,
+         secrets = (
+           select coalesce(array_agg(distinct x), '{}')
+             from unnest(p.secrets || v_secrets) as u(x)
+         ),
          updated_at = now()
    where p.id = v_player;
 
@@ -446,10 +439,8 @@ begin
   delete from public.scores where player_id = v_player;
 
   update public.players
-     set coins        = 0,
-         total_deaths = 0,
-         skins        = '{}',
-         skin         = 'classic',
+     set total_deaths = 0,
+         secrets      = '{}',
          updated_at   = now()
    where id = v_player;
 

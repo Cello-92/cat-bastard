@@ -6,10 +6,10 @@ Un **rage game** platform 2D nello stile di *Super Mario Bros.* / *Syobon Action
 sembra un platform classico e onesto, ma ogni elemento familiare è una trappola. Si gioca nel
 browser aprendo un link pubblico — niente installazione, niente account.
 
-Il gioco è strutturato **a livelli**, con un menu di avvio navigabile (gioca, selezione livelli
-con i record, audio, comandi, azzeramento progressi) e la pausa su `ESC`. Il protagonista è un
-gatto. Il tono è ironico e cattivo: il gioco ti prende in giro mentre muori. I testi in-game
-sono **in italiano**.
+Il gioco è strutturato **a livelli** su due mondi, con un menu di avvio navigabile (gioca,
+selezione livelli con i record, gatti sbloccabili, audio, comandi, azzeramento progressi) e la
+pausa su `ESC`. Il protagonista è un gatto — anzi, cinque, ma cambia solo il manto. Il tono è
+ironico e cattivo: il gioco ti prende in giro mentre muori. I testi in-game sono **in italiano**.
 
 Link pubblico: <https://diamond26.github.io/cat-bastard/>
 Repo: <https://github.com/Diamond26/cat-bastard> (pubblica)
@@ -87,10 +87,10 @@ src/
     render/   renderer.ts (interfaccia) + canvas2d.ts (backend)
               Motore 2D generico: non conosce il significato dei tile.
   game/       config (costanti), theme (palette), tiles (vocabolario),
-              taunts, effects (particelle/juice), world.ts (orchestratore),
-              game.ts (composition root)
-    entities/ player, walker, shroom, falling-spike, diver, boss, rubble
-              skins.ts (i gatti giocabili e come si sbloccano)
+              taunts, cats (manti sbloccabili), effects (particelle/juice),
+              world.ts (orchestratore), game.ts (composition root)
+    entities/ player, walker, shroom, falling-spike, diver,
+              sentry, drone, snowball
     levels/   level.ts (helper) + un file per livello + index.ts (registro)
     render/   background.ts (parallasse), tiles.ts (disegno dei tile)
   net/        supabase.ts (fetch e basta), account.ts (sessione e sincronia),
@@ -138,11 +138,10 @@ Ogni trappola sfrutta un'abitudine del giocatore, e ognuna ha il suo taunt in `t
 | `F` | l'arrivo | uccide |
 | `J` | il nemico normale (identico) | ha le punte sotto: schiacciarlo uccide |
 | `Z` | ombra sul soffitto | si tuffa quando le passi sotto |
-| `>` `<` | un nastro trasportatore (ed è esattamente quello) | ti trasporta: non è una trappola, ma decide dove sei quando scatta quella vera |
-| `*` | un cubo iridescente | sblocca un gatto, per sempre. È l'unica cosa del gioco che non mente e non uccide |
-| `H` | mattone del soffitto dell'arena | ci sali, trema, si stacca: è l'unica arma del gioco |
-| `=` | portone | solido finché il boss è vivo |
-| `@` | — | ci nasce il Padrone (marcatore) |
+| `;` | ghiaccio | è sottile: si crepa e cede, come l'asse marcia |
+| `>` `<` | pavimento | nastro: ti trascina, spesso dove non vuoi |
+| `H` | nemico corazzato | ti vede, si pianta un attimo e ti carica. Non si schiaccia |
+| `&` | palla di ghiaccio ferma | rotola verso di te e non frena |
 
 Queste invece non danno **nessun preavviso**: la prima volta uccidono e basta.
 Sono deterministiche come tutte le altre — stesso punto, stessa morte — quindi
@@ -157,38 +156,45 @@ ingiocabile.
 | `L` | una piattaforma solida | sparisce dopo tre tick, senza tremare |
 | `O` | terreno normale, senza feritoia | spuntoni che scattano quando ci sei già sopra |
 | `!` | niente. Proprio niente | spuntoni invisibili. Dopo la prima morte restano visibili per tutto il tentativo |
-| `m` | una molla, identica a `M` | non lancia: si chiude. È una tagliola col piattello rosso |
+| `,` | un getto di vapore identico a `^` | non spinge. Ci si butta dentro contando su una spinta che non arriva |
 
-## Le skin
+### Il secondo mondo: superfici, non trappole
 
-Dieci gatti, in `game/skins.ts`. Cambiano **solo l'aspetto**: cassa, fisica e
-comandi sono identici per tutti, e devono restarlo — in un gioco che ti frega di
-continuo, la cosa che ti sei comprato col sudore non può anche darti un
-vantaggio. I colori dei manti stanno in `theme.ts` (`PELT`, `IRIS`), come tutti
-gli altri colori del gioco.
+Il mondo 2 (gelo + fabbrica) aggiunge le uniche cose del gioco che cambiano **come
+risponde il pavimento**. Non violano il patto: si vedono prima di calpestarle, fanno
+sempre la stessa cosa, e i comandi continuano a rispondere immediatamente.
 
-Si sbloccano in cinque modi, e ognuno racconta una cosa diversa del giocatore:
+| Tile | Cosa fa |
+|---|---|
+| `+` | terreno innevato: identico a `#`, cambia solo il manto |
+| `~` | ghiaccio: attrito quasi nullo, poca presa in accelerazione |
+| `=` | piastra d'acciaio: il pavimento onesto della fabbrica |
+| `>` `<` | nastro: trascina di `SURFACE.beltSpeed` px/tick, senza toccare la velocità del gatto |
+| `^` | getto di vapore: solleva finché ci resti dentro, e non si può dosare |
 
-- **monete** — si incassano *finendo* un livello: quelle raccolte in un
-  tentativo finito male non entrano in tasca. È il motivo per cui raccogliere
-  una moneta è una scelta e non un riflesso, visto che una su tre è avvelenata;
-- **cubo nascosto** (`*`) — uno per livello, in un posto che non sta sulla
-  strada per l'arrivo. Quello di 1-3 si prende salendo sul blocco invisibile che
-  ti ha appena rovinato il salto; quello di 1-7 solo fidandosi di una molla;
-  quello di 1-9 è appeso dentro la fossa, e si paga con una morte certa;
-- **livello finito** — il gatto col mantello del Padrone si ha battendo 1-11;
-- **morti accumulate** — a trecento morti si sblocca il gatto invisibile. È
-  l'unico premio che si guadagna facendo schifo, e ci teniamo che esista;
-- **gratis** — il gatto di serie.
+Le costanti stanno in `SURFACE` (`game/config.ts`). Chi le tocca deve toccare anche
+`tests/solver.ts`: il risolutore simula ghiaccio, nastri e getti con lo stesso codice
+e lo stesso ordine di operazioni di `Player.update` — se i due si scostano, il
+risolutore mente e un livello impossibile passa i test.
 
-Aggiungere una skin: una voce in `SKINS`, il suo mantello in `theme.ts`, e —
-se è di quelle segrete — un `*` nel livello che la custodisce. Il test
-controlla da solo che il cubo sia raggiungibile davvero.
+### I segreti e i gatti
+
+| Tile | Cosa sembra | Cosa fa |
+|---|---|---|
+| `:` | parete d'acciaio | non è solida: ci si passa attraverso. Dopo, resta marcata |
+| `*` | un gomitolo | l'unica cosa del gioco che non uccide: sblocca i gatti |
+
+Ogni livello del mondo 2 ne nasconde uno. I manti stanno in `game/cats.ts` e sono
+**solo estetici**, per due motivi: un gatto che salta più in alto romperebbe ogni
+mappa già tarata su `config.ts`, e una collezione che dà vantaggi smette di essere
+una ricompensa e diventa una scorciatoia. I gomitoli trovati stanno nei progressi
+(`core/storage.ts`) e non si perdono più.
 
 ### Aggiungere roba
 
 - **Un livello**: nuovo file in `game/levels/`, poi appenderlo a `LEVELS` in `levels/index.ts`.
   Nient'altro. Le mappe sono ASCII, un segmento largo 20 colonne per riga di codice.
+  Se contiene un `*`, il conteggio dei gomitoli si aggiorna da solo (`SECRET_COUNT`).
 - **Un tile**: una voce in `TILE` (`game/tiles.ts`), la sua semantica lì accanto
   (solido? letale?), il suo disegno in `game/render/tiles.ts`.
 - **Un nemico**: una classe in `game/entities/` che estende `Entity` e implementa
@@ -353,31 +359,8 @@ e allegare uno zip offline: non servono a ospitare la pagina.
 2. ~~Sistema multi-livello + checkpoint + salvataggio progressi~~ ✅
 3. ~~Deploy automatico su Pages~~ ✅
 4. ~~Schermata di selezione livelli con record e morti~~ ✅ (dentro il menu)
-5. ~~Più trappole e più nemici~~ ✅ — resta il secondo mondo con un tileset davvero diverso
-6. ~~Dieci livelli: i nastri (`>` `<`), la molla-tagliola (`m`) e i cieli `dawn` e `storm`~~ ✅
-7. ~~Un boss finale che ovviamente bara~~ ✅ — 1-11, *Il Padrone*
+5. ~~Più trappole e più nemici~~ ✅
+6. ~~Secondo mondo con un tileset davvero diverso~~ ✅ — gelo e fabbrica, cinque livelli,
+   superfici che cambiano la fisica, tre nemici nuovi, gomitoli nascosti e gatti sbloccabili
+7. Un boss finale che ovviamente bara.
 8. ~~Account (nickname e password, niente email) e classifica dei tempi~~ ✅ — Supabase
-
-## Il boss (1-11)
-
-Il primo livello del gioco che non si vince andando a destra. Vale la pena
-sapere perché è fatto così, prima di toccarlo:
-
-- **Niente barra della vita.** La salute del Padrone è la corona: quattro
-  gemme, una per masso incassato. Si guarda lui, non l'interfaccia.
-- **L'arma è il soffitto.** Salire su un mattone (`H`) lo stacca dopo
-  `RULES.bossBrickDelayTicks`. Dove cade lo decide il giocatore, perché il
-  boss cammina *sempre* verso di lui: è un boss che si guida, non che si
-  insegue.
-- **Bara, e bara in un modo solo.** Mentre cammina scansa qualunque masso gli
-  stia arrivando in testa. Lo si colpisce solo quando è impegnato — carica,
-  capogiro contro il muro, botta a terra — ed è tutta lì la strategia.
-- **La fase 2 gli si ritorce contro.** La botta a terra fa crollare il mattone
-  sopra al *gatto*, e dopo lui resta fermo un secondo abbondante: chi ha capito
-  gli si mette accanto e lo lascia fare.
-- **Niente checkpoint**, ed è dichiarato nel livello (`boss: true`). Uno
-  scontro si impara da capo, non si consuma a pezzi. Il patto regge lo stesso
-  perché si rinasce *dentro* l'arena, che è larga quanto uno schermo.
-- **La muratura si ricompone** (`RULES.bossBrickRespawnTicks`): senza, chi
-  sbaglia tutti i tiri resterebbe chiuso in una stanza senza più niente con cui
-  colpire — non una partita persa, una partita finita.

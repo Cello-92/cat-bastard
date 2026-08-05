@@ -11,6 +11,12 @@ import type { LevelRecord, Progress } from '@core/storage';
  *
  * Il gioco conta in tick, il server in millisecondi (vedi `core/loop.ts`):
  * la conversione avviene qui, all'unico confine dove serve.
+ *
+ * Quello che *non* passa di qui è il gatto scelto: è una preferenza come
+ * l'audio, non un progresso, e vive in `Settings`. Il gatto sbloccato invece
+ * dipende solo dai gomitoli trovati, quindi sincronizzare i gomitoli
+ * sincronizza già i gatti — senza dover mandare una lista di gatti che il
+ * server dovrebbe fidarsi di ricevere.
  */
 
 /** Un livello come lo vede il server. */
@@ -24,10 +30,9 @@ export interface RemoteLevel {
 export interface RemoteState {
   ok: true;
   nickname: string;
-  coins: number;
   total_deaths: number;
-  skin: string;
-  skins: string[];
+  /** Id dei livelli in cui il gomitolo è stato trovato. */
+  secrets: string[];
   levels: Record<string, RemoteLevel>;
   /** Presente solo su login e registrazione. */
   token?: string;
@@ -64,10 +69,8 @@ export function toPayload(progress: Progress): Record<string, unknown> {
   }
 
   return {
-    coins: progress.coins,
     total_deaths: progress.totalDeaths,
-    skin: progress.skin,
-    skins: progress.skins,
+    secrets: progress.secrets,
     levels,
   };
 }
@@ -80,9 +83,6 @@ export function toPayload(progress: Progress): Record<string, unknown> {
  * perché "in teoria" non è una garanzia: se la spinta è fallita a metà, o se
  * nel frattempo il giocatore ha finito un livello, l'unica cosa che non deve
  * succedere è che un record sparisca. Nel dubbio si tiene il migliore dei due.
- *
- * Le monete in tasca sono l'unica eccezione e vince il server: si spendono, e
- * tenere la cifra più alta significherebbe restituire quelle già spese.
  */
 export function applyRemote(remote: RemoteState, local: Progress): Progress {
   const levels: Record<string, LevelRecord> = { ...local.levels };
@@ -103,16 +103,14 @@ export function applyRemote(remote: RemoteState, local: Progress): Progress {
     };
   }
 
-  const skins = [...new Set([...local.skins, ...(remote.skins ?? [])])];
-
   return {
     levels,
+    // Le morti totali sono un contatore che sale e basta: il numero più alto è
+    // sempre quello vero.
     totalDeaths: Math.max(local.totalDeaths, remote.total_deaths ?? 0),
-    coins: typeof remote.coins === 'number' ? remote.coins : local.coins,
-    skins,
-    // Una skin equipaggiata che non si possiede non esiste: il gioco la
-    // rimpiazza col gatto di serie, ma è meglio non scrivercela proprio.
-    skin: skins.includes(remote.skin) ? remote.skin : local.skin,
+    // I gomitoli si uniscono, come già fa `recordSecret` in locale: un segreto
+    // trovato non si perde più, e tantomeno cambiando computer.
+    secrets: [...new Set([...local.secrets, ...(remote.secrets ?? [])])],
   };
 }
 

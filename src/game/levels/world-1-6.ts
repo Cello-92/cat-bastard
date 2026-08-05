@@ -71,17 +71,17 @@ export const WORLD_1_6 = defineLevel({
       },
     }),
 
-    // 5 — la torre. Si sale di ripiano in ripiano, e ogni ripiano ha la sua
-    // molla: la prima è vera, la seconda è vera, la terza sta sotto le lame.
-    // Chi le prende tutte e tre in fila muore all'ultima.
+    // 5 — la molla di sinistra è vera e porta sul ripiano alto, che è comodo
+    // finché non finisce: sotto il suo bordo c'è la fossa di spuntoni, e chi
+    // ci cammina sopra fino in fondo ci cade dentro. La molla di destra è una
+    // tagliola, e ha comunque le lame sopra: sarebbe stata inutile lo stesso.
     segment({
       rows: {
-        5: '            YYY',
+        5: '           YYY',
         6: '   #####',
-        9: '            #####',
-        12: '     M       m',
-        13: '####      ##########',
-        14: '####XXXXXX##########',
+        12: '  M        m     G',
+        13: '#######    #########',
+        14: '#######XXXX#########',
       },
     }),
 
@@ -105,7 +105,7 @@ export const WORLD_1_6 = defineLevel({
     segment({
       rows: {
         3: '          Z',
-        12: '            !',
+        12: '                !',
         13: '>>>>><<<<<#    #####',
         14: '##########XXXXX#####',
       },
@@ -120,7 +120,7 @@ export const WORLD_1_6 = defineLevel({
       ground: true,
       rows: {
         9: '          C E C',
-        12: ' J  AA   O    G AA J',
+        12: 'S J AA   O    G AA J',
       },
     }),
 

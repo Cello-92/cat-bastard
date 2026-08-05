@@ -647,8 +647,14 @@ export class World {
       ? (other: string): boolean => isEarth(other)
       : (other: string): boolean => isSolid(other);
 
+    // Il lato di sopra è un caso a parte: una cella di terra non "vede il
+    // cielo" se sopra ha un solido qualunque, non solo dell'altra terra.
+    // Senza questo, sotto un nastro trasportatore spuntava l'erba — il nastro
+    // non è terra, quindi la terra sotto si credeva esposta.
+    const above = this.map.get(c, r - 1);
+
     return {
-      up: !joins(this.map.get(c, r - 1)),
+      up: !joins(above) && !isSolid(above),
       down: !joins(this.map.get(c, r + 1)),
       left: !joins(this.map.get(c - 1, r)),
       right: !joins(this.map.get(c + 1, r)),

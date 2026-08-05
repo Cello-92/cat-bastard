@@ -32,7 +32,7 @@ export const WORLD_1_8 = defineLevel({
     segment({
       ground: true,
       rows: {
-        12: '            !',
+        12: '                  !',
         13: '>>>>>>>####     ####',
         14: '###########     ####',
       },

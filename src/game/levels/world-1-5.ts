@@ -87,7 +87,7 @@ export const WORLD_1_5 = defineLevel({
     // rosso, e sta esattamente dove uno si aspetta la seconda molla.
     segment({
       rows: {
-        12: '  M          m',
+        12: '  M        m',
         13: '####    ####   #####',
         14: '####XXXX####   #####',
       },

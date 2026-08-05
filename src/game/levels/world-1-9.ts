@@ -98,7 +98,7 @@ export const WORLD_1_9 = defineLevel({
       rows: {
         0: CEILING,
         1: CEILING,
-        3: '         K',
+        2: '         K',
         12: '  O        !     O',
         13: 'RRR>>>>>><<<<<<<RRRR',
         14: FLOOR,
@@ -154,7 +154,7 @@ export const WORLD_1_9 = defineLevel({
       rows: {
         0: CEILING,
         1: CEILING,
-        12: '     m   !',
+        12: 'S    m   !',
         13: 'RRR>>>>>>>>>>>RRRRRR',
         14: FLOOR,
       },

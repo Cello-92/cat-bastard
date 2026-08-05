@@ -105,7 +105,7 @@ export const WORLD_1_7 = defineLevel({
         6: '        F',
         7: '        F',
         8: '        F',
-        12: '     M      !   J',
+        12: 'S    M      !   J',
       },
     }),
 

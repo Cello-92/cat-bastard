@@ -7,7 +7,7 @@
 Sembra *Super Mario*. Si comporta come *Cat Mario*.<br>
 Ogni blocco è sospetto, ogni fungo è una trappola, la bandiera potrebbe non essere la bandiera.
 
-### [▶︎ GIOCA ORA](https://diamond26.github.io/cat-bastard/)
+### [▶︎ GIOCA ORA](https://cat-bastard.com/)
 
 Niente installazione. Niente account. Niente pietà.
 
@@ -47,6 +47,9 @@ Due mondi, nove livelli, cinque gatti e un numero imbarazzante di modi per morir
 | 🕳️ **Il pavimento** | a volte non c'è. Te ne accorgi mentre cadi |
 | 🏮 **Il checkpoint** | quella lanterna non si accende mai, sai |
 | 🔻 **Gli spuntoni invisibili** | la prima morte è gratis. La seconda è colpa tua |
+| 🪃 **La molla** | qualcuna lancia, qualcuna si chiude. Sono identiche |
+| ⚙️ **Il nastro** | l'unica cosa onesta della fabbrica: ti porta esattamente dove ha deciso |
+| 👑 **Il Padrone** | il boss finale. Non si tocca e non si schiaccia: gli si fa cadere il soffitto in testa. E schiva, ovviamente |
 
 **Mondo 2 — il gelo e la fabbrica.** Qui non cambiano le cose: cambia il pavimento.
 

@@ -122,6 +122,50 @@ export const MATERIAL = {
 export type MaterialName = keyof typeof MATERIAL;
 
 /**
+ * I manti dei gatti giocabili.
+ *
+ * Stanno qui e non in `game/skins.ts` per la stessa ragione di tutto il resto:
+ * nel progetto i colori esistono in un posto solo. `skins.ts` decide *quale*
+ * mantello ha un gatto e come si sblocca; qui c'è solo di che pasta è fatto.
+ *
+ * Valgono le stesse regole degli altri materiali — faccia illuminata più calda,
+ * ombra virata al cielo — perché il gatto è illuminato dalla stessa luce di
+ * tutto il mondo, e un mantello che se ne dimenticasse sembrerebbe incollato
+ * sopra l'immagine invece che dentro.
+ */
+export const PELT = {
+  /** Il gatto di sempre: crema caldo. */
+  cream: MATERIAL.fur,
+  /** Nerofumo: grigio di cenere, non nero pieno — il nero pieno sparisce. */
+  soot: material('#3c3c46', '#70727f', '#1f1f27', '#0e0e13', '#a9adbb'),
+  /** Rosso: il gatto arancione da tetto. */
+  ginger: material('#c9762f', '#f2ab5f', '#8a4715', '#4d2609', '#ffd9a0'),
+  /** Siamese: corpo chiarissimo... */
+  siamese: material('#e8dfc8', '#fff9ea', '#b2a68a', '#6f6652', '#fffdf5'),
+  /** ...e le estremità scure, che è tutto il punto del siamese. */
+  siamesePoints: material('#4b392f', '#705745', '#2b1f19', '#150e0a', '#907459'),
+  /** Placcato: lo stesso oro dei blocchi premio, addosso. */
+  gilded: MATERIAL.gold,
+  /** Spirito: azzurro di ghiaccio, trasparente. */
+  spirit: material('#bed9e9', '#f2fcff', '#7ea0b9', '#4b6375', '#ffffff'),
+  /** Radioattivo: verde acido che si illumina da solo. */
+  neon: material('#7ee04a', '#caff9c', '#3e7b23', '#1c3e0f', '#ebffd1'),
+  /** Ombra: quasi nero, con un riflesso viola sul pelo. */
+  shadow: material('#27232f', '#4b4359', '#151119', '#09070d', '#9079b2'),
+  /** Il mantello del Padrone, in taglia gatto. */
+  master: MATERIAL.hide,
+} as const satisfies Record<string, Material>;
+
+/** Le iridi. Sono l'unica cosa che cambia davvero l'espressione di un gatto. */
+export const IRIS = {
+  green: MATERIAL.eye,
+  amber: material('#d19a2c', '#ffdf8e', '#7d5410', '#3a2606', '#fff7dd'),
+  blue: material('#4f8fd0', '#a8d6ff', '#1f4a7d', '#0c2340', '#eaf6ff'),
+  ember: material('#e0503a', '#ff9d7c', '#7d1f13', '#3d0d07', '#ffd9cc'),
+  gold: MATERIAL.gold,
+} as const satisfies Record<string, Material>;
+
+/**
  * Accenti dell'interfaccia e colori "non fisici".
  * Sono l'unica cosa nel gioco che non finge di essere un materiale: servono a
  * segnalare (il rosa) e a raccogliere (l'oro delle particelle).
@@ -279,6 +323,68 @@ export const SKIES = {
     rays: false,
     landscape: true,
   },
+  /**
+   * Prima alba: luce bassa e fredda, il sole non ha ancora scaldato niente.
+   * Il contrario del tramonto — stessi colori bassi, ma virati al verde e al
+   * grigio invece che all'arancio.
+   */
+  dawn: {
+    stops: [
+      { at: 0, color: '#12294f' },
+      { at: 0.28, color: '#2c5678' },
+      { at: 0.52, color: '#5d8590' },
+      { at: 0.76, color: '#a9b39a' },
+      { at: 1, color: '#e6cfa6' },
+    ],
+    sunX: 0.24,
+    sunY: 0.62,
+    sunRadius: 30,
+    sunCore: '#fff6e0',
+    sunGlow: '#ffcf8e',
+    fog: '#b9c2b4',
+    ridge: '#4e6272',
+    canopy: '#3c5a52',
+    cloudLight: '#f2e3cd',
+    cloudShade: '#6f7f8a',
+    sunTint: '#ffd9a6',
+    sunTintAmount: 0.13,
+    ambient: '#4d6a86',
+    haze: 0.5,
+    stars: false,
+    rays: true,
+    landscape: true,
+  },
+  /**
+   * Temporale: cielo di piombo, nessun sole, orizzonte mangiato dall'acqua.
+   * È il cielo più scuro che il gioco abbia sopra la terra, e serve a rendere
+   * i piani lontani inutili: qui il paesaggio non aiuta a orientarsi.
+   */
+  storm: {
+    stops: [
+      { at: 0, color: '#141826' },
+      { at: 0.34, color: '#252c3d' },
+      { at: 0.62, color: '#3a4252' },
+      { at: 0.85, color: '#525a66' },
+      { at: 1, color: '#6d7079' },
+    ],
+    sunX: 0.42,
+    sunY: 0.22,
+    sunRadius: 18,
+    sunCore: '#c9d2e0',
+    sunGlow: '#7d8798',
+    fog: '#5b626e',
+    ridge: '#3a4252',
+    canopy: '#2b3440',
+    cloudLight: '#8b93a2',
+    cloudShade: '#1c2130',
+    sunTint: '#9aa6bc',
+    sunTintAmount: 0.08,
+    ambient: '#3d4756',
+    haze: 0.62,
+    stars: false,
+    rays: false,
+    landscape: true,
+  },
   /** Grotta: nessun cielo, solo umidità e una luce che non si sa da dove venga. */
   cave: {
     stops: [
@@ -413,6 +519,9 @@ export const shade = (alpha: number): string => `rgba(0,0,0,${alpha})`;
 /** Bianco semitrasparente: luci speculari e velature. */
 export const glare = (alpha: number): string => `rgba(255,255,255,${alpha})`;
 
+/** Tetto delle cache di colore: oltre, si riparte da zero. */
+const MAX_CACHE = 2048;
+
 const hexCache = new Map<string, readonly [number, number, number]>();
 
 /**
@@ -456,6 +565,10 @@ const channels = (color: string): readonly [number, number, number] => {
     Number.isFinite(g) ? g : 0,
     Number.isFinite(b) ? b : 0,
   ] as const;
+  // Le miscele producono colori sempre nuovi, quindi questa cache non ha un
+  // limite naturale: in una partita lunga crescerebbe per sempre. Oltre il
+  // tetto si riparte, e le combinazioni calde si riscaldano in due frame.
+  if (hexCache.size >= MAX_CACHE) hexCache.clear();
   hexCache.set(color, rgb);
   return rgb;
 };
@@ -479,14 +592,43 @@ export const mix = (from: string, to: string, t: number): string => {
   const g = Math.round(g1 + (g2 - g1) * amount);
   const b = Math.round(b1 + (b2 - b1) * amount);
   const value = `rgb(${r},${g},${b})`;
+  if (mixCache.size >= MAX_CACHE) mixCache.clear();
   mixCache.set(key, value);
   return value;
 };
 
-/** Stesso colore, con trasparenza. */
+/**
+ * Stesso colore, con trasparenza.
+ *
+ * È la funzione più chiamata di tutto il gioco: un migliaio di volte per
+ * frame, cioè sessantamila stringhe al secondo buttate via appena create. Non
+ * è un costo di calcolo — è carburante per il garbage collector, e ogni tanto
+ * il garbage collector si prende il suo millisecondo proprio mentre il gatto è
+ * a mezz'aria.
+ *
+ * La cache è annidata (colore -> opacità -> stringa) e non concatenata,
+ * perché una chiave del tipo `${hex}|${a}` sarebbe una stringa nuova a ogni
+ * chiamata: si risparmierebbe il risultato e si butterebbe via la chiave, cioè
+ * niente. Così invece un colore già visto non alloca proprio niente.
+ */
+const alphaCache = new Map<string, Map<number, string>>();
+
 export const alpha = (hex: string, a: number): string => {
+  let shades = alphaCache.get(hex);
+  if (!shades) {
+    if (alphaCache.size >= MAX_CACHE) alphaCache.clear();
+    shades = new Map();
+    alphaCache.set(hex, shades);
+  }
+
+  const cached = shades.get(a);
+  if (cached !== undefined) return cached;
+
   const [r, g, b] = channels(hex);
-  return `rgba(${r},${g},${b},${a})`;
+  const value = `rgba(${r},${g},${b},${a})`;
+  if (shades.size >= MAX_CACHE) shades.clear();
+  shades.set(a, value);
+  return value;
 };
 
 /** Schiarisce (t > 0) o scurisce (t < 0) un colore. */

@@ -85,6 +85,15 @@ export function drawTile(r: Renderer, tile: string, x: number, y: number, ctx: T
     case TILE.CRUMBLE:
       drawCrumble(r, x, y, ctx);
       break;
+    case TILE.BOSS_BRICK:
+      drawBossBrick(r, x, y, ctx);
+      break;
+    case TILE.BOSS_GATE:
+      drawBossGate(r, x, y, ctx);
+      break;
+    case TILE.SKIN_CUBE:
+      drawSkinCube(r, x, y, ctx);
+      break;
     case TILE.FAKE_GROUND:
     case TILE.GHOST:
       // Identici al terreno vero: è tutto il punto della trappola. Nessun
@@ -118,6 +127,10 @@ export function drawTile(r: Renderer, tile: string, x: number, y: number, ctx: T
       drawSpikeSocket(r, x, y, ctx);
       break;
     case TILE.SPRING:
+    case TILE.TRAP_SPRING:
+      // Stessa molla. Stessa piastra, stesse spire, stesso piattello rosso:
+      // una lancia, l'altra si chiude. Disegnarle diverse sarebbe disinnescare
+      // la trappola, esattamente come per la moneta e la lanterna.
       drawSpring(r, x, y, ctx);
       break;
     case TILE.ICE:
@@ -714,6 +727,177 @@ function drawCrumble(r: Renderer, x: number, y: number, ctx: TileDrawContext): v
     r.rect(px, y, T, h, PALETTE.hot);
     r.pop();
   }
+}
+
+// ---------------------------------------------------------------- arena
+/**
+ * Mattone del soffitto dell'arena: muratura pesante tenuta insieme da due
+ * staffe di ferro.
+ *
+ * Deve leggersi come *l'unica cosa staccabile* di tutta la stanza, e quando si
+ * stacca deve dirlo forte: trema, le crepe si aprono, la polvere scende. Non è
+ * una trappola — è l'arma del giocatore, e un'arma va vista bene.
+ */
+function drawBossBrick(r: Renderer, x: number, y: number, ctx: TileDrawContext): void {
+  const m = MATERIAL.brick;
+  const iron = MATERIAL.iron;
+  const shake = ctx.crumbling ? (Math.floor(ctx.tick / 2) % 2 ? 1.8 : -1.8) : 0;
+  const px = x + shake;
+
+  r.gradientRect(px, y, T, T, [
+    { at: 0, color: mix(m.light, m.base, 0.3) },
+    { at: 0.3, color: m.base },
+    { at: 0.82, color: mix(m.base, m.dark, 0.65) },
+    { at: 1, color: m.deep },
+  ]);
+
+  // Due conci per cella, con la fuga in mezzo: è muratura, non un blocco.
+  r.push();
+  r.setAlpha(0.5);
+  r.line([px, y + T / 2, px + T, y + T / 2], 2, m.deep);
+  r.line([px + T / 2, y, px + T / 2, y + T / 2], 1.6, m.deep);
+  r.line([px + T / 4, y + T / 2, px + T / 4, y + T], 1.6, m.deep);
+  r.pop();
+  speckle(r, px, y, ctx, 2, MATERIAL.rock, 3);
+
+  // Staffe di ferro sopra e sotto: sono loro a tenerlo appeso.
+  for (const by of [y, y + T - 4]) {
+    r.gradientRect(px, by, T, 4, bodyStops(iron));
+    r.rect(px, by, T, 1, alpha(iron.light, 0.7));
+    for (const bx of [px + 4, px + T - 5]) {
+      r.ellipse(bx, by + 2, 1.6, 1.6, iron.dark);
+      r.ellipse(bx - 0.4, by + 1.6, 0.8, 0.8, iron.light);
+    }
+  }
+
+  if (ctx.crumbling) {
+    // Sta cedendo: crepe accese e polvere che cola. È un conto alla rovescia.
+    r.push();
+    r.setAlpha(0.6 + wave(ctx.tick, 5) * 0.4);
+    r.line([px + 6, y + 4, px + 12, y + T - 5], 1.6, m.deep);
+    r.line([px + T - 8, y + 4, px + T - 15, y + T - 6], 1.4, m.deep);
+    r.pop();
+    r.push();
+    r.setBlend('add');
+    r.setAlpha(0.1 + wave(ctx.tick, 7) * 0.18);
+    r.rect(px, y, T, T, PALETTE.hot);
+    r.pop();
+    r.push();
+    r.setAlpha(0.4);
+    for (let i = 0; i < 3; i++) {
+      const dx = px + 5 + i * 10;
+      r.rect(dx, y + T + ((ctx.tick * 2 + i * 9) % 16), 1.4, 3.5, alpha(PALETTE.dust, 0.9));
+    }
+    r.pop();
+  }
+
+  occlude(r, px, y, m, ctx.open);
+}
+
+/**
+ * Il portone del Padrone: sbarre di ferro colate nella roccia e una serratura
+ * che pulsa. Finché è lì, di là non si passa — e nel gioco esiste una sola
+ * chiave, che è fargli cadere il soffitto in testa.
+ */
+function drawBossGate(r: Renderer, x: number, y: number, ctx: TileDrawContext): void {
+  const iron = MATERIAL.iron;
+  const steel = MATERIAL.steel;
+
+  // Fondo: il buio della stanza dopo, che si intravede tra le sbarre.
+  r.gradientRect(x, y, T, T, [
+    { at: 0, color: alpha(PALETTE.ink, 0.95) },
+    { at: 1, color: alpha(PALETTE.inkSoft, 0.9) },
+  ]);
+
+  // Sbarre verticali: cilindriche, quindi con la banda chiara sul terzo sinistro.
+  for (let i = 0; i < 3; i++) {
+    const bx = x + 4 + i * 9;
+    r.gradientRect(bx, y, 6, T, [
+      { at: 0, color: iron.dark },
+      { at: 0.3, color: iron.light },
+      { at: 0.55, color: iron.base },
+      { at: 1, color: iron.deep },
+    ], true);
+  }
+
+  // Traversa: cambia riga a righe alterne, così il cancello sembra intrecciato.
+  if (ctx.row % 2 === 0) {
+    r.gradientRect(x, y + T / 2 - 3, T, 6, bodyStops(steel));
+    r.rect(x, y + T / 2 - 3, T, 1.2, alpha(steel.spec, 0.6));
+    for (const bx of [x + 5, x + T - 6]) {
+      r.ellipse(bx, y + T / 2, 1.8, 1.8, iron.deep);
+      r.ellipse(bx - 0.5, y + T / 2 - 0.5, 1, 1, steel.light);
+    }
+  }
+
+  // Serratura: una sola cella per portone, quella con la fessura accesa.
+  if (ctx.open.left || ctx.open.right) {
+    r.push();
+    r.setBlend('add');
+    r.setAlpha(0.2 + wave(ctx.tick, 60) * 0.2);
+    r.radial(x + T / 2, y + T / 2, T * 0.7, T * 0.7, [
+      { at: 0, color: alpha(PALETTE.hot, 0.6) },
+      { at: 1, color: alpha(PALETTE.hot, 0) },
+    ]);
+    r.pop();
+  }
+
+  occlude(r, x, y, iron, ctx.open);
+}
+
+/**
+ * Il cubo delle skin.
+ *
+ * L'unica cosa del gioco che si prende una volta sola e resta presa per sempre,
+ * quindi deve sembrare diversa da tutto: non è oro (l'oro qui mente), è vetro
+ * iridescente con dentro l'impronta di una zampa. Chi lo vede capisce che non
+ * fa parte del livello.
+ */
+function drawSkinCube(r: Renderer, x: number, y: number, ctx: TileDrawContext): void {
+  const bob = Math.sin((ctx.tick + ctx.col * 11) / 22) * 3;
+  const spin = wave(ctx.tick + ctx.col * 7, 90);
+  const cx = x + T / 2;
+  const cy = y + T / 2 + bob;
+  const s = 10;
+
+  // Alone: si vede prima il bagliore del cubo.
+  r.push();
+  r.setBlend('add');
+  r.setAlpha(0.18 + spin * 0.16);
+  r.radial(cx, cy, 26, 26, [
+    { at: 0, color: alpha(PALETTE.hot, 0.7) },
+    { at: 0.5, color: alpha(MATERIAL.eye.light, 0.28) },
+    { at: 1, color: alpha(PALETTE.hot, 0) },
+  ]);
+  r.pop();
+
+  // Cubo in assonometria: faccia superiore, frontale e laterale.
+  r.polygon([cx, cy - s - 5, cx + s, cy - s, cx, cy - s + 5, cx - s, cy - s], MATERIAL.steel.light);
+  r.polygon([cx - s, cy - s, cx, cy - s + 5, cx, cy + s, cx - s, cy + s - 5], mix(PALETTE.hot, MATERIAL.steel.base, 0.55));
+  r.polygon([cx + s, cy - s, cx, cy - s + 5, cx, cy + s, cx + s, cy + s - 5], mix(MATERIAL.eye.base, MATERIAL.steel.dark, 0.45));
+
+  // Spigoli accesi: è vetro, non metallo.
+  r.push();
+  r.setAlpha(0.75);
+  r.line([cx, cy - s - 5, cx + s, cy - s, cx + s, cy + s - 5, cx, cy + s, cx - s, cy + s - 5, cx - s, cy - s], 1.1, glare(0.85), true);
+  r.line([cx, cy - s + 5, cx, cy + s], 1, alpha(PALETTE.paper, 0.7));
+  r.pop();
+
+  // Impronta di zampa sulla faccia frontale: il cuscinetto e quattro dita.
+  r.push();
+  r.setAlpha(0.85);
+  r.ellipse(cx - s * 0.45, cy + 2, 2.6, 2.2, PALETTE.paper);
+  for (let i = 0; i < 3; i++) {
+    r.ellipse(cx - s * 0.75 + i * 2.6, cy - 2.4 + Math.abs(i - 1) * 0.9, 1.1, 1.2, PALETTE.paper);
+  }
+  r.pop();
+
+  // Riflesso che scorre: dice "prendimi" senza scriverlo.
+  r.push();
+  r.setBlend('add');
+  r.setAlpha(0.3 * spin);
+  r.polygon([cx - s + spin * 14, cy - s, cx - s + 4 + spin * 14, cy - s, cx - s - 4 + spin * 14, cy + s, cx - s - 8 + spin * 14, cy + s], glare(0.9));
+  r.pop();
 }
 
 // ---------------------------------------------------------------- pericoli

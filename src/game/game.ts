@@ -4,12 +4,15 @@ import { Input, type Action } from '@core/input';
 import { Canvas2DRenderer } from '@engine/render/canvas2d';
 import type { Renderer } from '@engine/render/renderer';
 import {
+  buySkin,
+  equipSkin,
   loadProgress,
   loadSettings,
   recordClear,
   recordSecret,
   resetProgress,
   saveSettings,
+  unlockSkin,
   type Progress,
   type Settings,
 } from '@core/storage';
@@ -303,7 +306,9 @@ export class Game {
     this.menu.show({
       compact: true,
       title: 'AZZERARE TUTTO?',
-      body: ['Record, morti totali e livelli sbloccati: sparisce tutto.'],
+      body: [
+        'Record, morti totali, monete, gatti sbloccati e livelli: sparisce tutto. Anche i cubi nascosti tornano dove erano.',
+      ],
       items: [
         { label: 'NO, LASCIA STARE', onSelect: () => this.showRootMenu() },
         {
@@ -371,7 +376,9 @@ export class Game {
 
   private handleWin(stats: RunStats): void {
     this.phase = 'between';
-    this.progress = recordClear(this.progress, this.world.level.id, stats);
+    const levelId = this.world.level.id;
+    const before = this.progress;
+    this.progress = recordClear(this.progress, levelId, stats);
 
     const isLast = this.levelIndex >= LEVELS.length - 1;
     const yarn = stats.secret ? ' · gomitolo trovato' : '';

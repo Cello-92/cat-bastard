@@ -27,7 +27,18 @@ import type { Body } from '@engine/types';
  * per un giocatore che il livello lo conosce a memoria.
  */
 
-/** Tile su cui il risolutore si fida di poggiare: quelli che non spariscono. */
+/**
+ * Tile su cui il risolutore si fida di poggiare: quelli che non spariscono.
+ *
+ * Nell'arena del boss ce ne sono due che meritano una parola. Il mattone del
+ * soffitto sparisce appena ci sali, quindi vale come tutti gli altri appoggi
+ * che si sfilano: non conta. Il portone invece è il caso opposto — è solido
+ * per tutto il combattimento e si apre quando il Padrone cade — e qui viene
+ * considerato *aperto*, perché quello che questo controllo deve dimostrare è
+ * che l'arena sia attraversabile una volta vinta. Che lo scontro si possa
+ * vincere lo verificano i controlli sul combattimento in `smoke.ts`: il
+ * risolutore non sa niente di entità e non è il posto giusto per chiederglielo.
+ */
 const isStableSolid = (tile: string): boolean => {
   if (
     tile === TILE.FAKE_GROUND ||
@@ -50,6 +61,7 @@ const KILLS = new Set<string>([
   TILE.FAKE_FLAG,
   TILE.LURE_COIN,
   TILE.FAKE_CHECKPOINT,
+  TILE.TRAP_SPRING,
 ]);
 
 interface SearchState {
@@ -251,7 +263,16 @@ export interface SolveResult {
  * Ricerca in ampiezza guidata: si espandono prima gli stati più avanti nel
  * livello. Non serve il percorso ottimo, serve sapere se ne esiste uno.
  */
-export function solve(level: LevelDef, budget = 400_000): SolveResult {
+/**
+ * Il budget deve essere abbondante, non stretto.
+ *
+ * Un livello denso costa qualche centinaio di migliaia di stati (1-5 ne
+ * chiede 254.000), e con il budget vecchio bastava aggiungere due trappole
+ * perché il risolutore si fermasse *per esaurimento* e dichiarasse impossibile
+ * un livello che si attraversa benissimo. Un referto sbagliato è peggio di un
+ * referto lento: qui si paga qualche secondo in CI per averlo giusto.
+ */
+export function solve(level: LevelDef, budget = 1_500_000): SolveResult {
   const map = new TileMap(level.rows, TILE_SIZE);
   const start: SearchState = {
     x: level.spawn.c * TILE_SIZE + 5,

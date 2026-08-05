@@ -1,4 +1,5 @@
 import { Audio } from '@core/audio';
+import { GameLoop } from '@core/loop';
 import type { Input } from '@core/input';
 import { TILE_SIZE } from '@game/config';
 import { LEVELS, SECRET_COUNT } from '@game/levels';
@@ -27,6 +28,19 @@ import { solve } from './solver';
  * livello resta difficile senza diventare impossibile.
  */
 const MAX_GAP = 5;
+
+/** Riga di terreno pieno larga un segmento, per i livelli costruiti nei test. */
+const FULL_GROUND = '#'.repeat(SEGMENT_COLS);
+
+/**
+ * Tutti i caratteri che hanno un significato.
+ *
+ * Serve a intercettare i refusi nelle mappe ASCII, che è il bug più facile da
+ * fare e il più difficile da vedere: una `o` al posto di una `O` non rompe
+ * niente e non compare da nessuna parte — semplicemente la trappola non c'è
+ * più, e il livello che era stato progettato non è quello che si gioca.
+ */
+const KNOWN_TILES = new Set<string>(Object.values(TILE));
 
 let failures = 0;
 
@@ -62,15 +76,31 @@ for (const level of LEVELS) {
     `${level.name}: larghezza multipla di ${SEGMENT_COLS}`,
   );
   check(rows.some((r) => r.includes(TILE.GOAL)), `${level.name}: ha un arrivo`);
-  check(
-    rows.some((r) => r.includes(TILE.CHECKPOINT)),
-    `${level.name}: ha almeno un checkpoint`,
-  );
+  // Le arene dei boss sono l'unica eccezione alla regola dei checkpoint, ed è
+  // una scelta di design dichiarata nel livello: uno scontro si ricomincia da
+  // capo. In cambio si rinasce dentro l'arena (vedi levels/level.ts).
+  if (!level.boss) {
+    check(
+      rows.some((r) => r.includes(TILE.CHECKPOINT)),
+      `${level.name}: ha almeno un checkpoint`,
+    );
+  }
 
   const spawnRow = rows[level.spawn.r];
   check(
     spawnRow?.[level.spawn.c] === TILE.EMPTY,
     `${level.name}: lo spawn non è dentro un muro`,
+  );
+
+  // Refusi nella mappa: un carattere sconosciuto è aria, quindi non si vede
+  // mai — né giocando né leggendo il sorgente, dove sembra una trappola.
+  const unknown = new Set<string>();
+  for (const row of rows) {
+    for (const char of row) if (!KNOWN_TILES.has(char)) unknown.add(char);
+  }
+  check(
+    unknown.size === 0,
+    `${level.name}: nessun carattere sconosciuto nella mappa${unknown.size ? ` (trovati: ${[...unknown].map((c) => `"${c}"`).join(', ')})` : ''}`,
   );
 
   // Il gatto salta al massimo MAX_GAP colonne (vedi PHYSICS): un vuoto più
@@ -107,6 +137,73 @@ for (const level of LEVELS) {
     worstGap <= MAX_GAP,
     `${level.name}: nessun vuoto più largo di ${MAX_GAP} colonne (max ${worstGap}${gapAt >= 0 ? ` alla colonna ${gapAt}` : ''})`,
   );
+}
+
+// ---------------------------------------------------------------- igiene delle mappe
+//
+// Errori che non rompono niente e non si vedono nei test: una molla disegnata
+// a mezz'aria sopra una fossa, degli spuntoni invisibili sospesi nel vuoto, un
+// nemico che nasce dentro un muro, un nastro con un solido sopra (cioè un
+// nastro che non tocca nessuno). Il gioco gira lo stesso — e proprio per
+// questo restano lì finché non li nota qualcuno che gioca.
+//
+// Le lame a soffitto sono escluse di proposito: nel gioco pendono dal nulla
+// da sempre, è una convenzione di disegno, non una svista. E gli spuntoni
+// sull'ultima riga non hanno pavimento sotto perché sotto non c'è più mappa.
+console.log('\nIgiene delle mappe');
+for (const level of LEVELS) {
+  const rows = level.rows;
+  const cols = rows[0]?.length ?? 0;
+  const at = (c: number, r: number): string =>
+    r < 0 || r >= LEVEL_ROWS ? TILE.EMPTY : (rows[r]?.[c] ?? TILE.EMPTY);
+  const problems: string[] = [];
+  const flag = (c: number, r: number, what: string): void => {
+    problems.push(`${what} (segmento ${Math.floor(c / SEGMENT_COLS)}, colonna ${c % SEGMENT_COLS}, riga ${r})`);
+  };
+
+  for (let r = 0; r < LEVEL_ROWS; r++) {
+    for (let c = 0; c < cols; c++) {
+      const tile = at(c, r);
+      const below = at(c, r + 1);
+      const grounded = isSolid(below) || r === LEVEL_ROWS - 1;
+
+      if ((tile === TILE.SPRING || tile === TILE.TRAP_SPRING) && !grounded)
+        flag(c, r, `molla "${tile}" appesa in aria`);
+      if ((tile === TILE.SPIKES || tile === TILE.POP_SPIKES || tile === TILE.SNAP_SPIKES) && !grounded)
+        flag(c, r, `spuntoni "${tile}" senza pavimento sotto`);
+      if (tile === TILE.HIDDEN_SPIKES && !grounded)
+        flag(c, r, 'spuntoni invisibili sospesi nel vuoto');
+      if ((tile === TILE.WALKER || tile === TILE.EVIL_WALKER) && !grounded)
+        flag(c, r, `nemico "${tile}" senza pavimento sotto`);
+      if (tile !== TILE.EMPTY && isSolid(at(c, r - 1)) && (tile === TILE.BELT_LEFT || tile === TILE.BELT_RIGHT))
+        flag(c, r, 'nastro murato: non ci si può salire');
+      if ((tile === TILE.COIN || tile === TILE.LURE_COIN) && isSolid(at(c, r - 1)) && isSolid(below))
+        flag(c, r, 'moneta sepolta nel terreno');
+    }
+  }
+
+  check(
+    problems.length === 0,
+    `${level.name}: niente appeso al nulla${problems.length ? ` — ${problems.slice(0, 4).join('; ')}` : ''}`,
+  );
+
+  // L'arrivo sta in fondo, e il checkpoint da qualche parte nel mezzo: un
+  // checkpoint nelle prime colonne non salva niente, uno dopo l'arrivo è
+  // decorazione.
+  let goalColumn = -1;
+  const checkpoints: number[] = [];
+  for (const row of rows) {
+    const g = row.indexOf(TILE.GOAL);
+    if (g >= 0 && goalColumn < 0) goalColumn = g;
+    for (let c = 0; c < row.length; c++) if (row[c] === TILE.CHECKPOINT) checkpoints.push(c);
+  }
+  check(goalColumn > cols * 0.8, `${level.name}: l'arrivo è in fondo (colonna ${goalColumn} su ${cols})`);
+  if (!level.boss) {
+    check(
+      checkpoints.some((c) => c > cols * 0.2 && c < goalColumn),
+      `${level.name}: almeno un checkpoint utile tra l'inizio e l'arrivo (${checkpoints.join(', ') || 'nessuno'})`,
+    );
+  }
 }
 
 // ---------------------------------------------------------------- attraversabilità
@@ -173,9 +270,12 @@ for (const level of LEVELS) {
   // Dopo 600 tick il gatto può trovarsi a metà di una morte, e `kill()`
   // ignora di proposito le richieste in quello stato: si aspetta che il mondo
   // sia tornato giocabile, altrimenti si starebbe testando il caso sbagliato.
-  for (let tick = 0; tick < 200 && world.state !== 'playing'; tick++) {
-    world.update(fakeInput(tick));
-  }
+  //
+  // Da qui in poi si usa l'input fermo, non quello che corre a destra: nelle
+  // arene dei boss un gatto che corre in avanti muore di nuovo prima di aver
+  // finito di rinascere, e si finirebbe per misurare quello invece del respawn.
+  const stand = { isDown: () => false, justPressed: () => false, endTick: () => {} } as unknown as Input;
+  for (let tick = 0; tick < 200 && world.state !== 'playing'; tick++) world.update(stand);
   check(world.state === 'playing', `${level.name}: il mondo torna sempre giocabile`);
 
   const deathsBefore = world.deaths;
@@ -184,7 +284,7 @@ for (const level of LEVELS) {
   check(world.state === 'dying', `${level.name}: kill() entra in stato "dying"`);
   check(taunts > 0, `${level.name}: la morte produce una battuta`);
 
-  for (let tick = 0; tick < 120; tick++) world.update(fakeInput(tick));
+  for (let tick = 0; tick < 120; tick++) world.update(stand);
   check(world.state === 'playing', `${level.name}: dopo la morte si torna a giocare`);
 
   // Vittoria: si teletrasporta il gatto sull'arrivo.
@@ -193,7 +293,7 @@ for (const level of LEVELS) {
   if (goal) {
     world.player.x = goal.c * TILE_SIZE;
     world.player.y = goal.r * TILE_SIZE;
-    world.update(fakeInput(0));
+    world.update(stand);
     check(world.state === 'won', `${level.name}: toccare l'arrivo vince`);
     check(wins === 1, `${level.name}: onWin chiamato una sola volta`);
   }
@@ -294,6 +394,16 @@ console.log('\nTrappole nascoste');
     world.player.y = 11 * TILE_SIZE - world.player.h;
     for (let tick = 0; tick < 4; tick++) world.update(idle);
     check(world.map.get(5, 11) === TILE.EMPTY, 'la piattaforma fantasma sparisce quasi subito');
+  }
+
+  // Molla-tagliola: identica a una molla, non lancia niente, uccide.
+  {
+    const { world } = withTrap({ 12: '     m' });
+    world.player.x = 5 * TILE_SIZE;
+    world.player.y = 12 * TILE_SIZE;
+    world.update(idle);
+    check(world.state === 'dying', 'la molla-tagliola uccide invece di lanciare');
+    check(world.player.vy >= 0, 'la molla-tagliola non dà nessuna spinta');
   }
 
   // Masso che crolla: parte senza il tremolio di preavviso della stalattite.

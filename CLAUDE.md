@@ -68,6 +68,10 @@ Un rage game funziona solo se è *ingiusto ma leale*. Ogni trappola deve rispett
 - **Nessun asset binario.** Grafica disegnata via codice, audio sintetizzato con WebAudio.
 - **Path relativi** (`base: './'` in vite.config): il sito vive in una sottocartella.
 - **60fps su hardware modesto**, e deve funzionare su mobile (pad touch già presente).
+  Un frame costa circa 2000-3000 chiamate di disegno: prima di aggiungerne, guardare
+  `alpha()` e `mix()` in `theme.ts` — sono le funzioni più chiamate del gioco e sono
+  memoizzate apposta, perché il vero nemico degli scatti non è il calcolo, è la
+  spazzatura che si crea a ogni frame e che qualcuno prima o poi deve raccogliere.
 - Codice e nomi in **inglese**, commenti e testi di gioco in **italiano**.
 
 ## Architettura
@@ -101,6 +105,12 @@ Punti fermi:
 - **`game.ts` è il composition root**: l'unico file che conosce tutti i pezzi.
 - **La simulazione gira a timestep fisso** (60 update/s). Le costanti in `config.ts` sono *per tick*.
   Il rendering gira a frame liberi. Su un monitor a 144Hz il gatto non salta più in alto.
+  Il tempo trascorso viene **agganciato al refresh** (`core/loop.ts`): il browser non
+  consegna 16.6667ms ma 16.6 o 16.7, perché arrotonda i timestamp, e senza aggancio
+  l'accumulatore va in deriva finché un frame non fa nessun update e quello dopo ne fa
+  due. Non è un calo di frame rate — non si vede in nessun contatore — ma si sente, su
+  qualunque computer. E un frame senza update non viene ridisegnato: il disegno dipende
+  solo dallo stato e dal numero di tick, quindi sarebbe la stessa immagine identica.
 - **Colori solo in `theme.ts`**, mai hardcoded nel codice di disegno (i valori UI sono duplicati in
   `src/style.css`: vanno tenuti allineati a mano).
 
@@ -216,14 +226,28 @@ npm test        # struttura, risolutore, smoke test, regressioni
 npm run build   # typecheck + build
 ```
 
-`tests/` contiene tre cose diverse:
+`tests/` contiene cinque cose diverse:
 
 - **lo smoke test**, che esegue il gioco headless contro un `NullRenderer` capace di
   intercettare coordinate NaN e `push`/`pop` sbilanciati. Non dice se il gioco è bello,
   dice se esplode;
 - **i controlli sulle trappole**, che costruiscono un mondo minimo per ciascuna e ne
   verificano il contratto (la moneta esca uccide e non viene contata, gli spuntoni
-  invisibili tornano invisibili se ricominci il livello, e così via);
+  invisibili tornano invisibili se ricominci il livello, il nastro trasporta senza
+  toccare la velocità del gatto, e così via);
+- **l'igiene delle mappe**, che cerca gli errori che non rompono niente: una molla
+  disegnata a mezz'aria, spuntoni invisibili sospesi sul vuoto, un nastro murato
+  sotto un solido, un carattere sconosciuto (che è aria, quindi la trappola che
+  credevi di aver messo non c'è), un checkpoint dopo l'arrivo;
+- **il disegno di tutto il vocabolario**, perché la simulazione disegna solo le
+  colonne inquadrate e un tile che compare a metà livello potrebbe non essere mai
+  disegnato da nessun test;
+- **il contratto del boss**, che il risolutore non può verificare perché non
+  conosce le entità: che toccarlo uccida, che un masso spenga una gemma, che
+  quattro gemme aprano il portone, che il soffitto si ricomponga e che scansi
+  mentre cammina ma non mentre è impegnato. C'è anche un controllo che rifà il
+  giro del risolutore su ogni singolo mattone dell'arena: un mattone
+  irraggiungibile è un boss imbattibile;
 - **il risolutore** (`tests/solver.ts`), che *gioca* ogni livello: cerca con la fisica vera
   una sequenza di comandi dallo spawn all'arrivo, considerando perso in partenza tutto ciò
   che sparisce sotto le zampe e già scattata ogni trappola. Serve perché un livello può

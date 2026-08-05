@@ -33,6 +33,8 @@ export function loadProgress(): Progress {
     const raw = localStorage.getItem(KEY);
     if (!raw) return emptyProgress();
     const parsed = JSON.parse(raw) as Partial<Progress>;
+    // Ogni campo ha il suo default: un salvataggio di una versione precedente
+    // del gioco deve continuare a caricarsi, non azzerare i record di nessuno.
     return {
       levels: parsed.levels ?? {},
       totalDeaths: parsed.totalDeaths ?? 0,
@@ -108,6 +110,10 @@ export function recordClear(
     ...progress,
     levels: { ...progress.levels, [levelId]: next },
     totalDeaths: progress.totalDeaths + run.deaths,
+    // Le monete si portano a casa solo arrivando in fondo, ogni volta: un
+    // livello si può rigiocare, e chi lo rigioca per farmare monete sta
+    // comunque rigiocando un livello che lo odia. Ci sta.
+    coins: progress.coins + run.coins,
   };
   saveProgress(updated);
   return updated;

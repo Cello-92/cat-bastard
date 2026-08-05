@@ -1,8 +1,8 @@
 import { PHYSICS, RULES, TILE_SIZE } from '@game/config';
 import { LEVELS, type LevelDef } from '@game/levels';
-import { TILE, isSolid } from '@game/tiles';
+import { TILE, beltDirection, isSolid } from '@game/tiles';
 import { TileMap } from '@engine/tilemap';
-import { applyGravity, moveX, moveY, updateGrounded } from '@engine/physics';
+import { applyGravity, groundTiles, moveX, moveY, updateGrounded } from '@engine/physics';
 import type { Body } from '@engine/types';
 
 /**
@@ -43,6 +43,7 @@ const KILLS = new Set<string>([
   TILE.FAKE_FLAG,
   TILE.LURE_COIN,
   TILE.FAKE_CHECKPOINT,
+  TILE.TRAP_SPRING,
 ]);
 
 interface SearchState {
@@ -98,6 +99,19 @@ function step(state: SearchState, map: TileMap, action: { dir: number; jump: boo
   if (Math.abs(body.vx) < 0.05) body.vx = 0;
 
   moveX(body, map, isStableSolid);
+
+  // 1-bis. nastro trasportatore, identico a `Player.rideBelt` e nello stesso
+  // punto del tick: se il risolutore ignorasse il trasporto crederebbe
+  // percorribili traiettorie che il nastro rende impossibili — e viceversa.
+  if (body.onGround) {
+    let belt = 0;
+    for (const { tile } of groundTiles(body, map)) belt += beltDirection(tile);
+    if (belt !== 0) {
+      const carrier: Body = { ...body, vx: Math.sign(belt) * PHYSICS.beltSpeed, vy: 0, hitWall: false };
+      moveX(carrier, map, isStableSolid);
+      body.x = carrier.x;
+    }
+  }
 
   // 2. salto (con jump buffer e coyote time, come nel gioco)
   const justPressed = action.jump && !state.jumpHeld;

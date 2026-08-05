@@ -27,6 +27,16 @@ import { solve } from './solver';
  */
 const MAX_GAP = 5;
 
+/**
+ * Tutti i caratteri che hanno un significato.
+ *
+ * Serve a intercettare i refusi nelle mappe ASCII, che è il bug più facile da
+ * fare e il più difficile da vedere: una `o` al posto di una `O` non rompe
+ * niente e non compare da nessuna parte — semplicemente la trappola non c'è
+ * più, e il livello che era stato progettato non è quello che si gioca.
+ */
+const KNOWN_TILES = new Set<string>(Object.values(TILE));
+
 let failures = 0;
 
 function check(condition: boolean, message: string): void {
@@ -70,6 +80,17 @@ for (const level of LEVELS) {
   check(
     spawnRow?.[level.spawn.c] === TILE.EMPTY,
     `${level.name}: lo spawn non è dentro un muro`,
+  );
+
+  // Refusi nella mappa: un carattere sconosciuto è aria, quindi non si vede
+  // mai — né giocando né leggendo il sorgente, dove sembra una trappola.
+  const unknown = new Set<string>();
+  for (const row of rows) {
+    for (const char of row) if (!KNOWN_TILES.has(char)) unknown.add(char);
+  }
+  check(
+    unknown.size === 0,
+    `${level.name}: nessun carattere sconosciuto nella mappa${unknown.size ? ` (trovati: ${[...unknown].map((c) => `"${c}"`).join(', ')})` : ''}`,
   );
 
   // Il gatto salta al massimo MAX_GAP colonne (vedi PHYSICS): un vuoto più
@@ -292,6 +313,16 @@ console.log('\nTrappole nascoste');
     check(world.map.get(5, 11) === TILE.EMPTY, 'la piattaforma fantasma sparisce quasi subito');
   }
 
+  // Molla-tagliola: identica a una molla, non lancia niente, uccide.
+  {
+    const { world } = withTrap({ 12: '     m' });
+    world.player.x = 5 * TILE_SIZE;
+    world.player.y = 12 * TILE_SIZE;
+    world.update(idle);
+    check(world.state === 'dying', 'la molla-tagliola uccide invece di lanciare');
+    check(world.player.vy >= 0, 'la molla-tagliola non dà nessuna spinta');
+  }
+
   // Masso che crolla: parte senza il tremolio di preavviso della stalattite.
   {
     const { world } = withTrap({ 8: '     K' });
@@ -299,6 +330,88 @@ console.log('\nTrappole nascoste');
     world.player.y = 12 * TILE_SIZE;
     world.update(idle);
     check(world.map.get(5, 8) === TILE.EMPTY, 'il masso si stacca appena gli passi sotto');
+  }
+}
+
+// ---------------------------------------------------------------- nastri
+//
+// Il nastro è l'unica cosa del gioco che muove il gatto senza che nessuno
+// gliel'abbia chiesto, quindi è anche l'unica che rischia di sembrare un
+// controllo che non risponde. Il contratto è preciso: trasporta chi ci poggia
+// sopra, non tocca la velocità di nessuno, e contro il nastro si cammina
+// comunque — più piano, ma si cammina. Se un giorno queste tre cose smettono
+// di essere vere, il nastro è diventato un bug (vedi CLAUDE.md).
+console.log('\nNastri trasportatori');
+{
+  const beltAudio = new Audio();
+  const beltWorld = (rows: Record<number, string>) => {
+    const level = defineLevel({
+      id: 'belt-test',
+      name: 'TEST',
+      title: 'nastri',
+      sky: 'day',
+      spawn: { c: 1, r: 12 },
+      segments: [segment({ ground: true, rows })],
+    });
+    return new World(level, beltAudio, { onTaunt: () => {}, onWin: () => {} });
+  };
+
+  const idle = { isDown: () => false, justPressed: () => false, endTick: () => {} } as unknown as Input;
+  const runLeft = {
+    isDown: (a: string) => a === 'left',
+    justPressed: () => false,
+    endTick: () => {},
+  } as unknown as Input;
+
+  // Fermo sul nastro: il gatto viene portato via lo stesso.
+  {
+    const world = beltWorld({ 13: '####>>>>>>>>>>######' });
+    world.player.reset(5 * TILE_SIZE, 12 * TILE_SIZE);
+    const startX = world.player.x;
+    for (let tick = 0; tick < 40; tick++) world.update(idle);
+    check(world.player.x - startX > 30, `il nastro trasporta chi sta fermo (+${Math.round(world.player.x - startX)}px)`);
+    check(world.player.vx === 0, 'il nastro non tocca la velocità del gatto');
+  }
+
+  // Contro il nastro si cammina comunque: più piano, ma si avanza.
+  {
+    const world = beltWorld({ 13: '####>>>>>>>>>>>>####' });
+    world.player.reset(12 * TILE_SIZE, 12 * TILE_SIZE);
+    const startX = world.player.x;
+    for (let tick = 0; tick < 60; tick++) world.update(runLeft);
+    check(world.player.x < startX - 60, `contro il nastro il gatto avanza lo stesso (${Math.round(world.player.x - startX)}px in 60 tick)`);
+  }
+
+  // Il nastro spinge, non incastra: contro un muro il gatto si ferma e basta.
+  {
+    const world = beltWorld({ 12: '        P', 13: '####>>>>>###########' });
+    world.player.reset(6 * TILE_SIZE, 12 * TILE_SIZE);
+    for (let tick = 0; tick < 60; tick++) world.update(idle);
+    check(
+      world.player.x + world.player.w <= 8 * TILE_SIZE,
+      'il nastro non spinge il gatto dentro il muro',
+    );
+  }
+
+  // Il nastro non uccide da solo: se ti butta nel vuoto la battuta è la sua.
+  {
+    const level = defineLevel({
+      id: 'belt-pit',
+      name: 'TEST',
+      title: 'nastri',
+      sky: 'day',
+      spawn: { c: 1, r: 12 },
+      segments: [segment({ rows: { 13: '####>>>>>>', 14: '####      ' } })],
+    });
+    const said: string[] = [];
+    const world = new World(level, beltAudio, { onTaunt: (t) => said.push(t), onWin: () => {} });
+    world.player.reset(8 * TILE_SIZE, 12 * TILE_SIZE);
+    for (let tick = 0; tick < 200 && world.state === 'playing'; tick++) world.update(idle);
+    check(world.state === 'dying', 'il nastro accompagna il gatto fin dentro il vuoto');
+    check(
+      said.some((t) => t.includes('nastro') || t.includes('pavimento')),
+      `la caduta dal nastro è attribuita al nastro ("${said[0] ?? ''}")`,
+    );
   }
 }
 

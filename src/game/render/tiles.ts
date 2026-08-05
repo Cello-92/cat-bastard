@@ -115,7 +115,17 @@ export function drawTile(r: Renderer, tile: string, x: number, y: number, ctx: T
       drawSpikeSocket(r, x, y, ctx);
       break;
     case TILE.SPRING:
+    case TILE.TRAP_SPRING:
+      // Stessa molla. Stessa piastra, stesse spire, stesso piattello rosso:
+      // una lancia, l'altra si chiude. Disegnarle diverse sarebbe disinnescare
+      // la trappola, esattamente come per la moneta e la lanterna.
       drawSpring(r, x, y, ctx);
+      break;
+    case TILE.BELT_RIGHT:
+      drawBelt(r, x, y, ctx, 1);
+      break;
+    case TILE.BELT_LEFT:
+      drawBelt(r, x, y, ctx, -1);
       break;
     case TILE.COIN:
     case TILE.LURE_COIN:
@@ -794,6 +804,85 @@ function drawSpring(r: Renderer, x: number, y: number, ctx: TileDrawContext): vo
     { at: 1, color: alpha(PALETTE.hot, 0) },
   ]);
   r.pop();
+}
+
+/**
+ * Nastro trasportatore.
+ *
+ * A differenza di quasi tutto il resto del gioco questo non mente: deve
+ * leggersi come una macchina che si muove, e in che verso, *prima* di salirci.
+ * La trappola non è il nastro — è dove il nastro ti porta.
+ *
+ * Il movimento è funzione del tick e della colonna, quindi due celle vicine
+ * scorrono in fase e la banda sembra un pezzo unico.
+ */
+function drawBelt(r: Renderer, x: number, y: number, ctx: TileDrawContext, direction: number): void {
+  const iron = MATERIAL.iron;
+  const steel = MATERIAL.steel;
+  const bandH = 11;
+  const bandY = y + 2;
+  // Scorrimento in pixel: usa la colonna assoluta, così la banda non si spezza
+  // al confine tra una cella e l'altra.
+  const scroll = (ctx.tick * 1.4 * direction + ctx.col * T) % T;
+
+  // Telaio: cassone di ferro sotto la banda, in ombra.
+  r.gradientRect(x, y + bandH, T, T - bandH, bodyStops(iron));
+  r.push();
+  r.setAlpha(0.5);
+  speckle(r, x, y + bandH, ctx, 2, MATERIAL.rock, 2);
+  r.pop();
+
+  // Rulli alle estremità: si vedono girare attraverso il gioco d'ombra.
+  for (const cx of [x + 6, x + T - 6]) {
+    r.ellipse(cx, y + bandH - 1, 5.5, 5.5, steel.dark);
+    r.ellipse(cx, y + bandH - 1, 4.4, 4.4, steel.base);
+    const phase = (scroll / T) * Math.PI * 2;
+    r.line(
+      [
+        cx - Math.cos(phase) * 3.4,
+        y + bandH - 1 - Math.sin(phase) * 3.4,
+        cx + Math.cos(phase) * 3.4,
+        y + bandH - 1 + Math.sin(phase) * 3.4,
+      ],
+      1.2,
+      alpha(steel.deep, 0.8),
+    );
+    r.ellipse(cx - 1.4, y + bandH - 2.6, 1.6, 1.4, alpha(steel.spec, 0.5));
+  }
+
+  // Banda di gomma: piatta, opaca, con la luce solo sul filo superiore.
+  r.gradientRect(x, bandY, T, bandH, [
+    { at: 0, color: mix(iron.light, iron.base, 0.4) },
+    { at: 0.3, color: iron.base },
+    { at: 1, color: iron.dark },
+  ]);
+  r.rect(x, bandY, T, 1.2, alpha(steel.spec, 0.35));
+
+  // Tacche del battistrada: sono loro a dire da che parte va la roba.
+  r.push();
+  r.clipRect(x, bandY, T, bandH);
+  for (let i = -1; i <= 2; i++) {
+    const tx = x + scroll + i * (T / 2);
+    r.polygon(
+      [
+        tx, bandY + 1.5,
+        tx + direction * 5, bandY + bandH / 2,
+        tx, bandY + bandH - 1.5,
+        tx - direction * 1.5, bandY + bandH - 1.5,
+        tx + direction * 3.5, bandY + bandH / 2,
+        tx - direction * 1.5, bandY + 1.5,
+      ],
+      alpha(MATERIAL.gold.base, 0.75),
+    );
+  }
+  r.pop();
+
+  // Occlusione dove la banda incontra il telaio.
+  r.gradientRect(x, bandY + bandH - 3, T, 3, [
+    { at: 0, color: shade(0) },
+    { at: 1, color: shade(0.45) },
+  ]);
+  occlude(r, x, y, iron, { ...ctx.open, up: false });
 }
 
 // ---------------------------------------------------------------- raccolte

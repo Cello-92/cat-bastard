@@ -50,6 +50,7 @@ const KILLS = new Set<string>([
   TILE.FAKE_FLAG,
   TILE.LURE_COIN,
   TILE.FAKE_CHECKPOINT,
+  TILE.TRAP_SPRING,
 ]);
 
 interface SearchState {
@@ -106,8 +107,7 @@ function step(state: SearchState, map: TileMap, action: { dir: number; jump: boo
   if (body.onGround) {
     for (const { tile } of groundTiles(body, map)) {
       if (isIcy(tile)) onIce = true;
-      const direction = beltDirection(tile);
-      if (direction !== 0) belt = direction;
+      belt += beltDirection(tile);
     }
   }
 
@@ -127,10 +127,12 @@ function step(state: SearchState, map: TileMap, action: { dir: number; jump: boo
 
   moveX(body, map, isStableSolid);
 
-  // 1b. il nastro trascina, e non è opzionale più di quanto lo sia la molla.
+  // 1-bis. nastro trasportatore, identico a `Player.applyBelt` e nello stesso
+  // punto del tick: se il risolutore ignorasse il trasporto crederebbe
+  // percorribili traiettorie che il nastro rende impossibili — e viceversa.
   if (belt !== 0) {
     const own = body.vx;
-    body.vx = belt * SURFACE.beltSpeed;
+    body.vx = Math.sign(belt) * PHYSICS.beltSpeed;
     moveX(body, map, isStableSolid);
     body.vx = own;
   }
@@ -251,7 +253,16 @@ export interface SolveResult {
  * Ricerca in ampiezza guidata: si espandono prima gli stati più avanti nel
  * livello. Non serve il percorso ottimo, serve sapere se ne esiste uno.
  */
-export function solve(level: LevelDef, budget = 400_000): SolveResult {
+/**
+ * Il budget deve essere abbondante, non stretto.
+ *
+ * Un livello denso costa qualche centinaio di migliaia di stati (1-5 ne
+ * chiede 254.000), e con il budget vecchio bastava aggiungere due trappole
+ * perché il risolutore si fermasse *per esaurimento* e dichiarasse impossibile
+ * un livello che si attraversa benissimo. Un referto sbagliato è peggio di un
+ * referto lento: qui si paga qualche secondo in CI per averlo giusto.
+ */
+export function solve(level: LevelDef, budget = 1_500_000): SolveResult {
   const map = new TileMap(level.rows, TILE_SIZE);
   const start: SearchState = {
     x: level.spawn.c * TILE_SIZE + 5,

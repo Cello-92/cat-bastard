@@ -21,7 +21,7 @@ import { drawBackground } from './render/background';
 import { drawTile, type OpenSides } from './render/tiles';
 import { MATERIAL, PALETTE, SKIES, alpha } from './theme';
 import { DEATH_CAUSE, tauntFor, type DeathCause } from './taunts';
-import { TILE, isDeadly, isSpawner, joins } from './tiles';
+import { TILE, beltDirection, isDeadly, isSolid, isSpawner, joins } from './tiles';
 
 /**
  * Il mondo di gioco: mappa, entità, regole, camera.
@@ -63,6 +63,8 @@ const causeOfTile = (tile: string): DeathCause => {
       return DEATH_CAUSE.lureCoin;
     case TILE.FAKE_CHECKPOINT:
       return DEATH_CAUSE.fakeCheckpoint;
+    case TILE.TRAP_SPRING:
+      return DEATH_CAUSE.trapSpring;
     case TILE.HIDDEN_SPIKES:
       return DEATH_CAUSE.hiddenSpikes;
     case TILE.FAKE_FLAG:
@@ -143,6 +145,15 @@ export class World {
   private lastDeadVent = -1000;
   /** Il gomitolo di questo livello è già stato preso in questo tentativo. */
   secretFound = false;
+  /**
+   * Tick di "colpa del nastro" rimasti.
+   *
+   * Un nastro non uccide mai da solo: uccide il vuoto in cui ti ha
+   * accompagnato. Senza questo contatore la morte sarebbe attribuita alla
+   * fossa e la battuta sarebbe quella sbagliata — e la regola è che ogni
+   * trappola si spieghi da sé (vedi CLAUDE.md).
+   */
+  private beltGrace = 0;
 
   constructor(
     public level: LevelDef,
@@ -178,6 +189,7 @@ export class World {
     this.effects.clear();
     this.state = 'playing';
     this.deathTimer = 0;
+    this.beltGrace = 0;
 
     // I marcatori nella mappa diventano entità e spariscono dalla griglia.
     for (const { c, r, tile } of this.map.entries()) {
@@ -249,8 +261,11 @@ export class World {
 
     this.player.update(this, input);
 
+    if (this.beltGrace > 0) this.beltGrace--;
+
     if (this.player.y > this.map.heightPx + RULES.fallDeathMargin) {
-      this.kill(DEATH_CAUSE.pit);
+      // Caduti da un nastro, la colpa è del nastro: è lui che ti ha portato lì.
+      this.kill(this.beltGrace > 0 ? DEATH_CAUSE.belt : DEATH_CAUSE.pit);
       return;
     }
 
@@ -361,7 +376,9 @@ export class World {
     if (!this.player.onGround) return;
 
     for (const { c, r, tile } of groundTiles(this.player, this.map)) {
-      if (tile === TILE.INVISIBLE) {
+      if (beltDirection(tile) !== 0) {
+        this.beltGrace = RULES.beltBlameTicks;
+      } else if (tile === TILE.INVISIBLE) {
         this.reveal(c, r);
         continue;
       }
@@ -712,8 +729,15 @@ export class World {
   private openSidesOf(c: number, r: number, tile: string): OpenSides {
     // Terra con terra, ghiaccio con ghiaccio, lamiera con lamiera: la regola
     // completa sta in tiles.ts, qui si applica e basta.
+    //
+    // Il lato di sopra è l'unica eccezione: una cella non "vede il cielo" se
+    // sopra ha un solido qualunque, anche di un altro materiale. Senza questo,
+    // sotto un nastro trasportatore spuntava l'erba — il nastro non è terra,
+    // quindi la terra sotto si credeva esposta.
+    const above = this.map.get(c, r - 1);
+
     return {
-      up: !joins(tile, this.map.get(c, r - 1)),
+      up: !joins(tile, above) && !isSolid(above),
       down: !joins(tile, this.map.get(c, r + 1)),
       left: !joins(tile, this.map.get(c - 1, r)),
       right: !joins(tile, this.map.get(c + 1, r)),

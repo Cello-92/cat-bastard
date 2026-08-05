@@ -27,6 +27,7 @@ import { solve } from './solver';
  * livello resta difficile senza diventare impossibile.
  */
 const MAX_GAP = 5;
+const FULL_GROUND = '#'.repeat(SEGMENT_COLS);
 
 let failures = 0;
 
@@ -106,6 +107,71 @@ for (const level of LEVELS) {
   check(
     worstGap <= MAX_GAP,
     `${level.name}: nessun vuoto più largo di ${MAX_GAP} colonne (max ${worstGap}${gapAt >= 0 ? ` alla colonna ${gapAt}` : ''})`,
+  );
+}
+
+// ---------------------------------------------------------------- igiene delle mappe
+//
+// Errori che non rompono niente e non si vedono nei test: una molla disegnata
+// a mezz'aria sopra una fossa, degli spuntoni invisibili sospesi nel vuoto, un
+// nemico che nasce dentro un muro, un nastro con un solido sopra (cioè un
+// nastro che non tocca nessuno). Il gioco gira lo stesso — e proprio per
+// questo restano lì finché non li nota qualcuno che gioca.
+//
+// Le lame a soffitto sono escluse di proposito: nel gioco pendono dal nulla
+// da sempre, è una convenzione di disegno, non una svista. E gli spuntoni
+// sull'ultima riga non hanno pavimento sotto perché sotto non c'è più mappa.
+console.log('\nIgiene delle mappe');
+for (const level of LEVELS) {
+  const rows = level.rows;
+  const cols = rows[0]?.length ?? 0;
+  const at = (c: number, r: number): string =>
+    r < 0 || r >= LEVEL_ROWS ? TILE.EMPTY : (rows[r]?.[c] ?? TILE.EMPTY);
+  const problems: string[] = [];
+  const flag = (c: number, r: number, what: string): void => {
+    problems.push(`${what} (segmento ${Math.floor(c / SEGMENT_COLS)}, colonna ${c % SEGMENT_COLS}, riga ${r})`);
+  };
+
+  for (let r = 0; r < LEVEL_ROWS; r++) {
+    for (let c = 0; c < cols; c++) {
+      const tile = at(c, r);
+      const below = at(c, r + 1);
+      const grounded = isSolid(below) || r === LEVEL_ROWS - 1;
+
+      if ((tile === TILE.SPRING || tile === TILE.TRAP_SPRING) && !grounded)
+        flag(c, r, `molla "${tile}" appesa in aria`);
+      if ((tile === TILE.SPIKES || tile === TILE.POP_SPIKES || tile === TILE.SNAP_SPIKES) && !grounded)
+        flag(c, r, `spuntoni "${tile}" senza pavimento sotto`);
+      if (tile === TILE.HIDDEN_SPIKES && !grounded)
+        flag(c, r, 'spuntoni invisibili sospesi nel vuoto');
+      if ((tile === TILE.WALKER || tile === TILE.EVIL_WALKER) && !grounded)
+        flag(c, r, `nemico "${tile}" senza pavimento sotto`);
+      if (tile !== TILE.EMPTY && isSolid(at(c, r - 1)) && (tile === TILE.BELT_LEFT || tile === TILE.BELT_RIGHT))
+        flag(c, r, 'nastro murato: non ci si può salire');
+      if ((tile === TILE.COIN || tile === TILE.LURE_COIN) && isSolid(at(c, r - 1)) && isSolid(below))
+        flag(c, r, 'moneta sepolta nel terreno');
+    }
+  }
+
+  check(
+    problems.length === 0,
+    `${level.name}: niente appeso al nulla${problems.length ? ` — ${problems.slice(0, 4).join('; ')}` : ''}`,
+  );
+
+  // L'arrivo sta in fondo, e il checkpoint da qualche parte nel mezzo: un
+  // checkpoint nelle prime colonne non salva niente, uno dopo l'arrivo è
+  // decorazione.
+  let goalColumn = -1;
+  const checkpoints: number[] = [];
+  for (const row of rows) {
+    const g = row.indexOf(TILE.GOAL);
+    if (g >= 0 && goalColumn < 0) goalColumn = g;
+    for (let c = 0; c < row.length; c++) if (row[c] === TILE.CHECKPOINT) checkpoints.push(c);
+  }
+  check(goalColumn > cols * 0.8, `${level.name}: l'arrivo è in fondo (colonna ${goalColumn} su ${cols})`);
+  check(
+    checkpoints.some((c) => c > cols * 0.2 && c < goalColumn),
+    `${level.name}: almeno un checkpoint utile tra l'inizio e l'arrivo (${checkpoints.join(', ') || 'nessuno'})`,
   );
 }
 
@@ -585,6 +651,135 @@ console.log('\nGatti');
     CATS.every((cat) => cat.yarn <= SECRET_COUNT),
     `nessun gatto chiede più gomitoli di quanti ne esistano (${SECRET_COUNT})`,
   );
+}
+
+// ---------------------------------------------------------------- disegno di tutti i tile
+//
+// La simulazione disegna solo le colonne inquadrate, quindi un tile che compare
+// a metà livello può non essere mai disegnato da nessun test: basta che una
+// primitiva riceva una coordinata NaN o dimentichi un pop() e il gioco si
+// spacca in un punto che nessuno ha guardato. Qui si mette l'intero
+// vocabolario in un livello solo, davanti alla telecamera, e si disegna.
+console.log('\nDisegno: tutti i tile del vocabolario');
+{
+  const vocabulary = Object.values(TILE).filter((t) => t !== TILE.EMPTY);
+  const rows: Record<number, string> = {};
+  vocabulary.forEach((tile, i) => {
+    const row = 2 + Math.floor(i / SEGMENT_COLS) * 2;
+    rows[row] = (rows[row] ?? '').padEnd(i % SEGMENT_COLS, ' ') + tile;
+  });
+  rows[13] = FULL_GROUND;
+  rows[14] = FULL_GROUND;
+
+  const level = defineLevel({
+    id: 'draw-test',
+    name: 'TEST',
+    title: 'vocabolario',
+    sky: 'day',
+    spawn: { c: 1, r: 12 },
+    segments: [segment({ rows })],
+  });
+
+  const renderer = new NullRenderer();
+  const world = new World(level, audio, { onTaunt: () => {}, onWin: () => {} });
+  let crashed: unknown = null;
+  try {
+    // Due passate a tick diversi: quasi tutti i tile animano su `tick`.
+    world.draw(renderer, 0);
+    world.draw(renderer, 37);
+  } catch (error) {
+    crashed = error;
+  }
+
+  check(crashed === null, `tutti i ${vocabulary.length} tile si disegnano senza eccezioni`);
+  if (crashed) console.error(crashed);
+  check(renderer.transformDepth === 0, 'disegnandoli tutti, push/pop restano bilanciati');
+  check(
+    renderer.problems.length === 0,
+    `nessuna coordinata invalida in nessun tile${renderer.problems.length ? ` (${renderer.problems.slice(0, 3).join('; ')})` : ''}`,
+  );
+}
+
+// ---------------------------------------------------------------- nastri
+//
+// Il nastro è l'unica cosa del gioco che muove il gatto senza che nessuno
+// gliel'abbia chiesto, quindi è anche l'unica che rischia di sembrare un
+// controllo che non risponde. Il contratto è preciso: trasporta chi ci poggia
+// sopra, non tocca la velocità di nessuno, e contro il nastro si cammina
+// comunque — più piano, ma si cammina. Se un giorno queste tre cose smettono
+// di essere vere, il nastro è diventato un bug (vedi CLAUDE.md).
+console.log('\nNastri trasportatori');
+{
+  const beltAudio = new Audio();
+  const beltWorld = (rows: Record<number, string>) => {
+    const level = defineLevel({
+      id: 'belt-test',
+      name: 'TEST',
+      title: 'nastri',
+      sky: 'day',
+      spawn: { c: 1, r: 12 },
+      segments: [segment({ ground: true, rows })],
+    });
+    return new World(level, beltAudio, { onTaunt: () => {}, onWin: () => {} });
+  };
+
+  const idle = { isDown: () => false, justPressed: () => false, endTick: () => {} } as unknown as Input;
+  const runLeft = {
+    isDown: (a: string) => a === 'left',
+    justPressed: () => false,
+    endTick: () => {},
+  } as unknown as Input;
+
+  // Fermo sul nastro: il gatto viene portato via lo stesso.
+  {
+    const world = beltWorld({ 13: '####>>>>>>>>>>######' });
+    world.player.reset(5 * TILE_SIZE, 12 * TILE_SIZE);
+    const startX = world.player.x;
+    for (let tick = 0; tick < 40; tick++) world.update(idle);
+    check(world.player.x - startX > 30, `il nastro trasporta chi sta fermo (+${Math.round(world.player.x - startX)}px)`);
+    check(world.player.vx === 0, 'il nastro non tocca la velocità del gatto');
+  }
+
+  // Contro il nastro si cammina comunque: più piano, ma si avanza.
+  {
+    const world = beltWorld({ 13: '####>>>>>>>>>>>>####' });
+    world.player.reset(12 * TILE_SIZE, 12 * TILE_SIZE);
+    const startX = world.player.x;
+    for (let tick = 0; tick < 60; tick++) world.update(runLeft);
+    check(world.player.x < startX - 60, `contro il nastro il gatto avanza lo stesso (${Math.round(world.player.x - startX)}px in 60 tick)`);
+  }
+
+  // Il nastro spinge, non incastra: contro un muro il gatto si ferma e basta.
+  {
+    const world = beltWorld({ 12: '        P', 13: '####>>>>>###########' });
+    world.player.reset(6 * TILE_SIZE, 12 * TILE_SIZE);
+    for (let tick = 0; tick < 60; tick++) world.update(idle);
+    check(
+      world.player.x + world.player.w <= 8 * TILE_SIZE,
+      'il nastro non spinge il gatto dentro il muro',
+    );
+  }
+
+  // Il nastro non uccide da solo: se ti butta nel vuoto la battuta è la sua.
+  {
+    const level = defineLevel({
+      id: 'belt-pit',
+      name: 'TEST',
+      title: 'nastri',
+      sky: 'day',
+      spawn: { c: 1, r: 12 },
+      segments: [segment({ rows: { 13: '####>>>>>>', 14: '####      ' } })],
+    });
+    const said: string[] = [];
+    const world = new World(level, beltAudio, { onTaunt: (t) => said.push(t), onWin: () => {} });
+    world.player.reset(8 * TILE_SIZE, 12 * TILE_SIZE);
+    for (let tick = 0; tick < 200 && world.state === 'playing'; tick++) world.update(idle);
+    check(world.state === 'dying', 'il nastro accompagna il gatto fin dentro il vuoto');
+    check(
+      said.some((t) => t.includes('nastro') || t.includes('pavimento')),
+      `la caduta dal nastro è attribuita al nastro ("${said[0] ?? ''}")`,
+    );
+  }
 }
 
 // ---------------------------------------------------------------- regressione: corsa piatta

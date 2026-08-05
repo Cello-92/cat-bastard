@@ -122,8 +122,8 @@ Ogni trappola sfrutta un'abitudine del giocatore, e ognuna ha il suo taunt in `t
 | `F` | l'arrivo | uccide |
 | `J` | il nemico normale (identico) | ha le punte sotto: schiacciarlo uccide |
 | `Z` | ombra sul soffitto | si tuffa quando le passi sotto |
+| `>` `<` | un nastro trasportatore (ed è esattamente quello) | ti trasporta: non è una trappola, ma decide dove sei quando scatta quella vera |
 | `;` | ghiaccio | è sottile: si crepa e cede, come l'asse marcia |
-| `>` `<` | pavimento | nastro: ti trascina, spesso dove non vuoi |
 | `H` | nemico corazzato | ti vede, si pianta un attimo e ti carica. Non si schiaccia |
 | `&` | palla di ghiaccio ferma | rotola verso di te e non frena |
 
@@ -140,6 +140,7 @@ ingiocabile.
 | `L` | una piattaforma solida | sparisce dopo tre tick, senza tremare |
 | `O` | terreno normale, senza feritoia | spuntoni che scattano quando ci sei già sopra |
 | `!` | niente. Proprio niente | spuntoni invisibili. Dopo la prima morte restano visibili per tutto il tentativo |
+| `m` | una molla, identica a `M` | non lancia: si chiude. È una tagliola col piattello rosso |
 | `,` | un getto di vapore identico a `^` | non spinge. Ci si butta dentro contando su una spinta che non arriva |
 
 ### Il secondo mondo: superfici, non trappole
@@ -153,7 +154,7 @@ sempre la stessa cosa, e i comandi continuano a rispondere immediatamente.
 | `+` | terreno innevato: identico a `#`, cambia solo il manto |
 | `~` | ghiaccio: attrito quasi nullo, poca presa in accelerazione |
 | `=` | piastra d'acciaio: il pavimento onesto della fabbrica |
-| `>` `<` | nastro: trascina di `SURFACE.beltSpeed` px/tick, senza toccare la velocità del gatto |
+| `>` `<` | nastro: trascina di `PHYSICS.beltSpeed` px/tick, senza toccare la velocità del gatto |
 | `^` | getto di vapore: solleva finché ci resti dentro, e non si può dosare |
 
 Le costanti stanno in `SURFACE` (`game/config.ts`). Chi le tocca deve toccare anche
@@ -216,14 +217,22 @@ npm test        # struttura, risolutore, smoke test, regressioni
 npm run build   # typecheck + build
 ```
 
-`tests/` contiene tre cose diverse:
+`tests/` contiene cinque cose diverse:
 
 - **lo smoke test**, che esegue il gioco headless contro un `NullRenderer` capace di
   intercettare coordinate NaN e `push`/`pop` sbilanciati. Non dice se il gioco è bello,
   dice se esplode;
 - **i controlli sulle trappole**, che costruiscono un mondo minimo per ciascuna e ne
   verificano il contratto (la moneta esca uccide e non viene contata, gli spuntoni
-  invisibili tornano invisibili se ricominci il livello, e così via);
+  invisibili tornano invisibili se ricominci il livello, il nastro trasporta senza
+  toccare la velocità del gatto, e così via);
+- **l'igiene delle mappe**, che cerca gli errori che non rompono niente: una molla
+  disegnata a mezz'aria, spuntoni invisibili sospesi sul vuoto, un nastro murato
+  sotto un solido, un carattere sconosciuto (che è aria, quindi la trappola che
+  credevi di aver messo non c'è), un checkpoint dopo l'arrivo;
+- **il disegno di tutto il vocabolario**, perché la simulazione disegna solo le
+  colonne inquadrate e un tile che compare a metà livello potrebbe non essere mai
+  disegnato da nessun test;
 - **il risolutore** (`tests/solver.ts`), che *gioca* ogni livello: cerca con la fisica vera
   una sequenza di comandi dallo spawn all'arrivo, considerando perso in partenza tutto ciò
   che sparisce sotto le zampe e già scattata ogni trappola. Serve perché un livello può
@@ -247,6 +256,7 @@ e allegare uno zip offline: non servono a ospitare la pagina.
 3. ~~Deploy automatico su Pages~~ ✅
 4. ~~Schermata di selezione livelli con record e morti~~ ✅ (dentro il menu)
 5. ~~Più trappole e più nemici~~ ✅
-6. ~~Secondo mondo con un tileset davvero diverso~~ ✅ — gelo e fabbrica, cinque livelli,
+6. ~~Dieci livelli: i nastri (`>` `<`), la molla-tagliola (`m`) e i cieli `dawn` e `storm`~~ ✅
+7. ~~Secondo mondo con un tileset davvero diverso~~ ✅ — gelo e fabbrica, cinque livelli,
    superfici che cambiano la fisica, tre nemici nuovi, gomitoli nascosti e gatti sbloccabili
-7. Un boss finale che ovviamente bara.
+8. Un boss finale che ovviamente bara.

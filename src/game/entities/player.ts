@@ -151,8 +151,9 @@ export class Player implements Body {
     if (this.onGround) {
       for (const { tile } of groundTiles(this, world.map)) {
         if (isIcy(tile)) this.onIce = true;
-        const direction = beltDirection(tile);
-        if (direction !== 0) this.belt = direction;
+        // I versi si sommano: a cavallo di due nastri opposti non vince
+        // l'ultimo letto, si annullano — che è quello che farebbero davvero.
+        this.belt += beltDirection(tile);
       }
     }
 
@@ -194,14 +195,20 @@ export class Player implements Body {
   }
 
   /**
-   * Il nastro trasportatore trascina, non accelera: sposta il corpo di una
-   * quantità fissa e restituisce al gatto la sua velocità intatta. È la
-   * differenza tra "stare su un nastro" e "avere i comandi alterati".
+   * Nastro trasportatore.
+   *
+   * Trasporta, non comanda: il gatto viene spostato insieme al terreno e la
+   * sua velocità resta esattamente quella che ha chiesto il giocatore. È la
+   * differenza tra "il pavimento si muove" e "i comandi non rispondono" — la
+   * prima è una trappola, la seconda sarebbe un bug (vedi CLAUDE.md).
+   *
+   * Lo spostamento passa comunque per `moveX`, quindi il nastro non incastra
+   * mai il gatto dentro un muro: contro un ostacolo si limita a spingerlo.
    */
   private applyBelt(world: World): void {
     if (this.belt === 0) return;
     const own = this.vx;
-    this.vx = this.belt * SURFACE.beltSpeed;
+    this.vx = Math.sign(this.belt) * PHYSICS.beltSpeed;
     moveX(this, world.map, isSolid);
     this.vx = own;
   }

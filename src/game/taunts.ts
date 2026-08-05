@@ -27,10 +27,11 @@ export const DEATH_CAUSE = {
   ghost: 'ghost',
   snapSpikes: 'snapSpikes',
   hiddenSpikes: 'hiddenSpikes',
+  trapSpring: 'trapSpring',
+  belt: 'belt',
   // --- mondo 2
   ice: 'ice',
   brittleIce: 'brittleIce',
-  belt: 'belt',
   deadVent: 'deadVent',
   sentry: 'sentry',
   drone: 'drone',
@@ -103,6 +104,11 @@ const BY_CAUSE: Record<Exclude<DeathCause, 'generic'>, readonly string[]> = {
     'ora sono visibili. non ti servirà a molto, ma sono visibili',
     'invisibili. la seconda volta no',
   ],
+  trapSpring: [
+    'quella molla non lanciava niente. si chiudeva',
+    'era una tagliola col piattello rosso',
+    'ci sono molle e molle. quella era dell\'altro tipo',
+  ],
   ice: [
     'sul ghiaccio si frena prima. molto prima',
     'quattro zampe e zero aderenza',
@@ -114,9 +120,9 @@ const BY_CAUSE: Record<Exclude<DeathCause, 'generic'>, readonly string[]> = {
     'un attimo in più fermo lì ed era sicuro. no, aspetta: il contrario',
   ],
   belt: [
-    'il nastro ti ha accompagnato. gentile',
-    'stavi fermo, ma il pavimento no',
-    'andava dall\'altra parte. sempre andato dall\'altra parte',
+    'il nastro ti ha accompagnato. fin laggiù',
+    'correvi. il pavimento correva più di te',
+    'il nastro andava di là. tu pensavi di andare di qua',
   ],
   deadVent: [
     'quel getto era spento. lo era anche prima',

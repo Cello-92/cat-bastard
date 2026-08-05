@@ -39,6 +39,14 @@ export const TILE = {
   POP_SPIKES: 'A',
   /** Molla: ti lancia molto più in alto di un salto. Di solito verso qualcosa. */
   SPRING: 'M',
+  /**
+   * Nastro trasportatore che spinge verso destra: solido, calpestabile, e ti
+   * porta con sé che tu lo voglia o no. Non tocca i comandi — sposta il mondo
+   * sotto le zampe, che è un'altra cosa.
+   */
+  BELT_RIGHT: '>',
+  /** Lo stesso nastro, al contrario: ti riporta indietro mentre corri avanti. */
+  BELT_LEFT: '<',
   /** Moneta raccoglibile. */
   COIN: 'C',
   /**
@@ -54,6 +62,11 @@ export const TILE = {
   CHECKPOINT: 'S',
   /** Checkpoint identico a `S`. Toccarlo uccide. La lanterna non si accende mai. */
   FAKE_CHECKPOINT: 'N',
+  /**
+   * Molla identica a `M`, con la stessa piastra e lo stesso piattello rosso.
+   * Non lancia niente: si chiude di scatto. È una tagliola travestita da aiuto.
+   */
+  TRAP_SPRING: 'm',
 
   // --- Trappole senza preavviso: la prima volta ammazzano e basta.
   /** Masso indistinguibile dal soffitto che crolla nell'istante in cui passi sotto. */
@@ -90,10 +103,6 @@ export const TILE = {
   BRITTLE_ICE: ';',
   /** Piastra d'acciaio: il pavimento della fabbrica. Solida e onesta. */
   STEEL: '=',
-  /** Nastro trasportatore verso destra: ti porta dove vuole lui. */
-  BELT_RIGHT: '>',
-  /** Nastro trasportatore verso sinistra. Di solito verso qualcosa di brutto. */
-  BELT_LEFT: '<',
   /** Getto di vapore: non è solido, ti solleva finché ci resti dentro. */
   VENT: '^',
   /**
@@ -154,6 +163,7 @@ const DEADLY = new Set<string>([
   TILE.FAKE_FLAG,
   TILE.LURE_COIN,
   TILE.FAKE_CHECKPOINT,
+  TILE.TRAP_SPRING,
 ]);
 
 /** Tile che vengono convertiti in entità al caricamento del livello. */

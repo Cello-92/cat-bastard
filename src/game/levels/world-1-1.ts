@@ -66,13 +66,18 @@ export const WORLD_1_1 = defineLevel({
       },
     }),
 
-    // 5 — monete sopra gli spuntoni, soffitto chiodato che vieta il salto
-    // pieno, e la moneta centrale — quella per cui vale la pena rischiare —
-    // che uccide.
+    // 5 — monete sopra gli spuntoni e soffitto chiodato che vieta il salto
+    // pieno: qui si impara a saltare *poco*.
+    //
+    // La moneta sopra la fossa è onesta, ed è una scelta obbligata: sta dentro
+    // l'unica traiettoria che scavalca gli spuntoni, quindi avvelenarla
+    // renderebbe il passaggio impossibile invece che difficile. Quella
+    // avvelenata è la terza, sospesa sopra il terreno solido: per prenderla
+    // bisogna volerlo, ed è esattamente lì che deve stare una trappola-esca.
     segment({
       rows: {
         9: '     Y       YYY',
-        11: '   C  E  C',
+        11: '   C  C  E',
         13: '#####  #####   #####',
         14: '#####XX#####XXX#####',
       },

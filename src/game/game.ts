@@ -13,6 +13,7 @@ import {
   type Settings,
 } from '@core/storage';
 import { Hud } from '@ui/hud';
+import { bindFullscreenKey, isFullscreen, toggleFullscreen } from '@ui/fullscreen';
 import { Menu, type MenuItem } from '@ui/menu';
 import { Screens } from '@ui/screens';
 import { formatTicks, plural } from '@ui/format';
@@ -74,6 +75,10 @@ export class Game {
 
     this.world = this.createWorld(0);
     this.bindTouchControls(root);
+    // Entrando o uscendo dallo schermo intero la voce di menu cambia etichetta.
+    bindFullscreenKey(() => {
+      if (this.phase === 'menu') this.showRootMenu();
+    });
 
     this.loop = new GameLoop(
       () => this.update(),
@@ -149,6 +154,15 @@ export class Game {
           onSelect: () => this.showLevelsMenu(),
         },
         {
+          label: 'SCHERMO INTERO',
+          value: isFullscreen() ? 'ON' : 'OFF',
+          hint: 'Anche col tasto F, in qualunque momento',
+          onSelect: () => {
+            toggleFullscreen();
+            this.showRootMenu();
+          },
+        },
+        {
           label: 'AUDIO',
           value: this.settings.audio ? 'ON' : 'OFF',
           hint: 'Suoni sintetizzati, nessun file: si spengono e si riaccendono qui',
@@ -207,6 +221,7 @@ export class Game {
         'SPAZIO / W / ↑     saltare, e più lo tieni premuto più salti in alto',
         'R     ricominciare il livello da capo',
         'ESC     pausa',
+        'F     schermo intero',
         'I comandi non tradiscono mai: niente ritardi, niente tasti invertiti. Se sei morto è colpa del livello, ed era voluto.',
       ],
       items: [{ label: 'INDIETRO', onSelect: () => this.showRootMenu() }],

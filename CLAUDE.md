@@ -173,12 +173,24 @@ Neo-retro: forme leggibili da pixel art, resa curata e contemporanea. Non "retr�
 
 ```bash
 npm run dev     # provare a mano: è l'unico modo di sapere se è divertente
-npm test        # smoke test: 600 tick per livello con rendering, morte, vittoria
+npm test        # struttura, risolutore, smoke test, regressioni
 npm run build   # typecheck + build
 ```
 
-Lo smoke test (`tests/`) esegue il gioco headless contro un `NullRenderer` che intercetta
-coordinate NaN e `push`/`pop` sbilanciati. Non dice se il gioco è bello, dice se esplode.
+`tests/` contiene tre cose diverse:
+
+- **lo smoke test**, che esegue il gioco headless contro un `NullRenderer` capace di
+  intercettare coordinate NaN e `push`/`pop` sbilanciati. Non dice se il gioco è bello,
+  dice se esplode;
+- **i controlli sulle trappole**, che costruiscono un mondo minimo per ciascuna e ne
+  verificano il contratto (la moneta esca uccide e non viene contata, gli spuntoni
+  invisibili tornano invisibili se ricominci il livello, e così via);
+- **il risolutore** (`tests/solver.ts`), che *gioca* ogni livello: cerca con la fisica vera
+  una sequenza di comandi dallo spawn all'arrivo, considerando perso in partenza tutto ciò
+  che sparisce sotto le zampe e già scattata ogni trappola. Serve perché un livello può
+  avere una geometria ineccepibile ed essere comunque impossibile: basta piazzare una
+  trappola istantanea dentro l'unica traiettoria utile, ed è già successo. Se il risolutore
+  non trova un percorso, il livello è rotto — e "rotto" non è un sinonimo di "difficile".
 
 ## Distribuzione
 

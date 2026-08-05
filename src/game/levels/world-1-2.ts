@@ -53,14 +53,19 @@ export const WORLD_1_2 = defineLevel({
       },
     }),
 
-    // 4 — le monete stanno sopra gli spuntoni e il soffitto è chiodato: si
-    // passa solo rinunciando alle monete. Due su quattro sono avvelenate.
+    // 4 — le monete stanno sopra gli spuntoni e il soffitto è chiodato: il
+    // salto va dosato al pixel, perché troppo in alto ci sono le lame e troppo
+    // in basso c'è la fossa.
+    //
+    // Nessuna moneta avvelenata qui: stanno tutte dentro l'unica traiettoria
+    // utile, e una trappola dentro l'unica traiettoria utile non è una
+    // trappola, è un muro.
     segment({
       rows: {
         9: '    YY      YY',
-        11: '    C E     E C',
-        13: '####    ####    ####',
-        14: '####XXXX####XXXX####',
+        11: '    C C     C C',
+        13: '####   #####   #####',
+        14: '####XXX#####XXX#####',
       },
     }),
 

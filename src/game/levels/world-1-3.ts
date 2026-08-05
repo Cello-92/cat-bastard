@@ -53,13 +53,14 @@ export const WORLD_1_3 = defineLevel({
       },
     }),
 
-    // 4 — quattro nemici identici, tre dei quali no, e tra l'uno e l'altro il
-    // pavimento a feritoie. La lanterna in mezzo non salva niente.
+    // 4 — nemici identici, pavimento a feritoie e una lanterna che non salva
+    // niente. Ogni ostacolo è separato dal successivo da almeno tre colonne
+    // libere: si passa saltando uno per volta, mai tutti insieme.
     segment({
       ground: true,
       rows: {
-        9: '     E C',
-        12: '  J AA N AA J  O  G',
+        9: '       C',
+        12: '  J AA   N   AA J  G',
       },
     }),
 
@@ -98,12 +99,14 @@ export const WORLD_1_3 = defineLevel({
     }),
 
     // 8 — soffitto minato, pattuglia finale, molla in mezzo alla strada e due
-    // tratti di terreno che scattano quando ci sei già sopra.
+    // tratti di terreno che scattano quando ci sei già sopra. La moneta appesa
+    // sopra il terreno solido è avvelenata: nessuno ti obbliga a prenderla.
     segment({
       ground: true,
       rows: {
         5: '           YY',
         8: '   T   T   T',
+        10: '            E',
         12: ' S G O J  M  G O  J',
       },
     }),

@@ -20,9 +20,7 @@
 html, body { height: 100%; }
 
 body {
-  background:
-    radial-gradient(120% 80% at 50% -10%, #1d2333 0%, var(--ink) 62%),
-    var(--ink);
+  background: #000;
   color: var(--paper);
   font-family: var(--ui-font);
   display: flex;
@@ -35,22 +33,35 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-#app { width: 100%; max-width: 1000px; padding: 12px; }
+/*
+ * Il gioco riempie lo schermo.
+ *
+ * Il campo visivo però resta quello di sempre: 800x480 unità di mondo, perché
+ * fisica, salti e mappe sono tarati su quella misura e allargarlo vorrebbe dire
+ * regalare al giocatore mezzo secondo di preavviso su ogni trappola. Quindi il
+ * riquadro si prende tutto lo spazio disponibile mantenendo le proporzioni, e
+ * quello che avanza ai lati o sopra e sotto resta nero — come al cinema.
+ */
+#app {
+  width: 100vw;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0;
+}
 
 #frame {
   position: relative;
-  width: 100%;
-  aspect-ratio: 5 / 3;
+  /* Il più grande rettangolo 5:3 che ci sta: limitato dalla larghezza sui
+     monitor stretti, dall'altezza su quelli larghi. */
+  width: min(100vw, calc(100dvh * 5 / 3));
+  height: min(100dvh, calc(100vw * 3 / 5));
   overflow: hidden;
-  border-radius: var(--radius);
   background: #000;
-  /* Un bordo sottile e un'ombra profonda: lo schermo sembra acceso, non
-     incollato sulla pagina. */
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.09),
-    0 0 0 4px rgba(0, 0, 0, 0.55),
-    0 40px 80px -30px rgba(0, 0, 0, 0.95),
-    0 0 90px -30px rgba(255, 46, 136, 0.35);
+  box-shadow: 0 0 120px -20px rgba(255, 46, 136, 0.25);
 }
 
 canvas {
@@ -287,12 +298,27 @@ canvas {
 .pad__key:active { background: var(--hot); border-color: var(--hot); }
 body.is-touch .pad { display: flex; }
 
+/*
+ * Il suggerimento in fondo esiste solo se c'è spazio nero da riempire: quando
+ * il gioco occupa tutta l'altezza sparisce, perché coprire il gioco con una
+ * scritta di servizio sarebbe un pessimo scambio.
+ */
 .footer {
-  margin-top: 12px;
+  position: absolute;
+  bottom: 10px;
+  left: 0;
+  right: 0;
   font-size: 11px;
   letter-spacing: 1px;
   text-align: center;
-  opacity: 0.34;
+  opacity: 0.3;
+  pointer-events: none;
+}
+/* Schermo più largo di 5:3 = il gioco è limitato dall'altezza e la occupa
+   tutta: sotto non avanza niente, quindi il suggerimento sparisce invece di
+   finire sopra il terreno. */
+@media (min-aspect-ratio: 5 / 3) {
+  .footer { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

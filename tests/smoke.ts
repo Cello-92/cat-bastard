@@ -7,6 +7,7 @@ import { defineLevel, segment } from '@game/levels/level';
 import { TILE, isSolid } from '@game/tiles';
 import { World } from '@game/world';
 import { NullRenderer } from './null-renderer';
+import { solve } from './solver';
 
 /**
  * Smoke test headless.
@@ -101,6 +102,32 @@ for (const level of LEVELS) {
   check(
     worstGap <= MAX_GAP,
     `${level.name}: nessun vuoto più largo di ${MAX_GAP} colonne (max ${worstGap}${gapAt >= 0 ? ` alla colonna ${gapAt}` : ''})`,
+  );
+}
+
+// ---------------------------------------------------------------- attraversabilità
+//
+// Il controllo più importante di tutti, e quello che è costato di più impararlo.
+//
+// Un livello può essere geometricamente ineccepibile — nessun salto troppo
+// lungo, nessun buco senza fondo — e restare comunque impossibile, perché a non
+// essere percorribile non è la mappa ma la *traiettoria*: era bastata una
+// moneta avvelenata piazzata dentro l'unico arco utile per scavalcare una fossa
+// di spuntoni, con una lama a soffitto a chiudere l'alternativa. Due trappole
+// sensate prese una per una, un muro invalicabile prese insieme.
+//
+// Quindi qui non si guarda la mappa: si gioca. Il risolutore cerca una
+// sequenza di comandi che porti dallo spawn all'arrivo usando la fisica vera,
+// e considera perso in partenza tutto ciò che sparisce sotto le zampe.
+console.log('\nAttraversabilità (il risolutore gioca il livello)');
+for (const level of LEVELS) {
+  const result = solve(level);
+  check(
+    result.solved,
+    result.solved
+      ? `${level.name}: esiste un percorso fino all'arrivo (${result.statesExplored} stati esplorati)`
+      : `${level.name}: NESSUN PERCORSO — bloccato alla colonna ${result.furthestColumn}, ` +
+        `cioè al segmento ${Math.floor(result.furthestColumn / SEGMENT_COLS)} colonna ${result.furthestColumn % SEGMENT_COLS}`,
   );
 }
 

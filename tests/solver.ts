@@ -44,7 +44,9 @@ const isStableSolid = (tile: string): boolean => {
     tile === TILE.FAKE_GROUND ||
     tile === TILE.GHOST ||
     tile === TILE.COLLAPSE ||
-    tile === TILE.BRITTLE_ICE
+    tile === TILE.BRITTLE_ICE ||
+    tile === TILE.BOSS_BRICK ||
+    tile === TILE.BOSS_GATE
   ) {
     return false;
   }

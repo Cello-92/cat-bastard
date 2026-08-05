@@ -39,14 +39,6 @@ export const TILE = {
   POP_SPIKES: 'A',
   /** Molla: ti lancia molto più in alto di un salto. Di solito verso qualcosa. */
   SPRING: 'M',
-  /**
-   * Nastro trasportatore che spinge verso destra: solido, calpestabile, e ti
-   * porta con sé che tu lo voglia o no. Non tocca i comandi — sposta il mondo
-   * sotto le zampe, che è un'altra cosa.
-   */
-  BELT_RIGHT: '>',
-  /** Lo stesso nastro, al contrario: ti riporta indietro mentre corri avanti. */
-  BELT_LEFT: '<',
   /** Moneta raccoglibile. */
   COIN: 'C',
   /**
@@ -121,6 +113,22 @@ export const TILE = {
   /** Gomitolo: uno per livello, ben nascosto. Sblocca i gatti. */
   YARN: '*',
 
+  // --- Roba del boss: esiste solo dentro l'arena di 1-11.
+  /**
+   * Mattone del soffitto dell'arena.
+   *
+   * È l'unica arma che il gatto ha contro il Padrone, ed è anche l'unico posto
+   * in cui il gioco chiede al giocatore di fidarsi di una piattaforma che sta
+   * per cedere: ci sali sopra, quello trema, e poco dopo si stacca portandosi
+   * dietro tutto il peso della muratura. Dove cade non lo decide lui.
+   */
+  BOSS_BRICK: '?',
+  /**
+   * Il portone in fondo all'arena: solido finché il Padrone è vivo, aperto
+   * nell'istante in cui smette di esserlo. Non è una trappola, è una serratura.
+   */
+  BOSS_GATE: '|',
+
   // --- Marcatori: rimossi dalla griglia al caricamento e sostituiti da entità.
   /** Nemico che cammina, schiacciabile. */
   WALKER: 'G',
@@ -134,6 +142,8 @@ export const TILE = {
   DRONE: '%',
   /** Palla di ghiaccio: quando entri nel suo raggio, rotola verso di te. */
   SNOWBALL: '&',
+  /** Il Padrone: il boss di 1-11. Ne esiste uno solo per livello. */
+  BOSS: '@',
 } as const;
 
 export type TileChar = (typeof TILE)[keyof typeof TILE];
@@ -158,6 +168,8 @@ const SOLID = new Set<string>([
   TILE.STEEL,
   TILE.BELT_RIGHT,
   TILE.BELT_LEFT,
+  TILE.BOSS_BRICK,
+  TILE.BOSS_GATE,
 ]);
 
 /** Tile che al contatto uccidono, sempre e comunque. */
@@ -178,6 +190,7 @@ const SPAWNERS = new Set<string>([
   TILE.SENTRY,
   TILE.DRONE,
   TILE.SNOWBALL,
+  TILE.BOSS,
 ]);
 
 /**

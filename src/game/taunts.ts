@@ -27,6 +27,12 @@ export const DEATH_CAUSE = {
   ghost: 'ghost',
   snapSpikes: 'snapSpikes',
   hiddenSpikes: 'hiddenSpikes',
+  trapSpring: 'trapSpring',
+  // --- il Padrone (1-11)
+  boss: 'boss',
+  bossCharge: 'bossCharge',
+  bossStomp: 'bossStomp',
+  bossRubble: 'bossRubble',
   // --- mondo 2
   ice: 'ice',
   brittleIce: 'brittleIce',
@@ -112,6 +118,31 @@ const BY_CAUSE: Record<Exclude<DeathCause, 'generic'>, readonly string[]> = {
     'era sottile. si sentiva anche, scricchiolava',
     'il ghiaccio si è crepato, poi ha smesso di esistere',
     'un attimo in più fermo lì ed era sicuro. no, aspetta: il contrario',
+  ],
+  trapSpring: [
+    'era una molla. aveva la piastra, il piattello, tutto',
+    'quella non lanciava. quella si chiudeva',
+    'una tagliola vestita da aiuto. il tuo genere preferito',
+  ],
+  boss: [
+    'gli sei andato addosso. lui era lì da prima',
+    'toccarlo non era il piano, vero?',
+    'il Padrone non si tocca. il Padrone tocca',
+  ],
+  bossCharge: [
+    'te l\'ha annunciato. ha ruggito e tutto',
+    'correva dritto. tu pure',
+    'i mensoloni servivano a quello, sai',
+  ],
+  bossStomp: [
+    'saltargli in testa. certo. come no',
+    'ha una corona. le corone pungono',
+    'ha funzionato con i funghi, doveva funzionare anche qui',
+  ],
+  bossRubble: [
+    'quello era il TUO mattone',
+    'l\'hai staccato tu. è caduto dove eri tu',
+    'il soffitto non distingue chi lo ha fatto cadere',
   ],
   belt: [
     'il nastro ti ha accompagnato. gentile',

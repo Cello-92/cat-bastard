@@ -90,7 +90,7 @@ src/
               taunts, cats (manti sbloccabili), effects (particelle/juice),
               world.ts (orchestratore), game.ts (composition root)
     entities/ player, walker, shroom, falling-spike, diver,
-              sentry, drone, snowball
+              sentry, drone, snowball, boss + rubble (solo 1-11)
     levels/   level.ts (helper) + un file per livello + index.ts (registro)
     render/   background.ts (parallasse), tiles.ts (disegno dei tile)
   net/        supabase.ts (fetch e basta), account.ts (sessione e sincronia),
@@ -176,6 +176,28 @@ Le costanti stanno in `SURFACE` (`game/config.ts`). Chi le tocca deve toccare an
 `tests/solver.ts`: il risolutore simula ghiaccio, nastri e getti con lo stesso codice
 e lo stesso ordine di operazioni di `Player.update` — se i due si scostano, il
 risolutore mente e un livello impossibile passa i test.
+
+### Il Padrone: l'arena di 1-11
+
+Tre tile esistono solo dentro l'arena del boss, e non compaiono in nessun altro
+livello. Non sono trappole: sono l'attrezzatura di uno scontro.
+
+| Tile | Cosa sembra | Cosa fa |
+|---|---|---|
+| `@` | niente, sparisce al caricamento | marcatore: qui nasce il Padrone |
+| `?` | mattone del soffitto | ci sali, trema, si stacca. È l'unica arma contro di lui |
+| `|` | portone chiuso | solido finché il Padrone è vivo, aperto quando cade |
+
+Il combattimento sta in `world.ts` (`handleBossFight`, `bossSlam`, `onBossRage`)
+e non dentro l'entità, per la regola di sempre: serve sapere insieme dove sta il
+masso e dove sta il boss, e quel posto è uno solo. Il risolutore non sa niente di
+tutto questo — tratta il mattone come un appoggio che sparisce e il portone come
+già aperto — quindi il contratto dello scontro si verifica in `smoke.ts`.
+
+**Attenzione ai caratteri.** `?` e `|` sono quello che sono perché `H` e `=`
+erano già presi da `SENTRY` e `STEEL`: due tile diversi con lo stesso carattere
+non danno nessun errore, danno un livello che si carica sbagliato. Prima di
+battezzare un tile nuovo, guardare tutto `TILE`.
 
 ### I segreti e i gatti
 
@@ -362,5 +384,6 @@ e allegare uno zip offline: non servono a ospitare la pagina.
 5. ~~Più trappole e più nemici~~ ✅
 6. ~~Secondo mondo con un tileset davvero diverso~~ ✅ — gelo e fabbrica, cinque livelli,
    superfici che cambiano la fisica, tre nemici nuovi, gomitoli nascosti e gatti sbloccabili
-7. Un boss finale che ovviamente bara.
+7. ~~Un boss finale che ovviamente bara~~ ✅ — 1-11, il Padrone: si guida invece di
+   inseguirlo, si colpisce col suo stesso soffitto, e scansa mentre cammina
 8. ~~Account (nickname e password, niente email) e classifica dei tempi~~ ✅ — Supabase

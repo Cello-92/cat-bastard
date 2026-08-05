@@ -91,9 +91,6 @@ export function drawTile(r: Renderer, tile: string, x: number, y: number, ctx: T
     case TILE.BOSS_GATE:
       drawBossGate(r, x, y, ctx);
       break;
-    case TILE.SKIN_CUBE:
-      drawSkinCube(r, x, y, ctx);
-      break;
     case TILE.FAKE_GROUND:
     case TILE.GHOST:
       // Identici al terreno vero: è tutto il punto della trappola. Nessun
@@ -843,61 +840,6 @@ function drawBossGate(r: Renderer, x: number, y: number, ctx: TileDrawContext): 
   }
 
   occlude(r, x, y, iron, ctx.open);
-}
-
-/**
- * Il cubo delle skin.
- *
- * L'unica cosa del gioco che si prende una volta sola e resta presa per sempre,
- * quindi deve sembrare diversa da tutto: non è oro (l'oro qui mente), è vetro
- * iridescente con dentro l'impronta di una zampa. Chi lo vede capisce che non
- * fa parte del livello.
- */
-function drawSkinCube(r: Renderer, x: number, y: number, ctx: TileDrawContext): void {
-  const bob = Math.sin((ctx.tick + ctx.col * 11) / 22) * 3;
-  const spin = wave(ctx.tick + ctx.col * 7, 90);
-  const cx = x + T / 2;
-  const cy = y + T / 2 + bob;
-  const s = 10;
-
-  // Alone: si vede prima il bagliore del cubo.
-  r.push();
-  r.setBlend('add');
-  r.setAlpha(0.18 + spin * 0.16);
-  r.radial(cx, cy, 26, 26, [
-    { at: 0, color: alpha(PALETTE.hot, 0.7) },
-    { at: 0.5, color: alpha(MATERIAL.eye.light, 0.28) },
-    { at: 1, color: alpha(PALETTE.hot, 0) },
-  ]);
-  r.pop();
-
-  // Cubo in assonometria: faccia superiore, frontale e laterale.
-  r.polygon([cx, cy - s - 5, cx + s, cy - s, cx, cy - s + 5, cx - s, cy - s], MATERIAL.steel.light);
-  r.polygon([cx - s, cy - s, cx, cy - s + 5, cx, cy + s, cx - s, cy + s - 5], mix(PALETTE.hot, MATERIAL.steel.base, 0.55));
-  r.polygon([cx + s, cy - s, cx, cy - s + 5, cx, cy + s, cx + s, cy + s - 5], mix(MATERIAL.eye.base, MATERIAL.steel.dark, 0.45));
-
-  // Spigoli accesi: è vetro, non metallo.
-  r.push();
-  r.setAlpha(0.75);
-  r.line([cx, cy - s - 5, cx + s, cy - s, cx + s, cy + s - 5, cx, cy + s, cx - s, cy + s - 5, cx - s, cy - s], 1.1, glare(0.85), true);
-  r.line([cx, cy - s + 5, cx, cy + s], 1, alpha(PALETTE.paper, 0.7));
-  r.pop();
-
-  // Impronta di zampa sulla faccia frontale: il cuscinetto e quattro dita.
-  r.push();
-  r.setAlpha(0.85);
-  r.ellipse(cx - s * 0.45, cy + 2, 2.6, 2.2, PALETTE.paper);
-  for (let i = 0; i < 3; i++) {
-    r.ellipse(cx - s * 0.75 + i * 2.6, cy - 2.4 + Math.abs(i - 1) * 0.9, 1.1, 1.2, PALETTE.paper);
-  }
-  r.pop();
-
-  // Riflesso che scorre: dice "prendimi" senza scriverlo.
-  r.push();
-  r.setBlend('add');
-  r.setAlpha(0.3 * spin);
-  r.polygon([cx - s + spin * 14, cy - s, cx - s + 4 + spin * 14, cy - s, cx - s - 4 + spin * 14, cy + s, cx - s - 8 + spin * 14, cy + s], glare(0.9));
-  r.pop();
 }
 
 // ---------------------------------------------------------------- pericoli

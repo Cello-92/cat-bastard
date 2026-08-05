@@ -64,8 +64,11 @@ export const WORLD_2_4 = defineLevel({
     // freno, e la fossa è alla fine. Si passa saltando presto.
     segment({
       rows: {
+        // Il nastro sta solo sulla riga che si calpesta: sotto c'è il ghiaccio
+        // che regge la fabbrica. Un nastro murato non trasporta niente — è solo
+        // un disegno che promette una cosa che non può fare.
         13: '~~~>>>>>>>>>~~~~   +',
-        14: '~~~>>>>>>>>>~~~~   +',
+        14: '~~~~~~~~~~~~~~~~   +',
       },
     }),
 

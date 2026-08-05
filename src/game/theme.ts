@@ -124,8 +124,8 @@ export type MaterialName = keyof typeof MATERIAL;
 /**
  * I manti dei gatti giocabili.
  *
- * Stanno qui e non in `game/skins.ts` per la stessa ragione di tutto il resto:
- * nel progetto i colori esistono in un posto solo. `skins.ts` decide *quale*
+ * Stanno qui e non in `game/cats.ts` per la stessa ragione di tutto il resto:
+ * nel progetto i colori esistono in un posto solo. `cats.ts` decide *quale*
  * mantello ha un gatto e come si sblocca; qui c'è solo di che pasta è fatto.
  *
  * Valgono le stesse regole degli altri materiali — faccia illuminata più calda,

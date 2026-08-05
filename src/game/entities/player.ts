@@ -295,40 +295,11 @@ export class Player implements Body {
    * ventre in ombra, e un filo di luce di contorno sul lato illuminato che
    * stacca il gatto da qualunque fondale si trovi dietro.
    */
-  /**
-   * Opacità effettiva di una velatura.
-   *
-   * `setAlpha` del renderer è assoluto, non si moltiplica da solo: senza
-   * passare di qui, un gatto trasparente avrebbe il corpo velato e i riflessi
-   * pieni, cioè sembrerebbe rotto invece che trasparente.
-   */
-  private fade(value = 1): number {
-    return value * (this.skin.opacity ?? 1);
-  }
-
   draw(r: Renderer, tick: number): void {
     const cx = Math.round(this.centerX);
     const feet = Math.round(this.y + this.h);
     const running = this.isRunning;
     const speed = Math.abs(this.vx) / PHYSICS.maxSpeed;
-
-    // Alone: alcune pellicce si illuminano da sole. Va sotto a tutto il resto,
-    // altrimenti invece di un alone è una patina.
-    if (this.skin.aura) {
-      r.push();
-      r.setBlend('add');
-      r.setAlpha(0.16 + Math.abs(Math.sin(tick / 30)) * 0.1);
-      r.radial(cx, feet - this.h * 0.5, this.w * 1.5, this.h * 1.1, [
-        { at: 0, color: alpha(this.skin.aura, 0.75) },
-        { at: 1, color: alpha(this.skin.aura, 0) },
-      ]);
-      r.pop();
-    }
-
-    // Da qui in giù tutto il gatto sta dentro una sola opacità: le skin
-    // trasparenti la abbassano e ogni velatura la moltiplica (vedi `fade`).
-    r.push();
-    r.setAlpha(this.fade());
 
     // Fase del ciclo: mezzo giro per falcata, così le due zampe si alternano.
     const cycle = (this.runPhase / STRIDE) * Math.PI;
@@ -368,8 +339,6 @@ export class Player implements Body {
     drawLeg(r, cx - face * 2, feet, Math.max(0, -swing) * 3.2, 1, leg, paw);
 
     this.drawHead(r, cx + face * 3, top + 7.5, face, tick);
-    if (this.skin.crown) this.drawCrown(r, cx + face * 3, top - 6, tick);
-    r.pop();
     r.pop();
 
     // Sul ghiaccio le zampe non mordono: sotto i piedi resta una striscia
@@ -396,7 +365,7 @@ export class Player implements Body {
     if (running && speed > 0.85) {
       r.push();
       r.setBlend('add');
-      r.setAlpha(this.fade(0.12 + Math.abs(swing) * 0.12));
+      r.setAlpha(0.12 + Math.abs(swing) * 0.12);
       const backX = cx - face * (this.w / 2 + 4);
       for (let i = 0; i < 3; i++) {
         const len = 9 + i * 4;
@@ -414,7 +383,7 @@ export class Player implements Body {
   private drawContactShadow(r: Renderer, cx: number, feet: number): void {
     const tight = this.onGround ? 1 : 0.62;
     r.push();
-    r.setAlpha(this.fade(this.onGround ? 0.34 : 0.16));
+    r.setAlpha(this.onGround ? 0.34 : 0.16);
     r.radial(cx, feet + 1.5, this.w * 0.62 * tight, 4.5 * tight, [
       { at: 0, color: shade(0.85) },
       { at: 0.55, color: shade(0.4) },
@@ -445,7 +414,7 @@ export class Player implements Body {
 
     // Dorso in luce: la sorgente sta in alto a sinistra.
     r.push();
-    r.setAlpha(this.fade(0.85));
+    r.setAlpha(0.85);
     r.radial(cx - halfW * 0.35, y + h * 0.18, halfW * 1.05, h * 0.42, [
       { at: 0, color: alpha(fur.light, 0.95) },
       { at: 1, color: alpha(fur.light, 0) },
@@ -454,7 +423,7 @@ export class Player implements Body {
 
     // Ventre in ombra: occlusione tra le zampe.
     r.push();
-    r.setAlpha(this.fade(0.6));
+    r.setAlpha(0.6);
     r.radial(cx + halfW * 0.15, y + h * 0.95, halfW * 0.95, h * 0.4, [
       { at: 0, color: alpha(fur.dark, 0.8) },
       { at: 1, color: alpha(fur.dark, 0) },
@@ -464,7 +433,7 @@ export class Player implements Body {
     // Pelo: pochi tratti corti nel verso del manto, solo dove la luce radente
     // li rivelerebbe davvero.
     r.push();
-    r.setAlpha(this.fade(0.16));
+    r.setAlpha(0.16);
     for (let i = 0; i < 4; i++) {
       const fy = y + 3 + i * (h / 5);
       r.line([cx - halfW * 0.5, fy, cx + halfW * 0.2, fy + 1.5], 0.8, fur.dark);
@@ -475,7 +444,7 @@ export class Player implements Body {
 
     // Luce di contorno sul lato illuminato: separa il gatto dal fondale.
     r.push();
-    r.setAlpha(this.fade(0.5));
+    r.setAlpha(0.5);
     r.line(
       [
         cx - halfW * 0.1, y - 0.5,
@@ -489,7 +458,7 @@ export class Player implements Body {
 
     // Ombra proiettata dalla testa sulle spalle.
     r.push();
-    r.setAlpha(this.fade(0.18));
+    r.setAlpha(0.18);
     r.radial(cx + face * 2, y + 2, halfW * 0.8, 3, [
       { at: 0, color: shade(0.9) },
       { at: 1, color: shade(0) },
@@ -581,19 +550,19 @@ export class Player implements Body {
     }
 
     // Cranio.
-    r.ellipse(cx, cy, rx, ry, coat.base);
+    r.ellipse(cx, cy, rx, ry, fur.base);
     r.push();
-    r.setAlpha(this.fade(0.9));
+    r.setAlpha(0.9);
     r.radial(cx - 2.4, cy - 2.4, rx * 0.85, ry * 0.85, [
-      { at: 0, color: alpha(coat.light, 1) },
-      { at: 1, color: alpha(coat.light, 0) },
+      { at: 0, color: alpha(fur.light, 1) },
+      { at: 1, color: alpha(fur.light, 0) },
     ]);
     r.pop();
     r.push();
-    r.setAlpha(this.fade(0.45));
+    r.setAlpha(0.45);
     r.radial(cx + 2, cy + 3.2, rx * 0.8, ry * 0.55, [
-      { at: 0, color: alpha(coat.dark, 0.9) },
-      { at: 1, color: alpha(coat.dark, 0) },
+      { at: 0, color: alpha(fur.dark, 0.9) },
+      { at: 1, color: alpha(fur.dark, 0) },
     ]);
     r.pop();
 
@@ -626,14 +595,14 @@ export class Player implements Body {
     // Muso: zona più chiara, naso, bocca.
     const muzzleY = cy + 3.2;
     r.push();
-    r.setAlpha(this.fade(0.6));
-    r.ellipse(cx + face * 0.6, muzzleY + 0.5, 3.8, 2.5, alpha(coat.light, 0.9));
+    r.setAlpha(0.6);
+    r.ellipse(cx + face * 0.6, muzzleY + 0.5, 3.8, 2.5, alpha(fur.light, 0.9));
     r.pop();
     const noseX = cx + face * 0.6;
     r.polygon([noseX - 1.2, muzzleY, noseX + 1.2, muzzleY, noseX, muzzleY + 1.3], skin.dark);
-    r.line([noseX, muzzleY + 1.3, noseX, muzzleY + 2], 0.7, alpha(coat.deep, 0.8));
+    r.line([noseX, muzzleY + 1.3, noseX, muzzleY + 2], 0.7, alpha(fur.deep, 0.8));
     r.push();
-    r.setAlpha(this.fade(0.75));
+    r.setAlpha(0.75);
     r.line([noseX - 1.9, muzzleY + 2.7, noseX, muzzleY + 2], 0.7, fur.deep);
     r.line([noseX + 1.9, muzzleY + 2.7, noseX, muzzleY + 2], 0.7, fur.deep);
     r.pop();
@@ -641,7 +610,7 @@ export class Player implements Body {
     // Baffi: si muovono appena, sempre allo stesso ritmo.
     const twitch = Math.sin(tick / 26) * 0.6;
     r.push();
-    r.setAlpha(this.fade(0.55));
+    r.setAlpha(0.55);
     for (const side of [-1, 1] as const) {
       const wx = cx + side * 3;
       for (let i = 0; i < 3; i++) {
@@ -649,39 +618,6 @@ export class Player implements Body {
         r.line([wx, wy, wx + side * (6 + i), wy - 1.6 + i * 1.2 + twitch], 0.6, glare(0.7));
       }
     }
-    r.pop();
-  }
-
-  /**
-   * La coroncina del gatto che ha battuto il Padrone.
-   *
-   * È volutamente storta e troppo grande: non è una corona sua, è quella che
-   * gli è caduta addosso alla fine di 1-11.
-   */
-  private drawCrown(r: Renderer, cx: number, y: number, tick: number): void {
-    const gold = MATERIAL.gold;
-    r.push();
-    r.translate(cx, y);
-    r.rotate(-0.12);
-    r.gradientRect(-7, -1, 14, 4, [
-      { at: 0, color: gold.light },
-      { at: 0.5, color: gold.base },
-      { at: 1, color: gold.dark },
-    ]);
-    for (let i = 0; i < 3; i++) {
-      const px = -5 + i * 5;
-      r.polygon([px - 2, -1, px + 2, -1, px, -6], gold.base);
-      r.ellipse(px, -6.4, 1, 1, gold.light);
-    }
-    r.rect(-7, -1, 14, 1, alpha(gold.spec, 0.8));
-    r.push();
-    r.setBlend('add');
-    r.setAlpha(this.fade(0.12 + Math.abs(Math.sin(tick / 34)) * 0.12));
-    r.radial(0, -2, 16, 12, [
-      { at: 0, color: alpha(gold.light, 0.8) },
-      { at: 1, color: alpha(gold.light, 0) },
-    ]);
-    r.pop();
     r.pop();
   }
 
@@ -712,7 +648,7 @@ export class Player implements Body {
     r.line(points, 3.2, fur.dark);
     r.line(points, 2.2, fur.base);
     r.push();
-    r.setAlpha(this.fade(0.55));
+    r.setAlpha(0.55);
     r.line(points.slice(0, 6), 1, fur.light);
     r.pop();
 
@@ -759,11 +695,11 @@ function drawLeg(
   // Zampa: una piccola ellisse schiacciata, con l'ombra sotto.
   r.ellipse(x, feet - 1.4, 3.2, 1.9, exposure < 1 ? mix(paw.base, paw.dark, 0.4) : paw.light);
   r.push();
-  r.setAlpha(0.35 * exposure * opacity);
+  r.setAlpha(0.35 * exposure);
   r.line([x - 1.6, top + 1, x - 1.6, feet - 2.4], 1, alpha(fur.light, 0.9));
   r.pop();
   r.push();
-  r.setAlpha(0.3 * opacity);
+  r.setAlpha(0.3);
   r.ellipse(x, feet - 0.4, 3, 1, PALETTE.ink);
   r.pop();
 }

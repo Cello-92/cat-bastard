@@ -13,6 +13,7 @@ import { Diver } from './entities/diver';
 import { Drone } from './entities/drone';
 import { FallingSpike } from './entities/falling-spike';
 import { Player } from './entities/player';
+import { Rubble } from './entities/rubble';
 import { Sentry } from './entities/sentry';
 import { Shroom } from './entities/shroom';
 import { Snowball } from './entities/snowball';
@@ -22,7 +23,7 @@ import { drawBackground } from './render/background';
 import { drawTile, type OpenSides } from './render/tiles';
 import { MATERIAL, PALETTE, SKIES, alpha } from './theme';
 import { DEATH_CAUSE, tauntFor, type DeathCause } from './taunts';
-import { TILE, isDeadly, isSpawner, joins } from './tiles';
+import { TILE, beltDirection, isDeadly, isSpawner, joins } from './tiles';
 
 /**
  * Il mondo di gioco: mappa, entità, regole, camera.
@@ -175,8 +176,6 @@ export class World {
   private brickRespawn = new Map<string, number>();
   private gateCells: { c: number; r: number }[] = [];
   private gateOpen = false;
-  /** Cubo segreto già raccolto in questo tentativo: si prende una volta sola. */
-  private secretTaken = false;
   /**
    * Tick di "colpa del nastro" rimasti.
    *
@@ -238,10 +237,10 @@ export class World {
         this.trapBricks.push({ c, r, fired: false, instant: false });
       } else if (tile === TILE.COLLAPSE) {
         this.trapBricks.push({ c, r, fired: false, instant: true });
-      } else if (tile === TILE.SKIN_CUBE && this.secretTaken) {
-        // Già preso in questo tentativo: non deve ricomparire a ogni morte,
-        // altrimenti il giocatore crede di poterlo raccogliere di nuovo.
-        this.map.clear(c, r);
+      } else if (tile === TILE.BOSS_BRICK) {
+        this.bossBricks.push({ c, r });
+      } else if (tile === TILE.BOSS_GATE) {
+        this.gateCells.push({ c, r });
       } else if (tile === TILE.POP_SPIKES) {
         this.popSpikes.push({ c, r, snap: false });
       } else if (tile === TILE.SNAP_SPIKES) {
@@ -273,6 +272,15 @@ export class World {
         return new Drone(c * TILE_SIZE + 3, r * TILE_SIZE + 8);
       case TILE.SNOWBALL:
         return new Snowball(c * TILE_SIZE + 1, r * TILE_SIZE + 2);
+      case TILE.BOSS: {
+        // Il marcatore sta nella cella *sopra* il pavimento: il Padrone ci
+        // poggia i piedi, non ci sta dentro.
+        this.boss = new Boss(
+          c * TILE_SIZE + (TILE_SIZE - BOSS.width) / 2,
+          (r + 1) * TILE_SIZE - BOSS.height,
+        );
+        return this.boss;
+      }
       default:
         return new Walker(x, y, tile === TILE.EVIL_WALKER);
     }
@@ -348,8 +356,6 @@ export class World {
         this.lastDeadVent = this.ticks;
       } else if (tile === TILE.CHECKPOINT) {
         this.activateCheckpoint(c, r);
-      } else if (tile === TILE.SKIN_CUBE) {
-        this.collectSkinCube(c, r);
       } else if (tile === TILE.GOAL) {
         this.win();
         return;
@@ -428,6 +434,16 @@ export class World {
         this.beltGrace = RULES.beltBlameTicks;
       } else if (tile === TILE.INVISIBLE) {
         this.reveal(c, r);
+        continue;
+      } else if (tile === TILE.BOSS_BRICK) {
+        // Salirci sopra è l'unico modo di caricare l'arma: da qui parte il
+        // conto alla rovescia, e il mattone lo dice tremando.
+        const brickKey = TileMap.key(c, r);
+        if (!this.brickFalling.has(brickKey)) {
+          this.brickFalling.set(brickKey, RULES.bossBrickDelayTicks);
+          this.audio.play('crumble');
+          this.camera.shake(2);
+        }
         continue;
       }
 

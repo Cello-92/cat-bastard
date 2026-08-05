@@ -7,6 +7,7 @@ import { WORLD_1_5 } from './world-1-5';
 import { WORLD_1_6 } from './world-1-6';
 import { WORLD_1_7 } from './world-1-7';
 import { WORLD_1_8 } from './world-1-8';
+import { WORLD_1_9 } from './world-1-9';
 
 /**
  * Registro dei livelli, in ordine di gioco.
@@ -21,6 +22,7 @@ export const LEVELS: readonly LevelDef[] = [
   WORLD_1_6,
   WORLD_1_7,
   WORLD_1_8,
+  WORLD_1_9,
 ];
 
 export const firstLevel = (): LevelDef => {

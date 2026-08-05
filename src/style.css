@@ -272,6 +272,101 @@ canvas {
 .btn:hover { transform: translateY(-1px); box-shadow: 0 5px 0 var(--hot-deep), 0 16px 34px -10px rgba(255, 46, 136, 0.9); }
 .btn:active { transform: translateY(4px); box-shadow: 0 0 0 var(--hot-deep); }
 .btn:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+.btn:disabled { opacity: 0.55; cursor: progress; transform: none; }
+
+/* Il bottone che non è la risposta principale: stessa forma, nessun peso. */
+.btn--ghost {
+  color: rgba(244, 241, 234, 0.8);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: none;
+  padding: 11px 22px;
+  font-size: 0.9em;
+  letter-spacing: 2px;
+}
+.btn--ghost:hover { color: #fff; background: rgba(255, 255, 255, 0.12); transform: none; box-shadow: none; }
+.btn--ghost:active { transform: translateY(2px); box-shadow: none; }
+
+/* ---------------------------------------------------------------- account */
+/*
+ * Il popup dell'account. Non è una pagina di registrazione: è una domanda che
+ * il gioco fa una volta sola e a cui si può rispondere di no. Quindi niente
+ * campi obbligatori in faccia all'apertura — prima si spiega a cosa serve, il
+ * modulo arriva solo se lo si è chiesto.
+ */
+.screen--account {
+  gap: 12px;
+  /* Più scura del menu: qui si smette di guardare il gioco dietro. */
+  background: radial-gradient(90% 70% at 50% 40%, rgba(11, 13, 20, 0.88), rgba(4, 5, 9, 0.97));
+}
+
+.account__title {
+  font-size: clamp(17px, 3.4vw, 26px);
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--hot);
+  text-shadow: 0 0 26px rgba(255, 46, 136, 0.5);
+}
+.account__lead { max-width: 46ch; opacity: 0.85 !important; }
+.account__note {
+  max-width: 46ch;
+  font-size: clamp(9.5px, 1.8vw, 11.5px) !important;
+  line-height: 1.55;
+  opacity: 0.5 !important;
+}
+
+.account__form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(360px, 88%);
+  margin-top: 2px;
+}
+
+.account__field { display: flex; flex-direction: column; gap: 5px; text-align: left; }
+.account__field span {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2.4px;
+  opacity: 0.55;
+}
+.account__field input {
+  font: inherit;
+  font-family: var(--mono-font);
+  /* 16px esatti e non uno di meno: sotto questa soglia iOS zooma la pagina
+     appena si tocca il campo, e il riquadro del gioco finisce fuori schermo. */
+  font-size: 16px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  padding: 10px 12px;
+  /* Il resto della pagina non è selezionabile apposta; un campo di testo sì. */
+  -webkit-user-select: text;
+  user-select: text;
+}
+.account__field input:focus {
+  outline: none;
+  border-color: var(--hot);
+  background: rgba(255, 46, 136, 0.08);
+}
+
+.account__error {
+  font-size: clamp(10px, 2vw, 12px) !important;
+  line-height: 1.45;
+  color: var(--hot);
+  opacity: 1 !important;
+  max-width: none !important;
+  text-align: left;
+}
+
+.account__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  align-items: center;
+}
 
 /* ---------------------------------------------------------------- touch pad */
 .pad {

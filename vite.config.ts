@@ -12,6 +12,7 @@ export default defineConfig({
       '@core': src('core'),
       '@engine': src('engine'),
       '@game': src('game'),
+      '@net': src('net'),
       '@ui': src('ui'),
     },
   },

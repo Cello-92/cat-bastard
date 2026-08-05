@@ -9,7 +9,7 @@ Ogni blocco è sospetto, ogni fungo è una trappola, la bandiera potrebbe non es
 
 ### [▶︎ GIOCA ORA](https://cat-bastard.com/)
 
-Niente installazione. Niente account. Niente pietà.
+Niente installazione. Niente email. Niente pietà.
 
 <sub>TypeScript · Canvas 2D · zero dipendenze a runtime · zero asset binari</sub>
 
@@ -73,6 +73,18 @@ solo dopo aver finito tutto.
 
 Non danno nessun vantaggio — nemmeno mezzo pixel di salto in più. Cambiano solo la
 faccia di chi muore, ed è l'unica promessa che questo gioco mantiene per intero.
+
+## La classifica
+
+I tempi si contano al millesimo e finiscono in una classifica pubblica, livello
+per livello. Per entrarci serve un account, e un account qui è **un nickname e
+una password**: niente email, niente conferme, niente recupero. Se perdi la
+password hai perso l'account — è scritto anche dentro al gioco, prima che tu la
+scelga.
+
+Si può giocare benissimo senza: il popup all'avvio esce una volta sola e ha
+"non ora" fra le risposte. Chi risponde così però se lo sente dire chiaro —
+tempi e progressi restano solo in quel browser, e un browser si svuota da solo.
 
 ## Comandi
 

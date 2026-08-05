@@ -68,6 +68,10 @@ Un rage game funziona solo se è *ingiusto ma leale*. Ogni trappola deve rispett
 - **Nessun asset binario.** Grafica disegnata via codice, audio sintetizzato con WebAudio.
 - **Path relativi** (`base: './'` in vite.config): il sito vive in una sottocartella.
 - **60fps su hardware modesto**, e deve funzionare su mobile (pad touch già presente).
+  Un frame costa circa 2000-3000 chiamate di disegno: prima di aggiungerne, guardare
+  `alpha()` e `mix()` in `theme.ts` — sono le funzioni più chiamate del gioco e sono
+  memoizzate apposta, perché il vero nemico degli scatti non è il calcolo, è la
+  spazzatura che si crea a ogni frame e che qualcuno prima o poi deve raccogliere.
 - Codice e nomi in **inglese**, commenti e testi di gioco in **italiano**.
 
 ## Architettura
@@ -101,6 +105,12 @@ Punti fermi:
 - **`game.ts` è il composition root**: l'unico file che conosce tutti i pezzi.
 - **La simulazione gira a timestep fisso** (60 update/s). Le costanti in `config.ts` sono *per tick*.
   Il rendering gira a frame liberi. Su un monitor a 144Hz il gatto non salta più in alto.
+  Il tempo trascorso viene **agganciato al refresh** (`core/loop.ts`): il browser non
+  consegna 16.6667ms ma 16.6 o 16.7, perché arrotonda i timestamp, e senza aggancio
+  l'accumulatore va in deriva finché un frame non fa nessun update e quello dopo ne fa
+  due. Non è un calo di frame rate — non si vede in nessun contatore — ma si sente, su
+  qualunque computer. E un frame senza update non viene ridisegnato: il disegno dipende
+  solo dallo stato e dal numero di tick, quindi sarebbe la stessa immagine identica.
 - **Colori solo in `theme.ts`**, mai hardcoded nel codice di disegno (i valori UI sono duplicati in
   `src/style.css`: vanno tenuti allineati a mano).
 

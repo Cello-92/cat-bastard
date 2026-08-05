@@ -376,6 +376,9 @@ export const shade = (alpha: number): string => `rgba(0,0,0,${alpha})`;
 /** Bianco semitrasparente: luci speculari e velature. */
 export const glare = (alpha: number): string => `rgba(255,255,255,${alpha})`;
 
+/** Tetto delle cache di colore: oltre, si riparte da zero. */
+const MAX_CACHE = 2048;
+
 const hexCache = new Map<string, readonly [number, number, number]>();
 
 /**
@@ -419,6 +422,10 @@ const channels = (color: string): readonly [number, number, number] => {
     Number.isFinite(g) ? g : 0,
     Number.isFinite(b) ? b : 0,
   ] as const;
+  // Le miscele producono colori sempre nuovi, quindi questa cache non ha un
+  // limite naturale: in una partita lunga crescerebbe per sempre. Oltre il
+  // tetto si riparte, e le combinazioni calde si riscaldano in due frame.
+  if (hexCache.size >= MAX_CACHE) hexCache.clear();
   hexCache.set(color, rgb);
   return rgb;
 };
@@ -442,14 +449,43 @@ export const mix = (from: string, to: string, t: number): string => {
   const g = Math.round(g1 + (g2 - g1) * amount);
   const b = Math.round(b1 + (b2 - b1) * amount);
   const value = `rgb(${r},${g},${b})`;
+  if (mixCache.size >= MAX_CACHE) mixCache.clear();
   mixCache.set(key, value);
   return value;
 };
 
-/** Stesso colore, con trasparenza. */
+/**
+ * Stesso colore, con trasparenza.
+ *
+ * È la funzione più chiamata di tutto il gioco: un migliaio di volte per
+ * frame, cioè sessantamila stringhe al secondo buttate via appena create. Non
+ * è un costo di calcolo — è carburante per il garbage collector, e ogni tanto
+ * il garbage collector si prende il suo millisecondo proprio mentre il gatto è
+ * a mezz'aria.
+ *
+ * La cache è annidata (colore -> opacità -> stringa) e non concatenata,
+ * perché una chiave del tipo `${hex}|${a}` sarebbe una stringa nuova a ogni
+ * chiamata: si risparmierebbe il risultato e si butterebbe via la chiave, cioè
+ * niente. Così invece un colore già visto non alloca proprio niente.
+ */
+const alphaCache = new Map<string, Map<number, string>>();
+
 export const alpha = (hex: string, a: number): string => {
+  let shades = alphaCache.get(hex);
+  if (!shades) {
+    if (alphaCache.size >= MAX_CACHE) alphaCache.clear();
+    shades = new Map();
+    alphaCache.set(hex, shades);
+  }
+
+  const cached = shades.get(a);
+  if (cached !== undefined) return cached;
+
   const [r, g, b] = channels(hex);
-  return `rgba(${r},${g},${b},${a})`;
+  const value = `rgba(${r},${g},${b},${a})`;
+  if (shades.size >= MAX_CACHE) shades.clear();
+  shades.set(a, value);
+  return value;
 };
 
 /** Schiarisce (t > 0) o scurisce (t < 0) un colore. */

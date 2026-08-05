@@ -1,4 +1,5 @@
 import { Audio } from '@core/audio';
+import { GameLoop } from '@core/loop';
 import type { Input } from '@core/input';
 import { buySkin, equipSkin, recordClear, type Progress } from '@core/storage';
 import { SKINS, isSkinUnlocked } from '@game/skins';
@@ -903,6 +904,98 @@ console.log('\nNastri trasportatori');
     check(
       said.some((t) => t.includes('nastro') || t.includes('pavimento')),
       `la caduta dal nastro è attribuita al nastro ("${said[0] ?? ''}")`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------- il ritmo del loop
+//
+// Il difetto che questo controllo fissa non è un calo di frame rate: è peggio,
+// perché non si vede in nessun contatore. Il browser non consegna 16.6667ms tra
+// un frame e l'altro — consegna 16.6 o 16.7, perché arrotonda i timestamp — e
+// con 16.6 l'accumulatore resta indietro di sette centesimi di millisecondo a
+// frame. Ogni ~250 frame arriva un frame che non fa nessun update, seguito da
+// uno che ne fa due: lo schermo non ha perso niente, ma il gatto sta fermo un
+// frame e poi salta il doppio. È lo scatto che si vede su qualunque computer,
+// veloce o lento, ed è per questo che sembrava non dipendere dall'hardware.
+//
+// La cura è agganciare il tempo trascorso al multiplo di tick più vicino,
+// quando ci va vicinissimo. Qui si verifica che l'aggancio ci sia (cadenza
+// perfettamente regolare) e che NON mangi i rallentamenti veri, che vanno
+// recuperati come prima.
+console.log('\nIl ritmo del loop');
+{
+  const pending: FrameRequestCallback[] = [];
+  const globals = globalThis as unknown as {
+    requestAnimationFrame: (cb: FrameRequestCallback) => number;
+    cancelAnimationFrame: (id: number) => void;
+  };
+  globals.requestAnimationFrame = (cb: FrameRequestCallback): number => pending.push(cb);
+  globals.cancelAnimationFrame = (): void => {};
+
+  /** Fa girare il loop con tempi decisi da noi e riporta cosa è successo. */
+  const run = (deltas: readonly number[]): { perFrame: number[]; renders: number } => {
+    pending.length = 0;
+    let updates = 0;
+    let renders = 0;
+    const loop = new GameLoop(
+      () => updates++,
+      () => renders++,
+    );
+    let now = performance.now();
+    loop.start();
+
+    const perFrame: number[] = [];
+    for (const delta of deltas) {
+      const frame = pending.pop();
+      pending.length = 0;
+      if (!frame) break;
+      now += delta;
+      const before = updates;
+      frame(now);
+      perFrame.push(updates - before);
+    }
+    loop.stop();
+    return { perFrame, renders };
+  };
+
+  const steady = (delta: number, frames: number): number[] =>
+    new Array<number>(frames).fill(delta);
+
+  // 60Hz con i timestamp arrotondati per difetto: il caso che rompeva tutto.
+  {
+    const { perFrame } = run(steady(16.6, 300));
+    const irregular = perFrame.filter((n) => n !== 1).length;
+    check(irregular === 0, `a 16.6ms per frame ogni frame fa un update solo (irregolari: ${irregular})`);
+  }
+  // ...e per eccesso.
+  {
+    const { perFrame } = run(steady(16.7, 300));
+    const irregular = perFrame.filter((n) => n !== 1).length;
+    check(irregular === 0, `a 16.7ms per frame ogni frame fa un update solo (irregolari: ${irregular})`);
+  }
+  // Schermo a 30Hz: due update a frame, sempre gli stessi due.
+  {
+    const { perFrame } = run(steady(33.3, 200));
+    const irregular = perFrame.filter((n) => n !== 2).length;
+    check(irregular === 0, `a 33.3ms per frame ogni frame fa due update (irregolari: ${irregular})`);
+  }
+  // Schermo a 120Hz: un update ogni due frame, e i frame senza update non si
+  // ridisegnano — sarebbero copie identiche di quello prima.
+  {
+    const { perFrame, renders } = run(steady(8.33, 200));
+    const updates = perFrame.reduce((a, b) => a + b, 0);
+    check(updates > 90 && updates < 110, `a 120Hz la simulazione resta a 60 update (${updates} in 200 frame)`);
+    check(renders <= updates + 1, `a 120Hz non si disegna due volte la stessa immagine (${renders} disegni)`);
+  }
+  // Un rallentamento vero non deve essere confuso con l'arrotondamento: va
+  // recuperato, non nascosto. Il tetto di cinque tick resta quello di prima —
+  // serve a non finire in una spirale quando la scheda torna in primo piano.
+  {
+    const recovered = run([16.6, 16.6, 100, 16.6, 16.6]).perFrame[2] ?? 0;
+    check(
+      recovered >= 4 && recovered <= 5,
+      `un frame da 100ms recupera il tempo perso senza spirale (${recovered} update)`,
     );
   }
 }

@@ -1,6 +1,9 @@
 import { Audio } from '@core/audio';
+import { GameLoop } from '@core/loop';
 import type { Input } from '@core/input';
-import { TILE_SIZE } from '@game/config';
+import { buySkin, equipSkin, recordClear, type Progress } from '@core/storage';
+import { SKINS, isSkinUnlocked } from '@game/skins';
+import { RULES, TILE_SIZE } from '@game/config';
 import { LEVELS } from '@game/levels';
 import { SEGMENT_COLS, LEVEL_ROWS } from '@game/config';
 import { defineLevel, segment } from '@game/levels/level';
@@ -74,10 +77,15 @@ for (const level of LEVELS) {
     `${level.name}: larghezza multipla di ${SEGMENT_COLS}`,
   );
   check(rows.some((r) => r.includes(TILE.GOAL)), `${level.name}: ha un arrivo`);
-  check(
-    rows.some((r) => r.includes(TILE.CHECKPOINT)),
-    `${level.name}: ha almeno un checkpoint`,
-  );
+  // Le arene dei boss sono l'unica eccezione alla regola dei checkpoint, ed è
+  // una scelta di design dichiarata nel livello: uno scontro si ricomincia da
+  // capo. In cambio si rinasce dentro l'arena (vedi levels/level.ts).
+  if (!level.boss) {
+    check(
+      rows.some((r) => r.includes(TILE.CHECKPOINT)),
+      `${level.name}: ha almeno un checkpoint`,
+    );
+  }
 
   const spawnRow = rows[level.spawn.r];
   check(
@@ -111,7 +119,10 @@ for (const level of LEVELS) {
       // appena li tocchi: come appoggio non contano, quindi il livello deve
       // restare attraversabile anche senza di loro.
       const vanishes =
-        tile === TILE.FAKE_GROUND || tile === TILE.GHOST || tile === TILE.COLLAPSE;
+        tile === TILE.FAKE_GROUND ||
+        tile === TILE.GHOST ||
+        tile === TILE.COLLAPSE ||
+        tile === TILE.BOSS_BRICK;
       if (tile !== TILE.EMPTY && !vanishes && isSolid(tile)) {
         hasFloor = true;
         break;
@@ -188,10 +199,12 @@ for (const level of LEVELS) {
     for (let c = 0; c < row.length; c++) if (row[c] === TILE.CHECKPOINT) checkpoints.push(c);
   }
   check(goalColumn > cols * 0.8, `${level.name}: l'arrivo è in fondo (colonna ${goalColumn} su ${cols})`);
-  check(
-    checkpoints.some((c) => c > cols * 0.2 && c < goalColumn),
-    `${level.name}: almeno un checkpoint utile tra l'inizio e l'arrivo (${checkpoints.join(', ') || 'nessuno'})`,
-  );
+  if (!level.boss) {
+    check(
+      checkpoints.some((c) => c > cols * 0.2 && c < goalColumn),
+      `${level.name}: almeno un checkpoint utile tra l'inizio e l'arrivo (${checkpoints.join(', ') || 'nessuno'})`,
+    );
+  }
 }
 
 // ---------------------------------------------------------------- attraversabilità
@@ -258,9 +271,12 @@ for (const level of LEVELS) {
   // Dopo 600 tick il gatto può trovarsi a metà di una morte, e `kill()`
   // ignora di proposito le richieste in quello stato: si aspetta che il mondo
   // sia tornato giocabile, altrimenti si starebbe testando il caso sbagliato.
-  for (let tick = 0; tick < 200 && world.state !== 'playing'; tick++) {
-    world.update(fakeInput(tick));
-  }
+  //
+  // Da qui in poi si usa l'input fermo, non quello che corre a destra: nelle
+  // arene dei boss un gatto che corre in avanti muore di nuovo prima di aver
+  // finito di rinascere, e si finirebbe per misurare quello invece del respawn.
+  const stand = { isDown: () => false, justPressed: () => false, endTick: () => {} } as unknown as Input;
+  for (let tick = 0; tick < 200 && world.state !== 'playing'; tick++) world.update(stand);
   check(world.state === 'playing', `${level.name}: il mondo torna sempre giocabile`);
 
   const deathsBefore = world.deaths;
@@ -269,7 +285,7 @@ for (const level of LEVELS) {
   check(world.state === 'dying', `${level.name}: kill() entra in stato "dying"`);
   check(taunts > 0, `${level.name}: la morte produce una battuta`);
 
-  for (let tick = 0; tick < 120; tick++) world.update(fakeInput(tick));
+  for (let tick = 0; tick < 120; tick++) world.update(stand);
   check(world.state === 'playing', `${level.name}: dopo la morte si torna a giocare`);
 
   // Vittoria: si teletrasporta il gatto sull'arrivo.
@@ -278,7 +294,7 @@ for (const level of LEVELS) {
   if (goal) {
     world.player.x = goal.c * TILE_SIZE;
     world.player.y = goal.r * TILE_SIZE;
-    world.update(fakeInput(0));
+    world.update(stand);
     check(world.state === 'won', `${level.name}: toccare l'arrivo vince`);
     check(wins === 1, `${level.name}: onWin chiamato una sola volta`);
   }
@@ -398,6 +414,368 @@ console.log('\nTrappole nascoste');
     world.player.y = 12 * TILE_SIZE;
     world.update(idle);
     check(world.map.get(5, 8) === TILE.EMPTY, 'il masso si stacca appena gli passi sotto');
+  }
+}
+
+// ---------------------------------------------------------------- lo scontro col Padrone
+//
+// Il risolutore sa dire se l'arena si attraversa, non se il boss si può
+// battere: non conosce le entità, e non è il posto giusto per insegnarglielo.
+// Il contratto del combattimento si verifica qui, ed è fatto di poche cose che
+// non possono smettere di essere vere senza che 1-11 diventi ingiocabile.
+//
+//   - toccarlo uccide, e schiacciarlo pure (è un boss, non un fungo);
+//   - salire su un mattone del soffitto lo stacca;
+//   - la muratura si ricompone, quindi non si può restare senza armi;
+//   - un masso addosso spegne una gemma, e quattro gemme aprono il portone;
+//   - mentre cammina scansa, mentre è impegnato no: è il modo in cui bara, ed
+//     è anche l'unico motivo per cui lo scontro ha una strategia.
+console.log('\nLo scontro col Padrone');
+{
+  const bossAudio = new Audio();
+  const idle = { isDown: () => false, justPressed: () => false, endTick: () => {} } as unknown as Input;
+
+  /** Tana minima: pavimento di roccia più quello che serve alla prova. */
+  const lair = (rows: Record<number, string>): World => {
+    const level = defineLevel({
+      id: 'boss-test',
+      name: 'TEST',
+      title: 'padrone',
+      sky: 'cave',
+      boss: true,
+      spawn: { c: 1, r: 12 },
+      segments: [segment({ rows: { ...rows, 13: FULL_GROUND, 14: FULL_GROUND } })],
+    });
+    return new World(level, bossAudio, { onTaunt: () => {}, onWin: () => {} });
+  };
+
+  const arena = LEVELS.find((level) => level.boss);
+  check(arena !== undefined, "esiste un livello dichiarato come arena di un boss");
+  check(
+    arena?.rows.some((row) => row.includes(TILE.BOSS)) === true,
+    "l'arena contiene il marcatore del Padrone",
+  );
+  check(
+    arena?.rows.some((row) => row.includes(TILE.BOSS_GATE)) === true,
+    "l'arena è chiusa da un portone",
+  );
+  check(
+    (arena?.rows.reduce((n, row) => n + [...row].filter((c) => c === TILE.BOSS_BRICK).length, 0) ?? 0) >= 4,
+    "l'arena ha almeno quattro mattoni staccabili (uno per gemma)",
+  );
+
+  // Ogni mattone dev'essere raggiungibile davvero, saltando.
+  //
+  // È lo stesso ragionamento del risolutore applicato all'arma invece che
+  // all'uscita: quattro gemme si spengono con quattro massi, e un mattone su
+  // cui non si riesce a salire è un masso che non esiste. Qui il livello viene
+  // riscritto un mattone alla volta — quello sotto esame diventa roccia (finché
+  // non ci sali sopra è solido per davvero) e sopra ci si mette un arrivo
+  // finto: se il risolutore ci arriva, ci arriva anche il gatto.
+  if (arena) {
+    const unreachable: string[] = [];
+    arena.rows.forEach((row, r) => {
+      [...row].forEach((tile, c) => {
+        if (tile !== TILE.BOSS_BRICK) return;
+        const probe = arena.rows.map((line, i) => {
+          const chars = [...line];
+          if (i === r) chars[c] = TILE.ROCK;
+          if (i === r - 1) chars[c] = TILE.GOAL;
+          return chars.join('');
+        });
+        const result = solve({ ...arena, id: `probe-${c}-${r}`, rows: probe });
+        if (!result.solved) unreachable.push(`colonna ${c} riga ${r}`);
+      });
+    });
+    check(
+      unreachable.length === 0,
+      `ogni mattone dell'arena è raggiungibile${unreachable.length ? ` (irraggiungibili: ${unreachable.join('; ')})` : ''}`,
+    );
+  }
+
+  // Toccarlo, in qualunque modo, è un modo di morire.
+  {
+    const world = lair({ 12: '     @' });
+    const boss = world.boss;
+    check(boss !== null, 'il marcatore "@" diventa davvero un Padrone');
+    if (boss) {
+      world.player.x = boss.x + 10;
+      world.player.y = boss.y + 20;
+      world.update(idle);
+      check(world.state === 'dying', 'toccare il Padrone uccide');
+    }
+  }
+  {
+    const world = lair({ 12: '     @' });
+    world.boss?.onStomp(world);
+    check(world.state === 'dying', 'saltargli in testa uccide: ha una corona di punte');
+  }
+
+  // Il mattone del soffitto: si stacca se ci sali, e poi il soffitto si rifà.
+  {
+    const world = lair({ 8: '     H' });
+    world.player.reset(5 * TILE_SIZE + 4, 8 * TILE_SIZE - world.player.h);
+    world.update(idle);
+    check(world.player.onGround, 'sul mattone del soffitto ci si sta in piedi');
+
+    for (let tick = 0; tick < RULES.bossBrickDelayTicks + 4; tick++) world.update(idle);
+    check(world.map.get(5, 8) === TILE.EMPTY, 'salirci sopra stacca il mattone');
+
+    // Il gatto è caduto insieme al masso: lo si sposta, altrimenti la muratura
+    // non può ricomporsi addosso a lui (ed è giusto che non lo faccia).
+    world.player.reset(1 * TILE_SIZE, 12 * TILE_SIZE);
+    for (let tick = 0; tick < RULES.bossBrickRespawnTicks + 20; tick++) world.update(idle);
+    check(
+      world.map.get(5, 8) === TILE.BOSS_BRICK,
+      'la muratura si ricompone: non si resta mai senza armi',
+    );
+  }
+
+  // Un masso in testa mentre è impegnato: gemma spenta.
+  {
+    const world = lair({ 8: '     H', 12: '     @' });
+    const boss = world.boss;
+    if (boss) {
+      world.player.reset(1 * TILE_SIZE, 12 * TILE_SIZE);
+      // "Stordito" è uno degli stati in cui non può barare.
+      boss.state = 'stun';
+      world.bossSlam(boss);
+      for (let tick = 0; tick < 60; tick++) world.update(idle);
+      check(boss.hits === 1, `un masso addosso spegne una gemma (colpi: ${boss.hits})`);
+    }
+  }
+
+  // Mentre cammina, invece, scansa: è esattamente il suo modo di barare.
+  //
+  // Il confronto è tra due tane identiche, una col masso in arrivo e una
+  // senza: lo scarto si vede nella distanza percorsa, perché schivare è più
+  // veloce che camminare. Misurare "si è spostato" e basta non direbbe niente,
+  // visto che il Padrone cammina comunque.
+  {
+    const walked = (drop: boolean): { distance: number; hits: number; state: string } => {
+      const world = lair({ 8: '     H', 12: '     @' });
+      const boss = world.boss;
+      if (!boss) return { distance: 0, hits: -1, state: 'assente' };
+
+      world.player.reset(1 * TILE_SIZE, 12 * TILE_SIZE);
+      // Due tick per accorgersi che il gatto è entrato: poi cammina.
+      world.update(idle);
+      world.update(idle);
+      const from = boss.centerX;
+      if (drop) world.bossSlam(boss);
+      for (let tick = 0; tick < 30; tick++) world.update(idle);
+      return { distance: Math.abs(boss.centerX - from), hits: boss.hits, state: boss.state };
+    };
+
+    const calm = walked(false);
+    const scared = walked(true);
+    check(calm.state === 'stalk', `sveglio, il Padrone cammina (stato: ${calm.state})`);
+    check(scared.hits === 0, 'un masso onesto non lo prende mai: si sposta e basta');
+    check(
+      scared.distance > calm.distance + 15,
+      `scansare è più veloce che camminare (${Math.round(scared.distance)}px contro ${Math.round(calm.distance)}px)`,
+    );
+  }
+
+  // Impegnato in qualcosa, invece, non può più barare: è la finestra buona.
+  {
+    const world = lair({ 12: '     @' });
+    const boss = world.boss;
+    if (boss) {
+      for (const state of ['charge', 'stun', 'slam', 'wind'] as const) {
+        boss.state = state;
+        check(!boss.canDodge, `in stato "${state}" non può scansare`);
+      }
+    }
+  }
+
+  // Quattro gemme, due fasi, e il portone che si apre solo alla fine.
+  if (arena) {
+    const world = new World(arena, bossAudio, { onTaunt: () => {}, onWin: () => {} });
+    const boss = world.boss;
+    const gate = findTile(arena.rows, TILE.BOSS_GATE);
+    check(boss !== null && gate !== null, "l'arena vera carica boss e portone");
+
+    if (boss && gate) {
+      check(world.map.get(gate.c, gate.r) === TILE.BOSS_GATE, 'il portone parte chiuso');
+
+      // Il gatto si mette su una mensola: da lì il Padrone non lo raggiunge, e
+      // la prova può concentrarsi sui colpi invece che sulla sopravvivenza.
+      const perch = (): void => world.player.reset(6 * TILE_SIZE, 7 * TILE_SIZE - world.player.h);
+      perch();
+
+      for (let hit = 1; hit <= 4; hit++) {
+        for (let guard = 0; guard < 400 && !boss.vulnerable; guard++) {
+          perch();
+          world.update(idle);
+        }
+        check(boss.vulnerable, `prima del colpo ${hit} il Padrone torna colpibile`);
+        boss.takeHit(world);
+        if (hit === 2) {
+          for (let guard = 0; guard < 400 && boss.phase === 1; guard++) {
+            perch();
+            world.update(idle);
+          }
+          check(boss.phase === 2, 'due gemme spente e il Padrone cambia fase');
+        }
+      }
+
+      check(boss.hits === 4, 'quattro colpi spengono tutte le gemme');
+      check(boss.isDead, 'con la corona spenta il Padrone cade');
+
+      // La morte del Padrone congela l'immagine per qualche tick (è un boss,
+      // se ne va con calma): il portone si apre quando la simulazione riparte.
+      for (let tick = 0; tick < 20; tick++) {
+        perch();
+        world.update(idle);
+      }
+      check(world.map.get(gate.c, gate.r) === TILE.EMPTY, 'il portone si apre quando il boss cade');
+
+      const goal = findTile(arena.rows, TILE.GOAL);
+      if (goal) {
+        world.player.x = goal.c * TILE_SIZE;
+        world.player.y = goal.r * TILE_SIZE;
+        world.update(idle);
+        check(world.state === 'won', "dopo il portone l'arrivo è raggiungibile");
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------- i gatti
+//
+// Le skin non toccano il gioco — stessa cassa, stessa fisica, stessi comandi —
+// quindi qui non si verifica il gameplay ma tre cose che possono rompersi in
+// silenzio: che ogni gatto si disegni davvero (uno solo che esplode e il gioco
+// è inservibile per chi l'ha comprato), che i cubi nascosti siano *presi* dove
+// sono stati messi, e che le monete si comportino come un portafoglio.
+console.log('\nI gatti (skin)');
+{
+  const skinAudio = new Audio();
+  const idle = { isDown: () => false, justPressed: () => false, endTick: () => {} } as unknown as Input;
+
+  const ids = new Set(SKINS.map((skin) => skin.id));
+  check(ids.size === SKINS.length, `${SKINS.length} gatti, nessun id ripetuto`);
+  check(
+    SKINS.some((skin) => skin.unlock.kind === 'free'),
+    'almeno un gatto è disponibile da subito',
+  );
+
+  // Disegno: ogni mantello passa davanti al renderer che intercetta i NaN.
+  {
+    const level = LEVELS[0]!;
+    const world = new World(level, skinAudio, { onTaunt: () => {}, onWin: () => {} });
+    const renderer = new NullRenderer();
+    let crashed: unknown = null;
+    try {
+      for (const skin of SKINS) {
+        world.player.skin = skin;
+        world.draw(renderer, 0);
+        // Un tick diverso, e in corsa: baffi, coda e scia cambiano disegno.
+        world.player.vx = 4;
+        world.player.onGround = true;
+        world.draw(renderer, 37);
+      }
+    } catch (error) {
+      crashed = error;
+    }
+    check(crashed === null, `tutti i ${SKINS.length} gatti si disegnano senza eccezioni`);
+    if (crashed) console.error(crashed);
+    check(renderer.transformDepth === 0, 'disegnando i gatti, push/pop restano bilanciati');
+    check(
+      renderer.problems.length === 0,
+      `nessuna coordinata invalida in nessun gatto${renderer.problems.length ? ` (${renderer.problems.slice(0, 3).join('; ')})` : ''}`,
+    );
+  }
+
+  // I cubi nascosti: uno per livello dichiarato, e raggiungibile per davvero.
+  // Il controllo è lo stesso del risolutore, con l'arrivo spostato sul cubo e
+  // quello vero cancellato — altrimenti "ci si arriva" sarebbe una bugia
+  // comoda: si arriverebbe alla bandiera senza passare mai di lì.
+  for (const skin of SKINS) {
+    const unlock = skin.unlock;
+    if (unlock.kind !== 'secret') continue;
+    const level = LEVELS.find((l) => l.id === unlock.levelId);
+    check(level !== undefined, `${skin.name}: il livello ${unlock.levelId} esiste`);
+    if (!level) continue;
+
+    const cubes = level.rows.reduce(
+      (n, row) => n + [...row].filter((c) => c === TILE.SKIN_CUBE).length,
+      0,
+    );
+    check(cubes === 1, `${level.name}: contiene esattamente un cubo (trovati ${cubes})`);
+
+    const probe = level.rows.map((row) =>
+      [...row]
+        .map((c) => (c === TILE.SKIN_CUBE ? TILE.GOAL : c === TILE.GOAL ? TILE.EMPTY : c))
+        .join(''),
+    );
+    const result = solve({ ...level, id: `cube-${level.id}`, rows: probe });
+    check(
+      result.solved,
+      result.solved
+        ? `${level.name}: il cubo di ${skin.name} è raggiungibile davvero`
+        : `${level.name}: il cubo di ${skin.name} NON è raggiungibile (fermo alla colonna ${result.furthestColumn})`,
+    );
+  }
+
+  // Raccoglierlo avvisa chi sta fuori, e non è una moneta.
+  {
+    const level = defineLevel({
+      id: 'cube-test',
+      name: 'TEST',
+      title: 'cubo',
+      sky: 'day',
+      spawn: { c: 1, r: 12 },
+      segments: [segment({ ground: true, rows: { 12: '     *' } })],
+    });
+    const found: string[] = [];
+    const world = new World(level, skinAudio, {
+      onTaunt: () => {},
+      onWin: () => {},
+      onSecret: (id) => found.push(id),
+    });
+    world.player.x = 5 * TILE_SIZE;
+    world.player.y = 12 * TILE_SIZE;
+    world.update(idle);
+
+    check(found.length === 1 && found[0] === 'cube-test', 'raccogliere il cubo avvisa il mondo di fuori');
+    check(world.coins === 0, 'il cubo non è una moneta e non entra nel punteggio');
+    check(world.state === 'playing', 'il cubo non uccide: per una volta è quello che sembra');
+    check(world.map.get(5, 12) === TILE.EMPTY, 'il cubo sparisce dopo essere stato preso');
+
+    // Morire non lo rimette al suo posto: si prende una volta sola.
+    world.kill();
+    for (let tick = 0; tick < 120; tick++) world.update(idle);
+    check(world.map.get(5, 12) === TILE.EMPTY, 'morendo il cubo non ricompare');
+  }
+
+  // Il portafoglio.
+  {
+    const wallet: Progress = { levels: {}, totalDeaths: 0, coins: 100, skins: [], skin: 'classic' };
+
+    const bought = buySkin(wallet, 'soot', 20);
+    check(bought.coins === 80 && bought.skins.includes('soot'), 'comprare un gatto scala le monete');
+
+    const broke = buySkin(bought, 'gilded', 150);
+    check(broke === bought, 'senza monete abbastanza non si compra niente');
+
+    const twice = buySkin(bought, 'soot', 20);
+    check(twice === bought, 'un gatto già preso non si ricompra');
+
+    const worn = equipSkin(bought, 'soot');
+    check(worn.skin === 'soot', 'il gatto scelto resta scelto');
+
+    const paid = recordClear(bought, 'w1-1', { deaths: 2, ticks: 100, coins: 7 });
+    check(paid.coins === 87, 'le monete di un livello finito entrano in tasca');
+    check(paid.skins.includes('soot'), 'finire un livello non fa perdere la collezione');
+
+    const dead = { ...wallet, totalDeaths: 299 };
+    const grim = SKINS.find((skin) => skin.unlock.kind === 'deaths');
+    if (grim) {
+      check(!isSkinUnlocked(grim, dead), `${grim.name} non si sblocca un morto prima`);
+      check(isSkinUnlocked(grim, { ...dead, totalDeaths: 300 }), `${grim.name} si sblocca morendo abbastanza`);
+    }
   }
 }
 
@@ -526,6 +904,98 @@ console.log('\nNastri trasportatori');
     check(
       said.some((t) => t.includes('nastro') || t.includes('pavimento')),
       `la caduta dal nastro è attribuita al nastro ("${said[0] ?? ''}")`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------- il ritmo del loop
+//
+// Il difetto che questo controllo fissa non è un calo di frame rate: è peggio,
+// perché non si vede in nessun contatore. Il browser non consegna 16.6667ms tra
+// un frame e l'altro — consegna 16.6 o 16.7, perché arrotonda i timestamp — e
+// con 16.6 l'accumulatore resta indietro di sette centesimi di millisecondo a
+// frame. Ogni ~250 frame arriva un frame che non fa nessun update, seguito da
+// uno che ne fa due: lo schermo non ha perso niente, ma il gatto sta fermo un
+// frame e poi salta il doppio. È lo scatto che si vede su qualunque computer,
+// veloce o lento, ed è per questo che sembrava non dipendere dall'hardware.
+//
+// La cura è agganciare il tempo trascorso al multiplo di tick più vicino,
+// quando ci va vicinissimo. Qui si verifica che l'aggancio ci sia (cadenza
+// perfettamente regolare) e che NON mangi i rallentamenti veri, che vanno
+// recuperati come prima.
+console.log('\nIl ritmo del loop');
+{
+  const pending: FrameRequestCallback[] = [];
+  const globals = globalThis as unknown as {
+    requestAnimationFrame: (cb: FrameRequestCallback) => number;
+    cancelAnimationFrame: (id: number) => void;
+  };
+  globals.requestAnimationFrame = (cb: FrameRequestCallback): number => pending.push(cb);
+  globals.cancelAnimationFrame = (): void => {};
+
+  /** Fa girare il loop con tempi decisi da noi e riporta cosa è successo. */
+  const run = (deltas: readonly number[]): { perFrame: number[]; renders: number } => {
+    pending.length = 0;
+    let updates = 0;
+    let renders = 0;
+    const loop = new GameLoop(
+      () => updates++,
+      () => renders++,
+    );
+    let now = performance.now();
+    loop.start();
+
+    const perFrame: number[] = [];
+    for (const delta of deltas) {
+      const frame = pending.pop();
+      pending.length = 0;
+      if (!frame) break;
+      now += delta;
+      const before = updates;
+      frame(now);
+      perFrame.push(updates - before);
+    }
+    loop.stop();
+    return { perFrame, renders };
+  };
+
+  const steady = (delta: number, frames: number): number[] =>
+    new Array<number>(frames).fill(delta);
+
+  // 60Hz con i timestamp arrotondati per difetto: il caso che rompeva tutto.
+  {
+    const { perFrame } = run(steady(16.6, 300));
+    const irregular = perFrame.filter((n) => n !== 1).length;
+    check(irregular === 0, `a 16.6ms per frame ogni frame fa un update solo (irregolari: ${irregular})`);
+  }
+  // ...e per eccesso.
+  {
+    const { perFrame } = run(steady(16.7, 300));
+    const irregular = perFrame.filter((n) => n !== 1).length;
+    check(irregular === 0, `a 16.7ms per frame ogni frame fa un update solo (irregolari: ${irregular})`);
+  }
+  // Schermo a 30Hz: due update a frame, sempre gli stessi due.
+  {
+    const { perFrame } = run(steady(33.3, 200));
+    const irregular = perFrame.filter((n) => n !== 2).length;
+    check(irregular === 0, `a 33.3ms per frame ogni frame fa due update (irregolari: ${irregular})`);
+  }
+  // Schermo a 120Hz: un update ogni due frame, e i frame senza update non si
+  // ridisegnano — sarebbero copie identiche di quello prima.
+  {
+    const { perFrame, renders } = run(steady(8.33, 200));
+    const updates = perFrame.reduce((a, b) => a + b, 0);
+    check(updates > 90 && updates < 110, `a 120Hz la simulazione resta a 60 update (${updates} in 200 frame)`);
+    check(renders <= updates + 1, `a 120Hz non si disegna due volte la stessa immagine (${renders} disegni)`);
+  }
+  // Un rallentamento vero non deve essere confuso con l'arrotondamento: va
+  // recuperato, non nascosto. Il tetto di cinque tick resta quello di prima —
+  // serve a non finire in una spirale quando la scheda torna in primo piano.
+  {
+    const recovered = run([16.6, 16.6, 100, 16.6, 16.6]).perFrame[2] ?? 0;
+    check(
+      recovered >= 4 && recovered <= 5,
+      `un frame da 100ms recupera il tempo perso senza spirale (${recovered} update)`,
     );
   }
 }

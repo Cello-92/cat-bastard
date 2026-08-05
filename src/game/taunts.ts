@@ -29,6 +29,10 @@ export const DEATH_CAUSE = {
   hiddenSpikes: 'hiddenSpikes',
   trapSpring: 'trapSpring',
   belt: 'belt',
+  boss: 'boss',
+  bossCharge: 'bossCharge',
+  bossStomp: 'bossStomp',
+  bossRubble: 'bossRubble',
   generic: 'generic',
 } as const;
 
@@ -106,6 +110,26 @@ const BY_CAUSE: Record<Exclude<DeathCause, 'generic'>, readonly string[]> = {
     'il nastro ti ha accompagnato. fin laggiù',
     'correvi. il pavimento correva più di te',
     'il nastro andava di là. tu pensavi di andare di qua',
+  ],
+  boss: [
+    'gli sei andato addosso. lui era lì da prima',
+    'toccarlo non era il piano, vero?',
+    'il Padrone non si tocca. il Padrone tocca',
+  ],
+  bossCharge: [
+    'te l\'ha annunciato. ha ruggito e tutto',
+    'correva dritto. tu pure',
+    'i mensoloni servivano a quello, sai',
+  ],
+  bossStomp: [
+    'saltargli in testa. certo. come no',
+    'ha una corona. le corone pungono',
+    'ha funzionato con i funghi, doveva funzionare anche qui',
+  ],
+  bossRubble: [
+    'quello era il TUO mattone',
+    'l\'hai staccato tu. è caduto dove eri tu',
+    'il soffitto non distingue chi lo ha fatto cadere',
   ],
 };
 

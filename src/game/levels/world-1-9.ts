@@ -142,6 +142,12 @@ export const WORLD_1_9 = defineLevel({
         1: CEILING,
         6: '    T     T',
         10: '  RR  DD  LD  DD  RR',
+        // Il cubo è appeso *dentro* la fossa, sotto il ponte. Non c'è nessun
+        // modo di prenderlo e sopravvivere: ci si butta, lo si tocca mentre si
+        // cade, e si muore col gatto nuovo già in tasca. È l'unico premio del
+        // gioco che si paga con una morte certa, ed è esattamente il tipo di
+        // patto che questo gioco propone da undici livelli.
+        12: '        *',
         13: 'RRRR            RRRR',
         14: 'RRRR            RRRR',
       },

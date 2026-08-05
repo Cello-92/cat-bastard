@@ -210,8 +210,15 @@ export class Menu {
     const buttons = this.list.querySelectorAll<HTMLElement>('.menu__item');
     buttons.forEach((button, i) => {
       button.classList.toggle('is-current', i === this.index);
-      if (i === this.index) button.setAttribute('aria-current', 'true');
-      else button.removeAttribute('aria-current');
+      if (i === this.index) {
+        button.setAttribute('aria-current', 'true');
+        // Con undici livelli o dieci gatti la lista è più alta dello schermo:
+        // senza questo, chi naviga con le frecce perde di vista la selezione e
+        // il menu sembra bloccato.
+        button.scrollIntoView({ block: 'nearest' });
+      } else {
+        button.removeAttribute('aria-current');
+      }
     });
 
     if (this.hint) {

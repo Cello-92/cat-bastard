@@ -74,6 +74,76 @@ export const RULES = {
   fallDeathMargin: 160,
   /** Distanza verticale massima per considerare valido uno stomp. */
   stompTolerance: 16,
+  /**
+   * Tick tra il momento in cui sali sul mattone del boss e quello in cui si
+   * stacca. È lungo apposta: dev'esserci il tempo di scendere, farsi vedere e
+   * mettere il Padrone sotto la verticale giusta. Tremare per mezzo secondo
+   * non sarebbe un'arma, sarebbe un incidente.
+   */
+  bossBrickDelayTicks: 50,
+  /**
+   * Dopo quanti tick la muratura del soffitto si ricompone.
+   *
+   * Serve a non poter perdere: se i mattoni finissero, l'arena diventerebbe
+   * una stanza senza soluzione e il giocatore resterebbe lì dentro a girare a
+   * vuoto. Il Padrone si ricostruisce il soffitto perché bara — e barando ti
+   * ridà l'unica cosa che può ucciderlo.
+   */
+  bossBrickRespawnTicks: 210,
+} as const;
+
+/**
+ * Il Padrone.
+ *
+ * Tutti i tempi sono in tick e tutte le velocità in pixel per tick, come il
+ * resto del gioco. Due numeri contano più di ogni altro: la carica è più
+ * veloce del gatto (quindi non si scappa in linea retta, si schiva), ma la
+ * camminata è molto più lenta (quindi il gatto decide sempre dove si combatte).
+ * Se un giorno la camminata superasse `PHYSICS.maxSpeed`, il boss smetterebbe
+ * di essere difficile e diventerebbe ingiusto.
+ */
+export const BOSS = {
+  width: 58,
+  height: 52,
+  /** Colpi da incassare in ciascuna delle due fasi. */
+  hitsPerPhase: 2,
+  /** Passeggiata di avvicinamento: sempre verso il gatto, sempre più lenta di lui. */
+  stalkSpeed: 1.9,
+  stalkSpeedFurious: 2.4,
+  /** Carica: veloce, dritta, e con una lunghezza fissa che si può memorizzare. */
+  chargeSpeed: 5.4,
+  chargeSpeedFurious: 6.2,
+  chargeDistance: 290,
+  /** Tick di ruggito prima di partire: l'unico preavviso, e basta appena. */
+  windTicks: 22,
+  windTicksFurious: 15,
+  /** Quanto resta intontito contro il muro: è la finestra buona per colpirlo. */
+  stunTicks: 82,
+  stunTicksFurious: 58,
+  /** Tick di cammino tra un'azione e l'altra. */
+  stalkTicks: 96,
+  stalkTicksFurious: 62,
+  /**
+   * Scarto: quando vede un mattone che gli sta cadendo addosso si sposta.
+   * È il suo modo di barare, e funziona solo mentre cammina — appena si
+   * impegna in qualcosa (carica, botta a terra, capogiro) non può più.
+   */
+  dodgeSpeed: 3.4,
+  dodgeTicks: 26,
+  /** Raggio orizzontale entro cui considera un masso "roba che cade su di me". */
+  dodgeRange: 46,
+  /**
+   * Fase 2: la botta a terra. Fa crollare il mattone sopra al gatto — solo che
+   * per un secondo abbondante lui resta lì fermo a godersi lo spettacolo, e i
+   * mattoni cadono dove il gatto ha deciso di stare. È l'unica trappola del
+   * gioco che si può girare contro chi l'ha messa.
+   */
+  slamWindTicks: 20,
+  slamRecoveryTicks: 54,
+  /** Tick di rinculo dopo un colpo incassato: fermo, e quindi colpibile ancora. */
+  hurtTicks: 46,
+  /** Cambio di fase: sta fermo, urla, e si rifà il soffitto. */
+  ragTicks: 70,
 } as const;
 
 export const FEEL = {

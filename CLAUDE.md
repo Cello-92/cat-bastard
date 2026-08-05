@@ -68,6 +68,10 @@ Un rage game funziona solo se è *ingiusto ma leale*. Ogni trappola deve rispett
 - **Nessun asset binario.** Grafica disegnata via codice, audio sintetizzato con WebAudio.
 - **Path relativi** (`base: './'` in vite.config): il sito vive in una sottocartella.
 - **60fps su hardware modesto**, e deve funzionare su mobile (pad touch già presente).
+  Un frame costa circa 2000-3000 chiamate di disegno: prima di aggiungerne, guardare
+  `alpha()` e `mix()` in `theme.ts` — sono le funzioni più chiamate del gioco e sono
+  memoizzate apposta, perché il vero nemico degli scatti non è il calcolo, è la
+  spazzatura che si crea a ogni frame e che qualcuno prima o poi deve raccogliere.
 - Codice e nomi in **inglese**, commenti e testi di gioco in **italiano**.
 
 ## Architettura
@@ -84,7 +88,8 @@ src/
   game/       config (costanti), theme (palette), tiles (vocabolario),
               taunts, effects (particelle/juice), world.ts (orchestratore),
               game.ts (composition root)
-    entities/ player, walker, shroom, falling-spike, diver
+    entities/ player, walker, shroom, falling-spike, diver, boss, rubble
+              skins.ts (i gatti giocabili e come si sbloccano)
     levels/   level.ts (helper) + un file per livello + index.ts (registro)
     render/   background.ts (parallasse), tiles.ts (disegno dei tile)
   ui/         hud.ts, menu.ts, screens.ts, format.ts — l'unico codice che tocca il DOM
@@ -100,6 +105,12 @@ Punti fermi:
 - **`game.ts` è il composition root**: l'unico file che conosce tutti i pezzi.
 - **La simulazione gira a timestep fisso** (60 update/s). Le costanti in `config.ts` sono *per tick*.
   Il rendering gira a frame liberi. Su un monitor a 144Hz il gatto non salta più in alto.
+  Il tempo trascorso viene **agganciato al refresh** (`core/loop.ts`): il browser non
+  consegna 16.6667ms ma 16.6 o 16.7, perché arrotonda i timestamp, e senza aggancio
+  l'accumulatore va in deriva finché un frame non fa nessun update e quello dopo ne fa
+  due. Non è un calo di frame rate — non si vede in nessun contatore — ma si sente, su
+  qualunque computer. E un frame senza update non viene ridisegnato: il disegno dipende
+  solo dallo stato e dal numero di tick, quindi sarebbe la stessa immagine identica.
 - **Colori solo in `theme.ts`**, mai hardcoded nel codice di disegno (i valori UI sono duplicati in
   `src/style.css`: vanno tenuti allineati a mano).
 
@@ -122,6 +133,10 @@ Ogni trappola sfrutta un'abitudine del giocatore, e ognuna ha il suo taunt in `t
 | `J` | il nemico normale (identico) | ha le punte sotto: schiacciarlo uccide |
 | `Z` | ombra sul soffitto | si tuffa quando le passi sotto |
 | `>` `<` | un nastro trasportatore (ed è esattamente quello) | ti trasporta: non è una trappola, ma decide dove sei quando scatta quella vera |
+| `*` | un cubo iridescente | sblocca un gatto, per sempre. È l'unica cosa del gioco che non mente e non uccide |
+| `H` | mattone del soffitto dell'arena | ci sali, trema, si stacca: è l'unica arma del gioco |
+| `=` | portone | solido finché il boss è vivo |
+| `@` | — | ci nasce il Padrone (marcatore) |
 
 Queste invece non danno **nessun preavviso**: la prima volta uccidono e basta.
 Sono deterministiche come tutte le altre — stesso punto, stessa morte — quindi
@@ -137,6 +152,32 @@ ingiocabile.
 | `O` | terreno normale, senza feritoia | spuntoni che scattano quando ci sei già sopra |
 | `!` | niente. Proprio niente | spuntoni invisibili. Dopo la prima morte restano visibili per tutto il tentativo |
 | `m` | una molla, identica a `M` | non lancia: si chiude. È una tagliola col piattello rosso |
+
+## Le skin
+
+Dieci gatti, in `game/skins.ts`. Cambiano **solo l'aspetto**: cassa, fisica e
+comandi sono identici per tutti, e devono restarlo — in un gioco che ti frega di
+continuo, la cosa che ti sei comprato col sudore non può anche darti un
+vantaggio. I colori dei manti stanno in `theme.ts` (`PELT`, `IRIS`), come tutti
+gli altri colori del gioco.
+
+Si sbloccano in cinque modi, e ognuno racconta una cosa diversa del giocatore:
+
+- **monete** — si incassano *finendo* un livello: quelle raccolte in un
+  tentativo finito male non entrano in tasca. È il motivo per cui raccogliere
+  una moneta è una scelta e non un riflesso, visto che una su tre è avvelenata;
+- **cubo nascosto** (`*`) — uno per livello, in un posto che non sta sulla
+  strada per l'arrivo. Quello di 1-3 si prende salendo sul blocco invisibile che
+  ti ha appena rovinato il salto; quello di 1-7 solo fidandosi di una molla;
+  quello di 1-9 è appeso dentro la fossa, e si paga con una morte certa;
+- **livello finito** — il gatto col mantello del Padrone si ha battendo 1-11;
+- **morti accumulate** — a trecento morti si sblocca il gatto invisibile. È
+  l'unico premio che si guadagna facendo schifo, e ci teniamo che esista;
+- **gratis** — il gatto di serie.
+
+Aggiungere una skin: una voce in `SKINS`, il suo mantello in `theme.ts`, e —
+se è di quelle segrete — un `*` nel livello che la custodisce. Il test
+controlla da solo che il cubo sia raggiungibile davvero.
 
 ### Aggiungere roba
 
@@ -195,6 +236,12 @@ npm run build   # typecheck + build
 - **il disegno di tutto il vocabolario**, perché la simulazione disegna solo le
   colonne inquadrate e un tile che compare a metà livello potrebbe non essere mai
   disegnato da nessun test;
+- **il contratto del boss**, che il risolutore non può verificare perché non
+  conosce le entità: che toccarlo uccida, che un masso spenga una gemma, che
+  quattro gemme aprano il portone, che il soffitto si ricomponga e che scansi
+  mentre cammina ma non mentre è impegnato. C'è anche un controllo che rifà il
+  giro del risolutore su ogni singolo mattone dell'arena: un mattone
+  irraggiungibile è un boss imbattibile;
 - **il risolutore** (`tests/solver.ts`), che *gioca* ogni livello: cerca con la fisica vera
   una sequenza di comandi dallo spawn all'arrivo, considerando perso in partenza tutto ciò
   che sparisce sotto le zampe e già scattata ogni trappola. Serve perché un livello può
@@ -219,4 +266,28 @@ e allegare uno zip offline: non servono a ospitare la pagina.
 4. ~~Schermata di selezione livelli con record e morti~~ ✅ (dentro il menu)
 5. ~~Più trappole e più nemici~~ ✅ — resta il secondo mondo con un tileset davvero diverso
 6. ~~Dieci livelli: i nastri (`>` `<`), la molla-tagliola (`m`) e i cieli `dawn` e `storm`~~ ✅
-7. Un boss finale che ovviamente bara.
+7. ~~Un boss finale che ovviamente bara~~ ✅ — 1-11, *Il Padrone*
+
+## Il boss (1-11)
+
+Il primo livello del gioco che non si vince andando a destra. Vale la pena
+sapere perché è fatto così, prima di toccarlo:
+
+- **Niente barra della vita.** La salute del Padrone è la corona: quattro
+  gemme, una per masso incassato. Si guarda lui, non l'interfaccia.
+- **L'arma è il soffitto.** Salire su un mattone (`H`) lo stacca dopo
+  `RULES.bossBrickDelayTicks`. Dove cade lo decide il giocatore, perché il
+  boss cammina *sempre* verso di lui: è un boss che si guida, non che si
+  insegue.
+- **Bara, e bara in un modo solo.** Mentre cammina scansa qualunque masso gli
+  stia arrivando in testa. Lo si colpisce solo quando è impegnato — carica,
+  capogiro contro il muro, botta a terra — ed è tutta lì la strategia.
+- **La fase 2 gli si ritorce contro.** La botta a terra fa crollare il mattone
+  sopra al *gatto*, e dopo lui resta fermo un secondo abbondante: chi ha capito
+  gli si mette accanto e lo lascia fare.
+- **Niente checkpoint**, ed è dichiarato nel livello (`boss: true`). Uno
+  scontro si impara da capo, non si consuma a pezzi. Il patto regge lo stesso
+  perché si rinasce *dentro* l'arena, che è larga quanto uno schermo.
+- **La muratura si ricompone** (`RULES.bossBrickRespawnTicks`): senza, chi
+  sbaglia tutti i tiri resterebbe chiuso in una stanza senza più niente con cui
+  colpire — non una partita persa, una partita finita.

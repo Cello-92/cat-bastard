@@ -101,7 +101,10 @@ export const WORLD_1_7 = defineLevel({
     segment({
       ground: true,
       rows: {
-        4: '           K',
+        // Il cubo sta esattamente all'apice di un rimbalzo sulla molla, cioè
+        // dove non arriva nessun salto: si prende solo fidandosi di una molla,
+        // che in questo gioco è la cosa più contro natura che ci sia.
+        4: '     *     K',
         6: '        F',
         7: '        F',
         8: '        F',

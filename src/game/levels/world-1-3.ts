@@ -35,9 +35,12 @@ export const WORLD_1_3 = defineLevel({
     }),
 
     // 2 — il blocco invisibile è esattamente dove salteresti, e sotto c'è
-    // lo spuntone invece del pavimento.
+    // lo spuntone invece del pavimento. Sopra al blocco, però, c'è un cubo:
+    // l'unico modo di prenderlo è farsi fregare apposta dalla trappola e poi
+    // salire su quello che ti ha appena rovinato il salto.
     segment({
       rows: {
+        8: '    *',
         10: '    I',
         13: '#####   #####  #####',
         14: '#####XXX#####XX#####',

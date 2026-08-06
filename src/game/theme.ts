@@ -100,21 +100,14 @@ export const MATERIAL = {
   /** Rame degli impianti: caldo, l'unica cosa tiepida quaggiù. */
   copper: material('#a4653a', '#e2a071', '#5c3319', '#2e180b', '#ffd7ae'),
 
-  // --- Manti e occhi dei gatti sbloccabili (vedi game/cats.ts).
+  // --- Roba dei gatti che non è un manto.
+  //
+  // I manti e le iridi stanno in `PELT` e `IRIS`, qui sotto: qui restano solo i
+  // due materiali che servono anche ad altro. `soot` è il colore della sagoma
+  // di un gatto ancora chiuso (game/render/cat-portrait.ts), e non è un manto —
+  // è l'assenza di un manto.
   /** Nero fuliggine: mai davvero nero, altrimenti sparisce sul fondo scuro. */
   soot: material('#2f3038', '#5c5f6b', '#17171c', '#0b0b0e', '#9aa0ad'),
-  /** Rosso soriano. */
-  ginger: material('#c47a3c', '#f0b071', '#84491b', '#4a2609', '#ffd9a8'),
-  /** Crema chiarissimo del siamese. */
-  mist: material('#e6dbc6', '#fffaf0', '#b0a08a', '#6f6455', '#ffffff'),
-  /** Punte scure del siamese: muso, orecchie, zampe, coda. */
-  sable: material('#5a4436', '#876951', '#33251c', '#1a120d', '#a98a6c'),
-  /** Bianco del gatto spettro: quasi ghiaccio, quasi niente. */
-  spectre: material('#d8e6ef', '#ffffff', '#93a8ba', '#5b6c7d', '#ffffff'),
-  /** Iride ambra. */
-  amber: material('#c98b1f', '#f5c85e', '#7a4d08', '#3c2603', '#fff2c8'),
-  /** Iride blu ghiaccio. */
-  sapphire: material('#3d7fc4', '#8dc4f2', '#1a3f70', '#0b1e39', '#e8f6ff'),
   /** Iride del gatto spettro: rosa acceso, l'unica cosa viva che gli resta. */
   ghostEye: material('#d63f7d', '#ff8fb8', '#7c1741', '#3d0a21', '#ffe0ec'),
 } as const satisfies Record<string, Material>;

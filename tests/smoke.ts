@@ -868,6 +868,34 @@ console.log('\nGatti');
     CATS.every((cat) => cat.yarn <= SECRET_COUNT),
     `nessun gatto chiede più gomitoli di quanti ne esistano (${SECRET_COUNT})`,
   );
+
+  // Un gatto per gomitolo, e nessuna soglia saltata.
+  //
+  // Non è pignoleria: un gomitolo sta in una stanza murata che non serve a
+  // finire il livello, quindi l'unico motivo per andarci è quello che dà. Se
+  // due gomitoli diversi dessero la stessa identica cosa — cioè niente —
+  // cercare il secondo sarebbe una perdita di tempo *dimostrabile*, e la
+  // collezione smetterebbe di essere una collezione. Chi aggiunge un livello
+  // col suo `*` deve aggiungere anche il manto, e lo scopre qui.
+  const thresholds = new Set(CATS.map((cat) => cat.yarn));
+  const orphans: number[] = [];
+  for (let n = 0; n <= SECRET_COUNT; n++) if (!thresholds.has(n)) orphans.push(n);
+  check(
+    orphans.length === 0,
+    `ogni gomitolo sblocca un gatto${orphans.length ? ` — nessun manto a quota ${orphans.join(', ')}` : ` (${CATS.length} manti per ${SECRET_COUNT} gomitoli)`}`,
+  );
+  check(
+    thresholds.size === CATS.length,
+    'due gatti non chiedono lo stesso numero di gomitoli: il secondo sarebbe gratis',
+  );
+
+  // Le sagome dei gatti chiusi si disegnano come i gatti aperti: la galleria
+  // mostra la forma di quello che manca, e una forma che esplode è un menu che
+  // esplode. Il disegno vero sopra ha già coperto ogni manto; qui si controlla
+  // che ogni motivo del manto sia davvero disegnato da qualcuno, perché un
+  // `pattern` senza gatti che lo usano è codice che nessun test tocca.
+  const patterns = new Set(CATS.map((cat) => cat.pattern));
+  check(patterns.size >= 4, `i manti usano ${patterns.size} motivi diversi, non uno solo`);
 }
 
 // ---------------------------------------------------------------- lo scontro col Padrone

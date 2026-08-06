@@ -241,14 +241,30 @@ sono un punteggio, non una valuta.
 ovunque, e cercarlo aveva smesso di essere cercare: era diventato raccogliere. 2-7
 e 2-9 non ne hanno nessuno, quindi da lì in poi una parete che sembra finta a volte
 è solo una parete, e l'unico modo di saperlo è perderci tempo. Chi aggiunge un
-livello non è tenuto a metterci un gomitolo — `SECRET_COUNT` si conta dalle mappe
-e i gatti chiedono molto meno di quanti ce ne siano.
+livello non è tenuto a metterci un gomitolo: `SECRET_COUNT` si conta dalle mappe.
+
+**Ma chi ce lo mette deve mettere anche il gatto.** C'è un manto per ogni
+gomitolo — undici gomitoli, dodici gatti contando quello che c'è da sempre — e
+`tests/smoke.ts` rifiuta un buco nella scala. Non è pignoleria: un gomitolo sta
+in una stanza murata che non serve a finire il livello, quindi l'unica ragione
+per andarci è quello che dà. Se il quinto e il sesto dessero la stessa identica
+cosa (cioè niente), cercare il sesto sarebbe una perdita di tempo *dimostrabile*.
+Le soglie dei primi cinque manti non si toccano mai: i progressi salvano
+gomitoli, non gatti, quindi alzare una soglia richiude una porta già aperta a
+qualcuno.
 
 I manti stanno in `game/cats.ts` e sono
 **solo estetici**, per due motivi: un gatto che salta più in alto romperebbe ogni
 mappa già tarata su `config.ts`, e una collezione che dà vantaggi smette di essere
 una ricompensa e diventa una scorciatoia. I gomitoli trovati stanno nei progressi
 (`core/storage.ts`) e non si perdono più.
+
+I colori dei manti non stanno lì: stanno in `PELT` e `IRIS` (`game/theme.ts`),
+come tutti gli altri colori del gioco. `cats.ts` decide *quale* manto ha un gatto
+e come si sblocca; `theme.ts` di che pasta è fatto. Il motivo del manto
+(`CatPattern`: tinta unita, soriano, punte, pettorina, chiazze, rosette) è
+l'unica cosa che richiede di toccare il disegno — `drawMarkings` in
+`entities/player.ts`, che il ritratto del menu riusa tale e quale.
 
 ### Cosa succede alla roba raccolta quando muori
 

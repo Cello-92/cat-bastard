@@ -219,8 +219,11 @@ export const CATS: readonly CatSkin[] = [
   },
   {
     id: 'trofeo',
+    // La soglia resta undici anche adesso che i gomitoli sono dodici, e resterà
+    // undici per sempre: alzarla richiuderebbe una porta a chi l'aveva già
+    // aperta. Il blurb invece è stato riscritto, perché quello sì che mentiva.
     name: 'TROFEO',
-    blurb: 'Tutti i gomitoli e tutti i livelli. Non sei più un gatto, sei un soprammobile',
+    blurb: 'Undici gomitoli e tutti i livelli. Non sei più un gatto, sei un soprammobile',
     yarn: 11,
     needsEveryLevel: true,
     fur: MATERIAL.membrane,
@@ -228,6 +231,17 @@ export const CATS: readonly CatSkin[] = [
     eye: MATERIAL.amber,
     nose: MATERIAL.membrane,
     pattern: 'points',
+  },
+  {
+    id: 'miraggio',
+    name: 'MIRAGGIO',
+    blurb: 'Color sabbia su fondo sabbia. Nel deserto non ti vede nessuno, nemmeno tu',
+    yarn: 12,
+    fur: MATERIAL.sand,
+    marks: MATERIAL.sandstone,
+    eye: MATERIAL.faience,
+    nose: MATERIAL.skin,
+    pattern: 'spotted',
   },
 
   // ------------------------------------------------------------- le imprese
@@ -299,6 +313,19 @@ export const CATS: readonly CatSkin[] = [
     eye: MATERIAL.ember,
     nose: MATERIAL.sable,
     pattern: 'points',
+  },
+  {
+    id: 'aliseo',
+    name: 'ALISEO',
+    blurb: 'Pelo lungo e leggero: sta in aria perché non ha mai deciso di scendere',
+    yarn: 0,
+    feats: [FEAT.aloft],
+    riddle: 'Nel deserto l\'aria porta. Fatti portare, e per quattro secondi non toccare niente',
+    fur: MATERIAL.faience,
+    marks: MATERIAL.sand,
+    eye: MATERIAL.amber,
+    nose: MATERIAL.skin,
+    pattern: 'tux',
   },
   {
     id: 'gothic',

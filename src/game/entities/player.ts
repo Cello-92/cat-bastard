@@ -6,7 +6,7 @@ import type { Body } from '@engine/types';
 import { PHYSICS, SURFACE } from '../config';
 import { catById, type CatSkin } from '../cats';
 import { PALETTE, alpha, glare, mix, shade, type Material } from '../theme';
-import { TILE, beltDirection, isIcy, isSolid } from '../tiles';
+import { TILE, beltDirection, isIcy, isSolid, windDirection } from '../tiles';
 import type { World } from '../world';
 
 /**
@@ -57,6 +57,10 @@ export class Player implements Body {
   private onIce = false;
   private belt = 0;
   private inVent = false;
+  /** Correnti del terzo mondo: aria che spinge di lato, sabbia che tira giù. */
+  private wind = 0;
+  private inDowndraft = false;
+  private inSand = false;
 
   private coyote = 0;
   private jumpBuffer = 0;
@@ -89,6 +93,9 @@ export class Player implements Body {
     this.onIce = false;
     this.belt = 0;
     this.inVent = false;
+    this.wind = 0;
+    this.inDowndraft = false;
+    this.inSand = false;
   }
 
   get centerX(): number {
@@ -109,6 +116,11 @@ export class Player implements Body {
     return this.onIce && this.onGround;
   }
 
+  /** È dentro le sabbie mobili: si nuota, e anche questo si deve vedere. */
+  get isSwimming(): boolean {
+    return this.inSand;
+  }
+
   update(world: World, input: Input): void {
     // Le superfici si campionano PRIMA di muoversi: quello su cui il gatto
     // poggia adesso è quello che decide come risponderà questo tick.
@@ -117,12 +129,21 @@ export class Player implements Body {
     this.handleHorizontal(input);
     moveX(this, world.map, isSolid);
     this.applyBelt(world);
+    // Il vento viene subito dopo il nastro perché è la stessa identica cosa
+    // vista dall'altro lato: uno sposta chi tocca terra, l'altro chi non la
+    // tocca. Non possono mai agire insieme, ed è quello che li rende leggibili.
+    this.applyWind(world);
 
     this.handleJump(world, input);
     // Il getto agisce dopo il taglio del salto e prima della gravità: se
     // agisse prima, rilasciare il tasto azzererebbe anche la spinta del vapore.
     this.applyVent();
+    this.applyDowndraft();
     applyGravity(this, PHYSICS.gravity, PHYSICS.terminalVelocity);
+    // La sabbia invece agisce **dopo** la gravità, e deve: è un limite di
+    // velocità, non una spinta. Applicato prima, la gravità del tick lo
+    // scavalcherebbe e si affonderebbe come nel vuoto.
+    this.applySand();
     moveY(this, world.map, isSolid, {
       onCeiling: (c, r, tile) => world.onPlayerHeadbutt(c, r, tile),
     });
@@ -157,13 +178,18 @@ export class Player implements Body {
     }
 
     this.inVent = false;
+    this.inDowndraft = false;
+    this.inSand = false;
+    this.wind = 0;
     for (const { tile } of world.map.touching(this)) {
       // Il getto spento è identico a questo, e non compare qui: è tutta la
-      // trappola. Vedi TILE.DEAD_VENT.
-      if (tile === TILE.VENT) {
-        this.inVent = true;
-        break;
-      }
+      // trappola. Vedi TILE.DEAD_VENT. Idem per la corrente morta, che non
+      // compare in `windDirection` per la stessa ragione.
+      if (tile === TILE.VENT) this.inVent = true;
+      else if (tile === TILE.DOWNDRAFT) this.inDowndraft = true;
+      else if (tile === TILE.QUICKSAND) this.inSand = true;
+      const gust = windDirection(tile);
+      if (gust !== 0) this.wind = gust;
     }
   }
 
@@ -171,7 +197,13 @@ export class Player implements Body {
     const left = input.isDown('left');
     const right = input.isDown('right');
     // Sul ghiaccio gli artigli non mordono: si accelera piano e non si frena.
-    const push = this.onIce ? SURFACE.iceAcceleration : PHYSICS.acceleration;
+    // Nella sabbia il problema è l'opposto — si spinge contro qualcosa di denso
+    // e ci si ferma appena si smette.
+    const push = this.inSand
+      ? SURFACE.sandAcceleration
+      : this.onIce
+        ? SURFACE.iceAcceleration
+        : PHYSICS.acceleration;
 
     if (left) {
       this.vx -= push;
@@ -182,14 +214,17 @@ export class Player implements Body {
       this.facing = 1;
     }
     if (left === right) {
-      this.vx *= this.onGround
-        ? this.onIce
-          ? SURFACE.iceFriction
-          : PHYSICS.groundFriction
-        : PHYSICS.airFriction;
+      this.vx *= this.inSand
+        ? SURFACE.sandFriction
+        : this.onGround
+          ? this.onIce
+            ? SURFACE.iceFriction
+            : PHYSICS.groundFriction
+          : PHYSICS.airFriction;
     }
 
-    this.vx = clamp(this.vx, -PHYSICS.maxSpeed, PHYSICS.maxSpeed);
+    const cap = this.inSand ? SURFACE.sandMaxSpeed : PHYSICS.maxSpeed;
+    this.vx = clamp(this.vx, -cap, cap);
     if (Math.abs(this.vx) < 0.05) this.vx = 0;
   }
 
@@ -206,6 +241,23 @@ export class Player implements Body {
     this.vx = own;
   }
 
+  /**
+   * La corrente d'aria: trascina di lato chi non tocca terra.
+   *
+   * Funziona come il nastro — sposta il corpo di una quantità fissa e
+   * restituisce al gatto la sua velocità intatta — e la ragione è la stessa: il
+   * mondo può spostarti, i comandi no. La differenza è solo *quando*: il nastro
+   * agisce a terra, il vento in aria. A terra qui non succede niente, perché un
+   * gatto con gli artigli piantati nella sabbia non lo sposta nessuno.
+   */
+  private applyWind(world: World): void {
+    if (this.wind === 0 || this.onGround) return;
+    const own = this.vx;
+    this.vx = this.wind * SURFACE.windSpeed;
+    moveX(this, world.map, isSolid);
+    this.vx = own;
+  }
+
   /** Getto di vapore: solleva finché ci resti dentro, e non si può dosare. */
   private applyVent(): void {
     if (!this.inVent) return;
@@ -214,12 +266,37 @@ export class Player implements Body {
     this.vy = Math.min(this.vy, lifted);
   }
 
+  /** Risucchio: il getto al contrario. Schiaccia il salto, non lo annulla. */
+  private applyDowndraft(): void {
+    if (!this.inDowndraft) return;
+    const pushed = Math.min(this.vy + SURFACE.downdraftPull, SURFACE.downdraftMaxFall);
+    // Non frena mai chi sta già cadendo più forte: è aria carica di sabbia,
+    // non un paracadute.
+    this.vy = Math.max(this.vy, pushed);
+  }
+
+  /**
+   * Sabbie mobili: un limite di velocità in tutti e due i versi.
+   *
+   * Affondare è lento, risalire è appena più veloce, e la bracciata (in
+   * `handleJump`) è quello che decide da che parte si va. Non è una spinta e
+   * non è una trappola: è densità.
+   */
+  private applySand(): void {
+    if (!this.inSand) return;
+    this.vy = clamp(this.vy, -SURFACE.sandRise, SURFACE.sandSink);
+  }
+
   private handleJump(world: World, input: Input): void {
     if (input.justPressed('jump')) this.jumpBuffer = PHYSICS.jumpBufferTicks;
 
-    const canJump = this.onGround || this.coyote > 0;
+    // Dentro la sabbia si può "saltare" sempre, anche senza toccare niente: è
+    // la bracciata, ed è l'unico modo di uscire da una pozza. Vale meno di un
+    // salto vero e viene comunque tagliata da `sandRise` — quello che conta è
+    // il ritmo, non la forza.
+    const canJump = this.onGround || this.coyote > 0 || this.inSand;
     if (this.jumpBuffer > 0 && canJump) {
-      this.vy = -PHYSICS.jumpImpulse;
+      this.vy = -(this.inSand ? SURFACE.sandStroke : PHYSICS.jumpImpulse);
       this.onGround = false;
       this.coyote = 0;
       this.jumpBuffer = 0;
@@ -357,6 +434,22 @@ export class Player implements Body {
       for (let i = 0; i < 3; i++) {
         const shard = ((tick * 2 + i * 9) % 14) + 2;
         r.ellipse(cx + back * (6 + shard), feet - 2 - (shard % 5), 1.2, 1, PALETTE.ice);
+      }
+      r.pop();
+    }
+
+    // Dentro le sabbie mobili si vede solo quello che sta fuori: il resto è
+    // sepolto. Non è un effetto — è l'unico modo che il giocatore ha di capire
+    // che quel pavimento non lo regge, e capirlo *mentre* affonda.
+    if (this.isSwimming) {
+      const line = feet - this.h * 0.42;
+      r.push();
+      r.setAlpha(0.75);
+      r.rect(cx - this.w, line, this.w * 2, feet - line + 2, alpha(PALETTE.sand, 0.72));
+      r.setAlpha(0.5);
+      for (let i = 0; i < 4; i++) {
+        const gx = cx - this.w * 0.7 + ((tick * 0.6 + i * 13) % (this.w * 1.4));
+        r.ellipse(gx, line + Math.sin(tick / 9 + i) * 1.2, 3.4, 1.2, PALETTE.dust);
       }
       r.pop();
     }

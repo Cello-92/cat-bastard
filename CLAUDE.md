@@ -6,7 +6,7 @@ Un **rage game** platform 2D nello stile di *Super Mario Bros.* / *Syobon Action
 sembra un platform classico e onesto, ma ogni elemento familiare è una trappola. Si gioca nel
 browser aprendo un link pubblico — niente installazione, niente account.
 
-Il gioco è strutturato **a livelli** su due mondi, con un menu di avvio navigabile (gioca,
+Il gioco è strutturato **a livelli** su tre mondi, con un menu di avvio navigabile (gioca,
 mondi e livelli con i record, la collezione dei gatti, classifica, account, opzioni) e la pausa
 su `ESC`. Il protagonista è un gatto — anzi, cinque, ma cambia solo il manto. Il tono è
 ironico e cattivo: il gioco ti prende in giro mentre muori. I testi in-game sono **in italiano**.
@@ -160,6 +160,12 @@ ingiocabile.
 | `O` | terreno normale, senza feritoia | spuntoni che scattano quando ci sei già sopra |
 | `!` | niente. Proprio niente | spuntoni invisibili. Dopo la prima morte restano visibili per tutto il tentativo |
 | `,` | un getto di vapore identico a `^` | non spinge. Ci si butta dentro contando su una spinta che non arriva |
+| `w` | una corrente d'aria identica a `(` e `)` | non spinge. Si salta corti contando su una mano che non arriva |
+
+**`w` non entra nell'album di CAVIA, e non è una dimenticanza.** Le imprese
+richieste da un gatto non si toccano più: chi aveva già chiuso l'album se lo
+vedrebbe riaprire da una trappola che non esisteva quando l'ha finito, e una
+cosa fatta non si disfa (vedi `game/feats.ts`). L'album resta a sette.
 
 ### Il secondo mondo: superfici, non trappole
 
@@ -179,6 +185,52 @@ Le costanti stanno in `SURFACE` (`game/config.ts`). Chi le tocca deve toccare an
 `tests/solver.ts`: il risolutore simula ghiaccio, nastri e getti con lo stesso codice
 e lo stesso ordine di operazioni di `Player.update` — se i due si scostano, il
 risolutore mente e un livello impossibile passa i test.
+
+### Il terzo mondo: l'aria, non il pavimento
+
+Il mondo 3 (deserto + tempio) fa al volo quello che il mondo 2 aveva fatto al
+terreno. E la differenza non è di grado: il nastro ti sposta **mentre cammini**,
+e camminando si corregge sempre; la corrente ti sposta **mentre sei a
+mezz'aria**, cioè nell'unico momento in cui la traiettoria è già decisa. È la
+cosa più invasiva che il gioco faccia alla fisica, e regge il patto per gli
+stessi tre motivi di sempre: si vede prima, fa sempre la stessa cosa, e i
+comandi rispondono immediati (il vento sposta il *corpo*, non tocca `vx`).
+
+| Tile | Cosa fa |
+|---|---|
+| `.` | sabbia compatta: il pavimento onesto del deserto, come `#` e `+` |
+| `-` | arenaria: la pietra squadrata del tempio, solida e onesta |
+| `(` `)` | corrente d'aria: trascina di `SURFACE.windSpeed` px/tick, **solo chi non tocca terra** |
+| `v` | risucchio: il getto `^` capovolto. Schiaccia il salto, non lo annulla |
+| `s` | sabbie mobili: non solide. Dentro si affonda piano e si risale a bracciate |
+| `p` | piastra a pressione: pestarla sgancia i mattoni `T` entro `RULES.plateRange` colonne |
+
+Tre cose che è meglio sapere prima di toccare qualcosa qui:
+
+- **Il vento e il nastro sono la stessa funzione, letta da due lati.** Il
+  nastro agisce a terra, il vento in aria, e non possono mai agire insieme: è
+  quello che li rende leggibili entrambi. Se un giorno il vento agisse anche a
+  terra, smetterebbe di essere una regola e diventerebbe un comando alterato.
+- **Le sabbie mobili si nuotano, e devono.** Dentro la pozza il salto è sempre
+  disponibile (`SURFACE.sandStroke`) anche senza appoggio, la salita e la
+  discesa sono due tetti di velocità (`sandRise`, `sandSink`) e la corsa è
+  dimezzata (`sandMaxSpeed`). Senza il tetto sulla corsa bastava tenere premuto
+  per uscirne camminando, e la pozza diventava un fastidio invece che una
+  superficie. Non è una trappola: una superficie deve avere una risposta
+  giusta, e qui la risposta è martellare il salto tenendo una direzione.
+- **La piastra è l'unico congegno del gioco in cui causa ed effetto stanno in
+  due posti diversi.** I mattoni non cadono tutti insieme: il ritardo cresce
+  con la distanza, quindi il soffitto viene giù *a partire da dove sei* e
+  prosegue in avanti — la stessa informazione, data in un ordine che si può
+  correre. Il congegno vive in `World.handlePlates`, e i massi che crollano
+  (`K`) restano fuori apposta: una piastra che ne sganciasse dieci senza
+  preavviso sarebbe una fucilata, non una trappola.
+
+Le costanti stanno in `SURFACE` e in `RULES`, e vale la stessa regola del mondo
+2, solo più stretta: **chi le tocca deve toccare anche `tests/solver.ts`**, che
+simula vento, risucchio e sabbia con lo stesso codice e lo stesso ordine di
+operazioni di `Player.update`. La corrente morta `w` non compare nel
+risolutore, e non deve: nel gioco non spinge, quindi lì non esiste proprio.
 
 ### I due boss: le arene di 1-11 e 2-11
 
@@ -261,7 +313,7 @@ in una pagina è `game.ts`, che è il composition root.
 Tre cose da sapere prima di toccarlo:
 
 - **La gerarchia è a due livelli, non piatta.** Radice → mondi → livelli. Con
-  ventuno livelli una lista sola non è una lista, è uno scorrimento; e i mondi
+  ventitré livelli una lista sola non è una lista, è uno scorrimento; e i mondi
   esistono già nel gioco (cambiano cielo, tileset e regole del pavimento).
   `WORLDS` in `levels/index.ts` si ricava dagli id (`w2-3` → mondo 2): un mondo
   nuovo nasce da solo il giorno in cui compare un `w3-1`.
@@ -286,16 +338,23 @@ sono un punteggio, non una valuta.
 | Tile | Cosa sembra | Cosa fa |
 |---|---|---|
 | `:` | parete d'acciaio | non è solida: ci si passa attraverso. Dopo, resta marcata |
+| `/` | parete d'arenaria | la stessa cosa, in pietra: è il muro finto del tempio |
 | `*` | un gomitolo | l'unica cosa del gioco che non uccide: sblocca i gatti |
 
+`/` esiste perché una lamiera d'acciaio in mezzo ai conci del mondo 3 sarebbe
+un cartello luminoso con scritto "di qua": un muro finto funziona solo se è
+fatto della stessa roba di tutti gli altri muri della stanza. Le due si
+comportano identiche (`isFakeWall` in `tiles.ts`), cambia solo di che materiale
+sono — e i tile che si saldano fra loro stanno in `MASONRY`, come `METAL`.
+
 **Non tutti i livelli ne hanno uno, ed è il punto.** Da 2-1 a 2-6 ce n'era uno
-ovunque, e cercarlo aveva smesso di essere cercare: era diventato raccogliere. 2-7
-e 2-9 non ne hanno nessuno, quindi da lì in poi una parete che sembra finta a volte
-è solo una parete, e l'unico modo di saperlo è perderci tempo. Chi aggiunge un
+ovunque, e cercarlo aveva smesso di essere cercare: era diventato raccogliere. 2-7,
+2-9 e 3-1 non ne hanno nessuno, quindi da lì in poi una parete che sembra finta a
+volte è solo una parete, e l'unico modo di saperlo è perderci tempo. Chi aggiunge un
 livello non è tenuto a metterci un gomitolo: `SECRET_COUNT` si conta dalle mappe.
 
 **Ma chi ce lo mette deve mettere anche il gatto.** Sulla strada dei gomitoli
-c'è un manto per ogni quota, senza buchi — undici gomitoli, dodici manti
+c'è un manto per ogni quota, senza buchi — dodici gomitoli, tredici manti
 contando quello che c'è da sempre — e `tests/smoke.ts` rifiuta un buco nella
 scala. Non è pignoleria: un gomitolo sta in una stanza murata che non serve a
 finire il livello, quindi l'unica ragione per andarci è quello che dà. Se il
@@ -324,7 +383,7 @@ soriano, punte, pettorina, chiazze, rosette) — sta in `drawMarkings`
 
 ### Le imprese: i gatti che non si trovano, si fanno
 
-L'altra metà della collezione sta in `game/feats.ts`. Sono cinque easter egg:
+L'altra metà della collezione sta in `game/feats.ts`. Sono sei easter egg:
 cose che nessuno chiede di fare, che non compaiono in nessuna mappa e che il
 gioco non annuncia prima. Valgono un gatto ciascuno, sempre **solo estetico**:
 un easter egg che desse un vantaggio smetterebbe di essere una battuta e
@@ -337,6 +396,7 @@ diventerebbe la strada giusta per giocare.
 | CAVIA | morire per tutte e sette le trappole senza preavviso | `World.kill` + `featForDeath` |
 | MONACO | finire un livello senza morire e senza raccogliere una moneta | `World.win` |
 | PADRONE | ammazzare il Padrone con un masso che ha staccato lui | `World.handleBossFight` (`Rubble.slam`) |
+| ALISEO | restare in aria `RULES.aloftTicks` (quattro secondi) senza toccare niente | `World.handleAloft` |
 
 Le regole che le tengono dentro al patto sono tre, e non sono negoziabili:
 
@@ -441,7 +501,7 @@ npm test        # struttura, risolutore, smoke test, regressioni
 npm run build   # typecheck + build
 ```
 
-`tests/` contiene dieci cose diverse:
+`tests/` contiene undici cose diverse:
 
 - **lo smoke test**, che esegue il gioco headless contro un `NullRenderer` capace di
   intercettare coordinate NaN e `push`/`pop` sbilanciati. Non dice se il gioco è bello,
@@ -452,8 +512,17 @@ npm run build   # typecheck + build
   toccare la velocità del gatto, e così via);
 - **l'igiene delle mappe**, che cerca gli errori che non rompono niente: una molla
   disegnata a mezz'aria, spuntoni invisibili sospesi sul vuoto, un nastro murato
-  sotto un solido, un carattere sconosciuto (che è aria, quindi la trappola che
-  credevi di aver messo non c'è), un checkpoint dopo l'arrivo;
+  sotto un solido, una piastra murata o senza un solo mattone da sganciare, un
+  carattere sconosciuto (che è aria, quindi la trappola che credevi di aver
+  messo non c'è), un checkpoint dopo l'arrivo;
+- **le correnti del mondo 3**, che sono la modifica alla fisica più invasiva del
+  gioco e quindi hanno il contratto più stretto: che il vento sposti chi è in
+  aria e non chi tocca terra, che non tocchi mai la velocità del gatto, che la
+  corrente morta sia identica e non sposti un pixel, che il risucchio schiacci
+  il salto, che nella sabbia si affondi molto più piano che nel vuoto e — la
+  cosa che conta davvero — che dalla sabbia si **esca** nuotando. Una pozza da
+  cui non si uscisse smetterebbe di essere una superficie e diventerebbe una
+  trappola travestita, cioè l'unica bugia che il patto non permette;
 - **il disegno di tutto il vocabolario**, perché la simulazione disegna solo le
   colonne inquadrate e un tile che compare a metà livello potrebbe non essere mai
   disegnato da nessun test;
@@ -614,3 +683,9 @@ e allegare uno zip offline: non servono a ospitare la pagina.
    E 2-11, Gothic Lucio: sta appeso alla volta, si attira invece di guidarlo, e
    si spegne facendolo cadere sui suoi stessi ceri
 8. ~~Account (nickname e password, niente email) e classifica dei tempi~~ ✅ — Supabase
+9. **Terzo mondo: il deserto e il tempio** — in corso. Ci sono 3-1 e 3-2, e con
+   loro la regola nuova: dopo il pavimento del mondo 2, qui cambia l'**aria**
+   (correnti, risucchi, sabbie mobili) e compare il primo congegno a distanza
+   (la piastra a pressione). Mancano i livelli da 3-3 in poi e il boss di 3-11,
+   che per non somigliare agli altri due dovrà essere un problema di *spazio*:
+   il Padrone si guida, Lucio si attira, il terzo dovrebbe togliere il terreno.

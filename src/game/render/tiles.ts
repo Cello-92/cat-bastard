@@ -167,6 +167,39 @@ export function drawTile(r: Renderer, tile: string, x: number, y: number, ctx: T
       // Stesso vapore, stesso rumore, stessa griglia. Uno solleva, l'altro no.
       drawVent(r, x, y, ctx);
       break;
+    case TILE.SAND:
+      drawSand(r, x, y, ctx);
+      break;
+    case TILE.SANDSTONE:
+      drawSandstone(r, x, y, ctx);
+      break;
+    case TILE.FAKE_STONE:
+      // Arenaria identica alle altre: se si vedesse, il tempio avrebbe le
+      // porte segnate. Dopo esserci passati attraverso, resta marcata.
+      drawSandstone(r, x, y, ctx);
+      if (ctx.revealed) drawOpenSeam(r, x, y, ctx);
+      break;
+    case TILE.PLATE:
+      drawPlate(r, x, y, ctx);
+      break;
+    case TILE.WIND_RIGHT:
+      drawWind(r, x, y, ctx, 1);
+      break;
+    case TILE.WIND_LEFT:
+      drawWind(r, x, y, ctx, -1);
+      break;
+    case TILE.DEAD_WIND:
+      // Stessa sabbia, stesso verso, stesso fischio. Solo che non spinge.
+      // Il verso si ricava dalla cella, così due correnti morte vicine non
+      // soffiano a caso: il livello resta memorizzabile, che è il patto.
+      drawWind(r, x, y, ctx, cellNoise(ctx.col, ctx.row, 91) > 0.5 ? 1 : -1);
+      break;
+    case TILE.DOWNDRAFT:
+      drawDowndraft(r, x, y, ctx);
+      break;
+    case TILE.QUICKSAND:
+      drawQuicksand(r, x, y, ctx);
+      break;
     case TILE.YARN:
       drawYarn(r, x, y, ctx);
       break;
@@ -1310,6 +1343,356 @@ function drawVent(r: Renderer, x: number, y: number, ctx: TileDrawContext): void
     ]);
   }
   r.pop();
+}
+
+// ---------------------------------------------------------------- mondo 3
+/**
+ * Sabbia compatta.
+ *
+ * È il pavimento onesto del deserto e deve leggersi come tale: massa piena,
+ * niente crepe, niente bordi che suggeriscano un blocco. L'unica cosa che ha
+ * di suo sono le **increspature** sulla faccia esposta — le stesse che lascia
+ * il vento sulle dune vere — e stanno lì per un motivo di gioco: sono l'unica
+ * differenza visibile fra questa e le sabbie mobili, che sono l'esatto
+ * contrario di un pavimento.
+ */
+function drawSand(r: Renderer, x: number, y: number, ctx: TileDrawContext): void {
+  const m = MATERIAL.sand;
+
+  r.gradientRect(x, y, T, T, ctx.open.up
+    ? bodyStops(m)
+    : [
+        { at: 0, color: mix(m.base, m.dark, 0.4) },
+        { at: 1, color: mix(m.base, m.dark, 0.68) },
+      ]);
+
+  // Stratificazione: la sabbia si deposita a strati, e sotto sono più scuri.
+  r.push();
+  r.setAlpha(0.12);
+  for (let i = 1; i < 4; i++) {
+    const ly = y + i * (T / 4) + cellNoise(ctx.col, ctx.row, i + 40) * 3;
+    r.line([x, ly, x + T, ly + cellNoise(ctx.col, ctx.row, i + 70) * 3 - 1.5], 1.4, m.dark);
+  }
+  r.pop();
+
+  speckle(r, x, y, ctx, 5, m, ctx.open.up ? 8 : 2);
+
+  if (ctx.open.up) {
+    // Il crinale: un filo di luce sulla superficie, con le increspature che
+    // corrono trasversali. Sempre nello stesso posto, sempre uguali.
+    r.gradientRect(x, y, T, 6, [
+      { at: 0, color: alpha(m.light, 0.85) },
+      { at: 1, color: alpha(m.light, 0) },
+    ]);
+    r.push();
+    r.setAlpha(0.3);
+    for (let i = 0; i < 4; i++) {
+      const rx = x + 2 + i * 8 + cellNoise(ctx.col, ctx.row, i + 200) * 3;
+      r.line([rx, y + 2, rx + 4, y + 5.5, rx + 1, y + 9], 1.1, m.deep);
+      r.line([rx + 0.6, y + 1.4, rx + 4.6, y + 4.9], 1, glare(0.5));
+    }
+    r.pop();
+  }
+
+  occlude(r, x, y, m, ctx.open);
+}
+
+/**
+ * Arenaria del tempio: conci squadrati, non roccia.
+ *
+ * La differenza con la sabbia è tutta qui — questa l'ha tagliata qualcuno. Il
+ * giunto tutt'intorno, lo smusso sugli spigoli e ogni tanto un'incisione a
+ * smalto: bastano a far capire, senza una riga di testo, che da qui in poi il
+ * mondo è stato costruito e quindi ha delle intenzioni.
+ */
+function drawSandstone(r: Renderer, x: number, y: number, ctx: TileDrawContext): void {
+  const m = MATERIAL.sandstone;
+
+  r.gradientRect(x, y, T, T, ctx.open.up
+    ? bodyStops(m)
+    : [
+        { at: 0, color: mix(m.base, m.dark, 0.34) },
+        { at: 1, color: mix(m.base, m.dark, 0.6) },
+      ]);
+
+  // Il concio: giunto scavato tutt'intorno, con lo smusso in luce sopra e a
+  // sinistra. È la stessa logica dei bulloni dell'acciaio — un dettaglio solo,
+  // ripetuto con criterio, vale più di dieci sparsi a caso.
+  r.rect(x + 2, y + 2, T - 4, 1.2, alpha(m.deep, 0.45));
+  r.rect(x + 2, y + 3.2, T - 4, 1, alpha(m.light, 0.35));
+  r.rect(x + 2, y + T - 3, T - 4, 1.2, alpha(m.deep, 0.4));
+  r.push();
+  r.setAlpha(0.35);
+  r.line([x + 2.5, y + 3, x + 2.5, y + T - 3], 1.1, m.deep);
+  r.line([x + T - 2.5, y + 3, x + T - 2.5, y + T - 3], 1.1, m.deep);
+  r.pop();
+
+  // Sbeccature: la pietra è vecchia, e lo è sempre negli stessi punti.
+  r.push();
+  r.setAlpha(0.3);
+  for (let i = 0; i < 3; i++) {
+    const nx = cellNoise(ctx.col, ctx.row, i + 300);
+    const ny = cellNoise(ctx.col, ctx.row, i + 330);
+    const size = 1.4 + nx * 2.6;
+    r.ellipse(x + 5 + nx * (T - 10), y + 5 + ny * (T - 10), size, size * 0.7, m.deep);
+  }
+  r.pop();
+
+  // Incisioni a smalto: una cella su tre circa, sempre le stesse. Sono l'unica
+  // cosa fredda del mondo 3 e servono a far vedere che qui c'era qualcuno.
+  if (cellNoise(ctx.col, ctx.row, 360) > 0.68) {
+    const glyph = MATERIAL.faience;
+    const gx = x + T / 2;
+    const gy = y + T / 2;
+    r.push();
+    r.setAlpha(0.55);
+    const kind = Math.floor(cellNoise(ctx.col, ctx.row, 390) * 3);
+    if (kind === 0) {
+      // Occhio.
+      r.line([gx - 6, gy, gx, gy - 4, gx + 6, gy], 1.6, glyph.base);
+      r.ellipse(gx, gy - 0.6, 2, 2, glyph.light);
+    } else if (kind === 1) {
+      // Onda d'acqua, che in un deserto è già una battuta.
+      for (let i = 0; i < 2; i++) {
+        r.line([gx - 6, gy - 2 + i * 4, gx - 2, gy - 4 + i * 4, gx + 2, gy - 2 + i * 4, gx + 6, gy - 4 + i * 4], 1.4, glyph.base);
+      }
+    } else {
+      // Gatto seduto. Piccolissimo, e chi lo nota lo nota.
+      r.ellipse(gx, gy + 2, 2.6, 3.4, glyph.base);
+      r.ellipse(gx, gy - 3, 2, 2, glyph.base);
+      r.polygon([gx - 2, gy - 4, gx - 1, gy - 7, gx - 0.2, gy - 4], glyph.light);
+      r.polygon([gx + 2, gy - 4, gx + 1, gy - 7, gx + 0.2, gy - 4], glyph.light);
+    }
+    r.pop();
+  }
+
+  occlude(r, x, y, m, ctx.open);
+}
+
+/**
+ * Piastra a pressione.
+ *
+ * Si vede benissimo — è una lastra più chiara, con la fuga tutt'intorno e un
+ * glifo al centro — e non c'è nessuna intenzione di nasconderla: quello che
+ * non si sa è *cosa* sgancia, e lo si scopre trenta metri più avanti. Una volta
+ * pestata resta abbassata e col glifo spento, perché una trappola già scattata
+ * che continuasse a sembrare carica sarebbe una bugia (CLAUDE.md, punto 7).
+ */
+function drawPlate(r: Renderer, x: number, y: number, ctx: TileDrawContext): void {
+  const m = MATERIAL.sandstone;
+  const glyph = MATERIAL.faience;
+  const pressed = ctx.revealed;
+  const lift = pressed ? 3 : 0;
+
+  // Vasca: il vano in cui la lastra scende.
+  r.gradientRect(x, y, T, T, [
+    { at: 0, color: mix(m.dark, m.deep, 0.4) },
+    { at: 1, color: mix(m.base, m.dark, 0.7) },
+  ]);
+  r.rect(x + 1, y + 1, T - 2, 2, alpha(m.deep, 0.7));
+
+  // La lastra vera e propria, un filo più stretta della cella: è la fuga a
+  // dire che questo pezzo di pavimento si muove.
+  r.gradientRect(x + 3, y + 2 + lift, T - 6, T - 4 - lift, bodyStops(m));
+  r.rect(x + 3, y + 2 + lift, T - 6, 1.2, alpha(m.light, pressed ? 0.3 : 0.7));
+
+  r.push();
+  r.setAlpha(pressed ? 0.25 : 0.7);
+  const gy = y + T / 2 + lift;
+  r.line([x + 8, gy - 3, x + T - 8, gy - 3], 1.4, glyph.base);
+  r.line([x + 10, gy + 1, x + T - 10, gy + 1], 1.4, glyph.base);
+  r.ellipse(x + T / 2, gy + 5, 2, 2, glyph.light);
+  r.pop();
+
+  // Da carica pulsa piano. È l'unico avviso, e non dice cosa succederà.
+  if (!pressed) {
+    r.push();
+    r.setBlend('add');
+    r.setAlpha(0.08 + wave(ctx.tick + ctx.col * 9, 70) * 0.1);
+    r.radial(x + T / 2, y + T / 2, T * 0.6, T * 0.45, [
+      { at: 0, color: alpha(glyph.light, 0.7) },
+      { at: 1, color: alpha(glyph.light, 0) },
+    ]);
+    r.pop();
+  }
+
+  occlude(r, x, y, m, ctx.open);
+}
+
+/**
+ * Corrente d'aria.
+ *
+ * Deve leggersi *da fermo* in che verso porta, esattamente come il nastro: la
+ * sabbia in sospensione corre nel verso della spinta, e le raffiche sono
+ * lunghe e sottili invece che tonde, perché è aria che scorre e non vapore che
+ * sale. Il giocatore deve poter decidere prima di saltarci dentro — dopo, in
+ * aria, non c'è più niente da decidere.
+ */
+function drawWind(r: Renderer, x: number, y: number, ctx: TileDrawContext, direction: number): void {
+  const phase = ctx.tick * 0.05 + ctx.col * 0.7 + ctx.row * 1.3;
+
+  // Il corpo della corrente: una fascia orizzontale uniforme dentro la cella.
+  // Uniforme e non sfumata per la stessa ragione del getto di vapore — celle
+  // affiancate con un gradiente proprio darebbero una corrente a scacchi.
+  r.push();
+  r.setBlend('add');
+  r.setAlpha(0.12 + wave(ctx.tick + ctx.row * 11, 40) * 0.05);
+  r.gradientRect(x, y + 2, T, T - 4, [
+    { at: 0, color: alpha(PALETTE.sand, 0.05) },
+    { at: 0.5, color: alpha(PALETTE.sand, 0.5) },
+    { at: 1, color: alpha(PALETTE.sand, 0.05) },
+  ]);
+  r.pop();
+
+  // Le raffiche: quattro filamenti che attraversano la cella, sfasati fra loro
+  // e con una quota che dipende dalla cella. Non escono mai dalla cella, così
+  // una colonna di correnti resta leggibile riga per riga.
+  r.push();
+  for (let i = 0; i < 4; i++) {
+    const t = ((phase + i * 0.27) % 1 + 1) % 1;
+    const sx = direction > 0 ? x + t * T : x + T - t * T;
+    const sy = y + 5 + ((i * 7 + Math.floor(cellNoise(ctx.col, ctx.row, i + 500) * 6)) % (T - 10));
+    const len = 7 + (1 - Math.abs(t - 0.5) * 2) * 9;
+    // Le raffiche a metà corsa sono le più lunghe e le più chiare: è quello
+    // che dà l'impressione della velocità invece che del movimento.
+    r.setAlpha(0.5 * (1 - Math.abs(t - 0.5) * 1.2));
+    r.line([sx, sy, sx - direction * len, sy + 1.2], 1.3, PALETTE.sand);
+    r.setAlpha(0.22 * (1 - Math.abs(t - 0.5) * 1.2));
+    r.line([sx, sy + 2.4, sx - direction * len * 0.7, sy + 3], 1, glare(0.7));
+  }
+  r.pop();
+
+  // Il grano che gira in coda alla raffica: pochi punti, e servono a dire che
+  // la corrente è fatta di roba, non di luce.
+  r.push();
+  r.setAlpha(0.4);
+  for (let i = 0; i < 3; i++) {
+    const t = ((phase * 1.3 + i * 0.4) % 1 + 1) % 1;
+    const gx = direction > 0 ? x + t * T : x + T - t * T;
+    const gy = y + T / 2 + Math.sin(phase * 3 + i * 2) * 8;
+    r.ellipse(gx, gy, 1.3, 1.1, MATERIAL.sand.light);
+  }
+  r.pop();
+}
+
+/**
+ * Risucchio: una colonna di sabbia che cade dal soffitto.
+ *
+ * È il getto di vapore capovolto, e si disegna apposta con lo stesso peso —
+ * una colonna piena che riempie la cella — perché è la stessa promessa letta
+ * al contrario: dove il vapore diceva "qui si sale", questa dice "qui si
+ * scende", e va vista prima di saltarci dentro.
+ */
+function drawDowndraft(r: Renderer, x: number, y: number, ctx: TileDrawContext): void {
+  const m = MATERIAL.sand;
+  const phase = ctx.tick * 0.11 + ctx.col * 1.3 + ctx.row * 0.5;
+
+  // La bocca: solo se sopra c'è qualcosa. Sotto niente, perché la sabbia cade
+  // e basta — non c'è una griglia che la raccoglie.
+  if (!ctx.open.up) {
+    r.gradientRect(x + 2, y, T - 4, 6, [
+      { at: 0, color: alpha(MATERIAL.sandstone.dark, 0.9) },
+      { at: 1, color: alpha(MATERIAL.sandstone.deep, 0.6) },
+    ]);
+    r.rect(x + 2, y + 5, T - 4, 1, alpha(m.light, 0.4));
+  }
+
+  r.push();
+  r.setAlpha(0.3 + wave(ctx.tick + ctx.col * 5, 28) * 0.08);
+  r.gradientRect(x + 4, y, T - 8, T, [
+    { at: 0, color: alpha(PALETTE.sand, 0.08) },
+    { at: 0.5, color: alpha(PALETTE.sand, 0.42) },
+    { at: 1, color: alpha(PALETTE.sand, 0.08) },
+  ], true);
+  r.pop();
+
+  // I filamenti che scendono: si allungano man mano che accelerano, come fa
+  // qualunque cosa che cade.
+  r.push();
+  for (let i = 0; i < 5; i++) {
+    const t = ((phase + i * 0.2) % 1 + 1) % 1;
+    const py = y + t * T;
+    const len = 4 + t * 10;
+    const px = x + 5 + ((i * 9 + Math.floor(cellNoise(ctx.col, ctx.row, i + 600) * 8)) % (T - 10));
+    r.setAlpha(0.55 * (1 - t * 0.5));
+    r.line([px, py - len, px + 0.8, py], 1.2, m.light);
+  }
+  r.pop();
+
+  // Polvere che sbuffa dove la colonna finisce: si vede dove si atterra, e
+  // atterrarci sotto è quasi sempre il problema.
+  if (!ctx.open.down) {
+    r.push();
+    r.setAlpha(0.3 + wave(ctx.tick, 24) * 0.12);
+    r.radial(x + T / 2, y + T - 2, 13, 6, [
+      { at: 0, color: alpha(PALETTE.sand, 0.6) },
+      { at: 1, color: alpha(PALETTE.sand, 0) },
+    ]);
+    r.pop();
+  }
+}
+
+/**
+ * Sabbie mobili.
+ *
+ * Il problema di disegno più delicato del mondo 3: devono somigliare alla
+ * sabbia — se no non c'è nessuna tentazione a metterci un piede — ma devono
+ * anche dire *da fermo* che non sono un pavimento, perché il patto dice che
+ * questa non è una trappola, è una superficie.
+ *
+ * La differenza è tutta nel bordo: la sabbia compatta ha un crinale netto e
+ * increspato, qui non c'è nessuna linea di contatto — la superficie respira,
+ * ci passano sopra dei mulinelli lentissimi e ogni tanto sale una bolla. È
+ * esattamente come si distingue una pozza d'acqua da un pavimento bagnato.
+ */
+function drawQuicksand(r: Renderer, x: number, y: number, ctx: TileDrawContext): void {
+  const m = MATERIAL.sand;
+  const wet = mix(m.base, MATERIAL.soil.dark, 0.35);
+  const surface = ctx.open.up;
+
+  r.gradientRect(x, y, T, T, [
+    { at: 0, color: surface ? mix(wet, m.light, 0.25) : wet },
+    { at: 1, color: mix(wet, m.deep, 0.55) },
+  ]);
+
+  // Mulinelli: due anelli concentrici che ruotano piano attorno a un centro
+  // che dipende dalla cella. È il movimento a dire "questa roba ti ingoia".
+  const swirl = ctx.tick / 90 + cellNoise(ctx.col, ctx.row, 700) * 6.28;
+  r.push();
+  r.setAlpha(0.28);
+  for (let i = 0; i < 2; i++) {
+    const radius = 6 + i * 5;
+    const cx = x + T / 2 + Math.cos(swirl + i * 2.1) * 3;
+    const cy = y + T / 2 + Math.sin(swirl + i * 2.1) * 2;
+    r.ellipse(cx, cy, radius, radius * 0.42, alpha(i ? m.dark : m.deep, 0.6));
+    r.ellipse(cx, cy - 0.8, radius * 0.9, radius * 0.34, alpha(m.base, 0.5));
+  }
+  r.pop();
+
+  // Bolle: salgono, arrivano in superficie e scoppiano. Il ritmo dipende dalla
+  // cella, quindi due pozze vicine non pulsano all'unisono.
+  r.push();
+  for (let i = 0; i < 3; i++) {
+    const t = ((ctx.tick / 110 + cellNoise(ctx.col, ctx.row, i + 730)) % 1 + 1) % 1;
+    const bx = x + 6 + cellNoise(ctx.col, ctx.row, i + 760) * (T - 12);
+    const by = y + T - t * T;
+    r.setAlpha(0.4 * (1 - t));
+    r.ellipse(bx, by, 1.6 + t * 2.2, 1.2 + t * 1.4, m.light);
+  }
+  r.pop();
+
+  if (surface) {
+    // Niente crinale, niente bordo netto: solo un velo più chiaro che ondeggia.
+    // È l'unica differenza a vista dalla sabbia compatta, e basta.
+    r.push();
+    r.setAlpha(0.35);
+    const bob = wave(ctx.tick + ctx.col * 13, 90) * 2;
+    r.gradientRect(x, y + bob, T, 5, [
+      { at: 0, color: alpha(m.light, 0.7) },
+      { at: 1, color: alpha(m.light, 0) },
+    ]);
+    r.pop();
+  }
 }
 
 /**

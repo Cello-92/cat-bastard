@@ -36,6 +36,10 @@ create table if not exists public.players (
   -- sbloccano contando questi, quindi sincronizzare i gomitoli sincronizza già
   -- i gatti: non c'è nessuna lista di gatti da farsi mandare e da credere.
   secrets       text[] not null default '{}',
+  -- Le imprese compiute (vedi src/game/feats.ts): il codice digitato, la
+  -- mezz'ora da fermo, le morti collezionate. Stessa idea dei gomitoli — sono
+  -- marche, si uniscono e non si tolgono — e anche loro sbloccano dei gatti.
+  feats         text[] not null default '{}',
   -- Difesa minima contro chi prova password a raffica: la chiave anon è
   -- pubblica, quindi l'endpoint di login è pubblico per definizione.
   failed_logins integer not null default 0,
@@ -43,6 +47,12 @@ create table if not exists public.players (
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
+
+-- `create table if not exists` non aggiunge le colonne nuove a una tabella che
+-- c'è già: su un database installato prima delle imprese, senza questa riga,
+-- `cb_sync` fallirebbe a ogni chiamata e nessuno saprebbe perché. Chi aggiunge
+-- una colonna aggiunge anche il suo `add column if not exists`.
+alter table public.players add column if not exists feats text[] not null default '{}';
 
 -- Il nickname è unico senza distinzione di maiuscole: "Diamond" e "diamond"
 -- sono la stessa persona, altrimenti la classifica diventa un gioco di sosia.
@@ -144,6 +154,7 @@ as $$
     'nickname',     p.nickname,
     'total_deaths', p.total_deaths,
     'secrets',      to_jsonb(p.secrets),
+    'feats',        to_jsonb(p.feats),
     'levels', coalesce((
       select jsonb_object_agg(
         s.level_id,
@@ -333,6 +344,7 @@ declare
   v_deaths  integer;
   v_coins   integer;
   v_secrets text[];
+  v_feats   text[];
 begin
   v_player := public.cb_session_player(p_token);
   if v_player is null then
@@ -403,6 +415,19 @@ begin
      where s ~ '^w[0-9]{1,3}-[0-9]{1,3}$';
   end if;
 
+  -- Le imprese: unione, come i gomitoli. Il filtro è sulla *forma* — minuscole
+  -- e trattini, com'è scritto in `game/feats.ts` — e non sull'elenco delle
+  -- imprese esistenti: il database non deve sapere quali sono, altrimenti
+  -- aggiungerne una al gioco vorrebbe dire rifare il backend, e nel frattempo
+  -- il gatto nuovo sparirebbe cambiando computer.
+  v_feats := '{}';
+  if jsonb_typeof(p_payload -> 'feats') = 'array' then
+    select coalesce(array_agg(distinct f), '{}')
+      into v_feats
+      from jsonb_array_elements_text(p_payload -> 'feats') as t(f)
+     where f ~ '^[a-z-]{1,32}$';
+  end if;
+
   update public.players p
      set total_deaths = greatest(
            p.total_deaths,
@@ -413,6 +438,10 @@ begin
          secrets = (
            select coalesce(array_agg(distinct x), '{}')
              from unnest(p.secrets || v_secrets) as u(x)
+         ),
+         feats = (
+           select coalesce(array_agg(distinct x), '{}')
+             from unnest(p.feats || v_feats) as u(x)
          ),
          updated_at = now()
    where p.id = v_player;
@@ -449,6 +478,7 @@ begin
   update public.players
      set total_deaths = 0,
          secrets      = '{}',
+         feats        = '{}',
          updated_at   = now()
    where id = v_player;
 

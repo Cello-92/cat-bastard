@@ -117,6 +117,17 @@ export const MATERIAL = {
   sapphire: material('#3d7fc4', '#8dc4f2', '#1a3f70', '#0b1e39', '#e8f6ff'),
   /** Iride del gatto spettro: rosa acceso, l'unica cosa viva che gli resta. */
   ghostEye: material('#d63f7d', '#ff8fb8', '#7c1741', '#3d0a21', '#ffe0ec'),
+
+  // --- Manti delle imprese (vedi game/feats.ts): i gatti che non si comprano
+  //     coi gomitoli, ma facendo la cosa strana giusta.
+  /** Ombra: quasi nero, con un riflesso viola. Non è nero pieno: sparirebbe. */
+  shadow: material('#27232f', '#4b4359', '#151119', '#09070d', '#9079b2'),
+  /** Verde acido da laboratorio: l'unico manto che sembra illuminarsi da solo. */
+  neon: material('#7ee04a', '#caff9c', '#3e7b23', '#1c3e0f', '#ebffd1'),
+  /** Grigio cenere del gatto sobrio: lana, non pelliccia da esposizione. */
+  ash: material('#7c8794', '#b6c2cf', '#454d57', '#232830', '#dbe4ee'),
+  /** Iride di brace: il rosso caldo di chi è stato dall'altra parte. */
+  ember: material('#e0503a', '#ff9d7c', '#7d1f13', '#3d0d07', '#ffd9cc'),
 } as const satisfies Record<string, Material>;
 
 export type MaterialName = keyof typeof MATERIAL;

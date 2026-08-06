@@ -25,9 +25,19 @@ export interface Progress {
    * sarebbe l'unica cattiveria del gioco senza una battuta a giustificarla.
    */
   secrets: string[];
+  /**
+   * Le imprese compiute (vedi `game/feats.ts`).
+   *
+   * Sono le marche degli easter egg: il codice digitato, la mezz'ora da fermo,
+   * le morti collezionate. Stanno accanto ai gomitoli e si comportano come
+   * loro — una cosa fatta non si disfa, nemmeno cambiando computer — perché
+   * anche loro sbloccano un gatto, e un gatto che sparisce è peggio di un gatto
+   * che non c'è mai stato.
+   */
+  feats: string[];
 }
 
-const emptyProgress = (): Progress => ({ levels: {}, totalDeaths: 0, secrets: [] });
+const emptyProgress = (): Progress => ({ levels: {}, totalDeaths: 0, secrets: [], feats: [] });
 
 export function loadProgress(): Progress {
   try {
@@ -42,6 +52,7 @@ export function loadProgress(): Progress {
       // Chi giocava prima che i gomitoli esistessero non ne ha nessuno, e va
       // benissimo così: il salvataggio vecchio deve continuare a caricarsi.
       secrets: parsed.secrets ?? [],
+      feats: parsed.feats ?? [],
     };
   } catch {
     return emptyProgress();
@@ -179,6 +190,20 @@ export function recordClear(
 export function recordSecret(progress: Progress, levelId: string): Progress {
   if (progress.secrets.includes(levelId)) return progress;
   const updated: Progress = { ...progress, secrets: [...progress.secrets, levelId] };
+  saveProgress(updated);
+  return updated;
+}
+
+/**
+ * Segna un'impresa come compiuta. Idempotente, come i gomitoli.
+ *
+ * Restituisce lo stesso oggetto se non c'era niente da segnare: chi chiama può
+ * confrontare i due riferimenti per sapere se è successo qualcosa di nuovo, ed
+ * è così che il gioco decide se annunciare un gatto o stare zitto.
+ */
+export function recordFeat(progress: Progress, featId: string): Progress {
+  if (progress.feats.includes(featId)) return progress;
+  const updated: Progress = { ...progress, feats: [...progress.feats, featId] };
   saveProgress(updated);
   return updated;
 }

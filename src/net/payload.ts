@@ -14,9 +14,10 @@ import type { LevelRecord, Progress } from '@core/storage';
  *
  * Quello che *non* passa di qui è il gatto scelto: è una preferenza come
  * l'audio, non un progresso, e vive in `Settings`. Il gatto sbloccato invece
- * dipende solo dai gomitoli trovati, quindi sincronizzare i gomitoli
- * sincronizza già i gatti — senza dover mandare una lista di gatti che il
- * server dovrebbe fidarsi di ricevere.
+ * dipende solo da cosa il giocatore ha fatto — i gomitoli trovati e le imprese
+ * compiute (`game/feats.ts`) — quindi sincronizzare quelli sincronizza già i
+ * gatti, senza dover mandare una lista di gatti che il server dovrebbe fidarsi
+ * di ricevere.
  */
 
 /** Un livello come lo vede il server. */
@@ -33,6 +34,14 @@ export interface RemoteState {
   total_deaths: number;
   /** Id dei livelli in cui il gomitolo è stato trovato. */
   secrets: string[];
+  /**
+   * Le imprese compiute (vedi `game/feats.ts`).
+   *
+   * Può mancare: un database aggiornato dopo il gioco risponde senza questo
+   * campo, e in quel caso valgono quelle locali — un easter egg trovato non si
+   * perde perché di là non c'era ancora la colonna.
+   */
+  feats?: string[];
   levels: Record<string, RemoteLevel>;
   /** Presente solo su login e registrazione. */
   token?: string;
@@ -71,6 +80,7 @@ export function toPayload(progress: Progress): Record<string, unknown> {
   return {
     total_deaths: progress.totalDeaths,
     secrets: progress.secrets,
+    feats: progress.feats,
     levels,
   };
 }
@@ -111,6 +121,10 @@ export function applyRemote(remote: RemoteState, local: Progress): Progress {
     // I gomitoli si uniscono, come già fa `recordSecret` in locale: un segreto
     // trovato non si perde più, e tantomeno cambiando computer.
     secrets: [...new Set([...local.secrets, ...(remote.secrets ?? [])])],
+    // Le imprese pure, e per lo stesso motivo: una cosa fatta è fatta. Se il
+    // server non le conosce ancora restano quelle di qui, che è il
+    // comportamento giusto anche il giorno in cui se ne aggiunge una nuova.
+    feats: [...new Set([...local.feats, ...(remote.feats ?? [])])],
   };
 }
 

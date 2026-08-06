@@ -20,18 +20,35 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
+# ---------------------------------------------------------------- versioni
+#
+# Le action sono tutte a un major che gira su **node24**, e non è un
+# aggiornamento di cortesia: dal 16 giugno 2026 i runner eseguono le action
+# JavaScript con node24 anche quando nel loro action.yml dichiarano node20, e
+# dal 16 settembre 2026 node20 dal runner sparisce. Le versioni che c'erano
+# prima dichiaravano tutte node20: prima warning, poi un deploy che non parte
+# più. È un guasto diverso da quello della coda descritto più sotto e va tenuto
+# distinto: quello lascia indietro il sito in silenzio, questo ferma il job e
+# almeno si vede.
+#
+# Chi le aggiorna controlli due cose sole: che il major nuovo dichiari
+# `runs.using: node24` (sta nel suo action.yml) e che `deploy-pages` accetti
+# ancora `reporting_interval`, che è quello che rende leggibile il log dei tre
+# tentativi.
 jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: 22
+          # Stessa major con cui gira il runner e con cui si sviluppa in locale.
+          # Vite 7 pretende ^20.19 || >=22.12, quindi 24 è dentro con margine.
+          node-version: 24
           cache: npm
 
       - name: Install
@@ -54,10 +71,10 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
       - name: Configura Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
 
       - name: Carica artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: dist
 
@@ -102,7 +119,7 @@ jobs:
       - name: Pubblica
         id: deployment
         continue-on-error: true
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
         with:
           reporting_interval: 15000
 
@@ -114,7 +131,7 @@ jobs:
         id: deployment2
         if: steps.deployment.outcome == 'failure'
         continue-on-error: true
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
         with:
           reporting_interval: 15000
 
@@ -125,6 +142,6 @@ jobs:
       - name: Ripubblica (3° tentativo)
         id: deployment3
         if: steps.deployment.outcome == 'failure' && steps.deployment2.outcome == 'failure'
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
         with:
           reporting_interval: 15000

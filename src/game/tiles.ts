@@ -258,6 +258,14 @@ export const TILE = {
    * sbaglio, che è tutto il combattimento.
    */
   GOTHIC_BOSS: '$',
+  /**
+   * La Sfinge: il boss di 3-11.
+   *
+   * Il marcatore va messo **sul pavimento**, come quello del Padrone: lei nasce
+   * sepolta lì sotto e il pavimento su cui poggia il marcatore è il filo a cui
+   * torna sempre — quello che romperà, e quello in cui resterà conficcata.
+   */
+  SPHINX: '0',
 } as const;
 
 export type TileChar = (typeof TILE)[keyof typeof TILE];
@@ -310,6 +318,7 @@ const SPAWNERS = new Set<string>([
   TILE.SCARAB,
   TILE.BOSS,
   TILE.GOTHIC_BOSS,
+  TILE.SPHINX,
 ]);
 
 /**

@@ -31,6 +31,7 @@ import { WORLD_3_7 } from './world-3-7';
 import { WORLD_3_8 } from './world-3-8';
 import { WORLD_3_9 } from './world-3-9';
 import { WORLD_3_10 } from './world-3-10';
+import { WORLD_3_11 } from './world-3-11';
 
 /**
  * Registro dei livelli, in ordine di gioco.
@@ -69,6 +70,7 @@ export const LEVELS: readonly LevelDef[] = [
   WORLD_3_8,
   WORLD_3_9,
   WORLD_3_10,
+  WORLD_3_11,
 ];
 
 /**
@@ -84,7 +86,7 @@ export const LEVELS: readonly LevelDef[] = [
 const WORLD_SUBTITLES: Record<number, string> = {
   1: 'Prati, grotte, e un Padrone in fondo',
   2: 'Gelo, fabbrica, e una cappella in fondo',
-  3: 'Sabbia, correnti, e un tempio che qualcuno ha costruito apposta',
+  3: 'Sabbia, correnti, e in fondo quello che ha costruito il tempio',
 };
 
 export interface WorldDef {

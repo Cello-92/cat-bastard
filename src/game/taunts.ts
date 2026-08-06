@@ -46,6 +46,10 @@ export const DEATH_CAUSE = {
   sentry: 'sentry',
   drone: 'drone',
   snowball: 'snowball',
+  // --- la Sfinge (3-11)
+  sphinx: 'sphinx',
+  sphinxErupt: 'sphinxErupt',
+  sphinxStomp: 'sphinxStomp',
   // --- mondo 3
   deadWind: 'deadWind',
   quicksand: 'quicksand',
@@ -198,6 +202,21 @@ const BY_CAUSE: Record<Exclude<DeathCause, 'generic'>, readonly string[]> = {
     'rotolava verso di te da tre secondi',
     'una palla di ghiaccio. correva più di te',
     'era in salita per lei e in discesa per te, eppure',
+  ],
+  sphinx: [
+    'le sei andato addosso. è di pietra, e la pietra non si sposta',
+    'era lì fuori da mezzo secondo e tu ci sei arrivato dentro',
+    'toccarla non era previsto da nessuna parte',
+  ],
+  sphinxErupt: [
+    'il pavimento rimbombava. rimbombava per te',
+    'ti è uscita da sotto. era sotto da sempre',
+    'quel rumore voleva dire "spostati", non "guarda"',
+  ],
+  sphinxStomp: [
+    'saltare in testa a una statua. rifletti su cosa hai appena fatto',
+    'è arenaria. tutta arenaria',
+    'il copricapo è d\'oro massiccio, e tu ci sei atterrato sopra',
   ],
   deadWind: [
     'quella corrente non spingeva. hai saltato per due',

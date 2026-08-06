@@ -5,7 +5,7 @@ import { groundTiles } from '@engine/physics';
 import type { Renderer } from '@engine/render/renderer';
 import { TileMap } from '@engine/tilemap';
 import { overlaps } from '@engine/types';
-import { BOSS, LUCIO, FEEL, PHYSICS, RULES, TILE_SIZE, VIEW_HEIGHT, VIEW_WIDTH } from './config';
+import { BOSS, LUCIO, SPHINX, FEEL, PHYSICS, RULES, TILE_SIZE, VIEW_HEIGHT, VIEW_WIDTH } from './config';
 import { Effects } from './effects';
 import { Entity } from './entities/entity';
 import { Boss } from './entities/boss';
@@ -17,6 +17,7 @@ import { Player } from './entities/player';
 import { Rubble } from './entities/rubble';
 import { Scarab } from './entities/scarab';
 import { Sentry } from './entities/sentry';
+import { Sphinx } from './entities/sphinx';
 import { Shroom } from './entities/shroom';
 import { Snowball } from './entities/snowball';
 import { Walker } from './entities/walker';
@@ -26,7 +27,7 @@ import { drawBackground } from './render/background';
 import { drawTile, type OpenSides } from './render/tiles';
 import { MATERIAL, PALETTE, SKIES, alpha } from './theme';
 import { DEATH_CAUSE, tauntFor, type DeathCause } from './taunts';
-import { TILE, beltDirection, isDeadly, isFakeWall, isSpawner, joins } from './tiles';
+import { TILE, beltDirection, isDeadly, isFakeWall, isSolid, isSpawner, joins } from './tiles';
 
 /**
  * Il mondo di gioco: mappa, entità, regole, camera.
@@ -289,6 +290,26 @@ export class World {
    * troppo importante per fidarsi di un "non esplode".
    */
   lucio: GothicBoss | null = null;
+  /**
+   * La Sfinge, se questo livello è la sala grande (3-11).
+   *
+   * Pubblica per la stessa ragione degli altri due, e qui più che mai: il suo
+   * colpo non è un incontro fra entità né un'entità sopra una cella accesa — è
+   * un'entità che esce da un pavimento **che ha rotto lei**, e lo stato di
+   * quel pavimento vive qui dentro. Se smettesse di funzionare non lancerebbe
+   * niente: renderebbe la Sfinge immortale in silenzio.
+   */
+  sphinx: Sphinx | null = null;
+  /**
+   * Le celle di pavimento sbriciolate dalla Sfinge: chiave -> quel che c'era
+   * prima, più i tick che mancano perché il vento la ricompatti.
+   *
+   * Il ciclo è chiuso come quello dei mattoni del Padrone e dei ceri di Lucio,
+   * e per una ragione in più: senza, dopo otto eruzioni la sala non avrebbe più
+   * un pezzo di pavimento su cui stare in piedi, e non sarebbe una partita
+   * persa — sarebbe una partita che non si può giocare.
+   */
+  private ruinedFloor = new Map<string, { tile: string; ticks: number }>();
   /** Le celle dei ceri, nell'ordine in cui stanno nella mappa. */
   private candles: { c: number; r: number }[] = [];
   /** Ceri spenti che si stanno riaccendendo: chiave -> tick rimasti. */
@@ -389,6 +410,8 @@ export class World {
     this.lucio = null;
     this.candles = [];
     this.candleRelight.clear();
+    this.sphinx = null;
+    this.ruinedFloor.clear();
 
     // Il gomitolo già preso non torna: la mappa è appena stata ricostruita
     // dalle righe del livello, e lì lui c'è ancora.
@@ -460,6 +483,15 @@ export class World {
         );
         return this.lucio;
       }
+      case TILE.SPHINX: {
+        // Il marcatore sta sul pavimento: la Sfinge ci nasce sepolta sotto, e
+        // quel filo è la quota a cui torna per tutto lo scontro.
+        this.sphinx = new Sphinx(
+          c * TILE_SIZE + (TILE_SIZE - SPHINX.width) / 2,
+          (r + 1) * TILE_SIZE - SPHINX.height,
+        );
+        return this.sphinx;
+      }
       case TILE.BOSS: {
         // Il marcatore sta nella cella *sopra* il pavimento: il Padrone ci
         // poggia i piedi, non ci sta dentro.
@@ -526,6 +558,10 @@ export class World {
 
     this.handleCandles();
     this.handleLucioFight();
+    if (this.state !== 'playing') return;
+
+    this.handleRuinedFloor();
+    this.handleSphinxFight();
     if (this.state !== 'playing') return;
 
     this.effects.update();
@@ -1298,6 +1334,124 @@ export class World {
     }
 
     if (lucio.isDead && !this.gateOpen) this.openGate();
+  }
+
+  // ------------------------------------------------------- la Sfinge (3-11)
+  /**
+   * La Sfinge sta uscendo: cosa c'è sotto di lei?
+   *
+   * È **la** domanda dello scontro, e sta qui per la regola di sempre — serve
+   * sapere insieme dov'è lei e com'è il pavimento, e nel progetto quel posto è
+   * uno solo. Il corpo è largo due celle: le basta trovarne **una** guasta per
+   * non fare presa, ed è quello che rende il combattimento giocabile. Se
+   * pretendesse la cella esatta, il giocatore dovrebbe piazzarsi *dentro* le
+   * sabbie mobili per chiamarla — cioè affondare mentre aspetta — e non
+   * sarebbe difficile, sarebbe una barzelletta.
+   */
+  sphinxSurfaces(sphinx: Sphinx): void {
+    const row = sphinx.floorRow;
+    const from = Math.floor(sphinx.x / TILE_SIZE);
+    const to = Math.floor((sphinx.x + sphinx.w - 1) / TILE_SIZE);
+
+    let ruined = false;
+    for (let c = from; c <= to; c++) {
+      if (this.map.get(c, row) === TILE.QUICKSAND) ruined = true;
+    }
+
+    if (ruined) {
+      sphinx.sink(this);
+      this.effects.floatingText(sphinx.centerX, sphinx.floorY - 30, 'LA SUA SABBIA', PALETTE.hot, 14);
+      if (sphinx.takeHit(this) && sphinx.isDead) {
+        // Il gatto della Sfinge si sblocca qui e da nessun'altra parte: è
+        // l'ultimo boss del mondo, e come per Lucio non è un segreto.
+        this.claim(FEAT.sphinx);
+      }
+      return;
+    }
+
+    // Pavimento sano: esce, e uscendo se lo porta via.
+    sphinx.erupt(this);
+    const radius = sphinx.phase === 1 ? SPHINX.ruinRadius : SPHINX.ruinRadiusFurious;
+    for (let c = from - radius; c <= to + radius; c++) this.ruinFloor(c, row);
+  }
+
+  /**
+   * Sbriciola una cella di pavimento in sabbie mobili.
+   *
+   * Si ricorda cosa c'era prima e lo rimette a posto dopo un po': la sala si
+   * consuma durante lo scontro, non per sempre. Il portone non si tocca — è una
+   * serratura, non un pavimento — e quello che è già sabbia si lascia stare,
+   * altrimenti ogni eruzione vicina ne allungherebbe la vita all'infinito e la
+   * stanza non si ricomporrebbe mai.
+   */
+  private ruinFloor(c: number, r: number): void {
+    const tile = this.map.get(c, r);
+    if (tile === TILE.EMPTY || tile === TILE.QUICKSAND || tile === TILE.BOSS_GATE) return;
+    if (!isSolid(tile)) return;
+
+    const key = TileMap.key(c, r);
+    if (this.ruinedFloor.has(key)) return;
+    this.ruinedFloor.set(key, { tile, ticks: SPHINX.floorHealTicks });
+    this.map.set(c, r, TILE.QUICKSAND);
+    this.effects.burst(c * TILE_SIZE + TILE_SIZE / 2, r * TILE_SIZE, PALETTE.sand, {
+      count: 8,
+      speed: 2.8,
+      size: 4,
+      life: 26,
+      gravity: 0.4,
+      angle: -Math.PI / 2,
+      spread: Math.PI * 0.7,
+    });
+  }
+
+  /** Il vento ricompatta la sabbia: la sala torna quella di prima, a pezzi. */
+  private handleRuinedFloor(): void {
+    for (const [key, ruin] of [...this.ruinedFloor]) {
+      if (ruin.ticks > 0) {
+        this.ruinedFloor.set(key, { tile: ruin.tile, ticks: ruin.ticks - 1 });
+        continue;
+      }
+      const [c, r] = cellOf(key);
+      // Mai richiudere il pavimento addosso a qualcuno: se il gatto è ancora lì
+      // dentro, si aspetta. Stessa regola della muratura del Padrone.
+      if (this.playerOverlapsCell(c, r)) {
+        this.ruinedFloor.set(key, { tile: ruin.tile, ticks: 8 });
+        continue;
+      }
+      this.ruinedFloor.delete(key);
+      this.map.set(c, r, ruin.tile);
+      this.effects.burst(c * TILE_SIZE + TILE_SIZE / 2, r * TILE_SIZE, PALETTE.dust, {
+        count: 5,
+        speed: 1.4,
+        size: 3,
+        life: 20,
+        shape: 'circle',
+      });
+    }
+  }
+
+  /**
+   * Il resto dello scontro: il portone.
+   *
+   * Non c'è altro da coordinare — chi colpisce chi succede tutto in
+   * `sphinxSurfaces`, perché il colpo è un'eruzione contro una cella e non un
+   * incontro fra due cose che si muovono.
+   */
+  private handleSphinxFight(): void {
+    const sphinx = this.sphinx;
+    if (!sphinx) return;
+    if (sphinx.isDead && !this.gateOpen) this.openGate();
+  }
+
+  /** Cambio di fase: si riprende la sala, cioè se la ricompatta tutta. */
+  onSphinxRage(): void {
+    for (const [key, ruin] of [...this.ruinedFloor]) {
+      const [c, r] = cellOf(key);
+      if (this.playerOverlapsCell(c, r)) continue;
+      this.ruinedFloor.delete(key);
+      this.map.set(c, r, ruin.tile);
+    }
+    this.callbacks.onTaunt('si è ricompattata il pavimento. ricominciamo da capo');
   }
 
   /** Il boss è caduto: il portone non ha più motivo di stare chiuso. */

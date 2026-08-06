@@ -268,6 +268,30 @@ export const CATS: readonly CatSkin[] = [
     pattern: 'points',
   },
 
+  {
+    id: 'volta',
+    name: 'VOLTA',
+    blurb: 'Bianco d\'osso e turchese, come le stanze sopra il soffitto. Ci sei arrivato guardando in su',
+    yarn: 15,
+    fur: MATERIAL.bone,
+    marks: MATERIAL.faience,
+    eye: MATERIAL.amber,
+    nose: MATERIAL.skin,
+    pattern: 'patched',
+  },
+
+  {
+    id: 'duna',
+    name: 'DUNA',
+    blurb: 'Sabbia sopra e ombra sotto, come una duna vista di taglio. Sedici gomitoli per un gatto che si mimetizza col pavimento che lo uccide',
+    yarn: 16,
+    fur: MATERIAL.sand,
+    marks: MATERIAL.soil,
+    eye: MATERIAL.ember,
+    nose: MATERIAL.skin,
+    pattern: 'tabby',
+  },
+
   // ------------------------------------------------------------- le imprese
   // Da qui in giù i gomitoli non c'entrano niente: sono i gatti che si prendono
   // facendo qualcosa che nessuno ha chiesto. Restano estetici come gli altri —

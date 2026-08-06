@@ -83,6 +83,17 @@ export const TILE = {
    * manca, non c'è più niente da fare.
    */
   DEAD_WIND: 'w',
+  /**
+   * La stessa corrente morta, disegnata verso sinistra.
+   *
+   * Due caratteri per la stessa identica cosa (cioè per niente) perché il verso
+   * *disegnato* è l'unica parte di questa trappola che conta: una corrente che
+   * sembra contraria fa saltare più forte, una che sembra a favore fa saltare
+   * più piano, e sono due morti diverse — si finisce corti nel primo caso e
+   * lunghi nel secondo. Lasciare la scelta a un rumore per cella voleva dire
+   * non poterla progettare.
+   */
+  DEAD_WIND_LEFT: 'q',
 
   // --- Mondo 2: il ghiaccio e la fabbrica. Vocabolario tutto suo.
   /**
@@ -230,6 +241,13 @@ export const TILE = {
   DRONE: '%',
   /** Palla di ghiaccio: quando entri nel suo raggio, rotola verso di te. */
   SNOWBALL: '&',
+  /**
+   * Scarabeo: vola piano e si fa portare dalle correnti come il gatto.
+   *
+   * È il nemico del mondo 3 ed è anche il suo strumento di lettura: dove va
+   * uno scarabeo, va il vento. Si schiaccia.
+   */
+  SCARAB: 'k',
   /** Il Padrone: il boss di 1-11. Ne esiste uno solo per livello. */
   BOSS: '@',
   /**
@@ -289,6 +307,7 @@ const SPAWNERS = new Set<string>([
   TILE.SENTRY,
   TILE.DRONE,
   TILE.SNOWBALL,
+  TILE.SCARAB,
   TILE.BOSS,
   TILE.GOTHIC_BOSS,
 ]);

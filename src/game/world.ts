@@ -15,6 +15,7 @@ import { Drone } from './entities/drone';
 import { FallingSpike } from './entities/falling-spike';
 import { Player } from './entities/player';
 import { Rubble } from './entities/rubble';
+import { Scarab } from './entities/scarab';
 import { Sentry } from './entities/sentry';
 import { Shroom } from './entities/shroom';
 import { Snowball } from './entities/snowball';
@@ -448,6 +449,8 @@ export class World {
         return new Drone(c * TILE_SIZE + 3, r * TILE_SIZE + 8);
       case TILE.SNOWBALL:
         return new Snowball(c * TILE_SIZE + 1, r * TILE_SIZE + 2);
+      case TILE.SCARAB:
+        return new Scarab(c * TILE_SIZE + 5, r * TILE_SIZE + 8);
       case TILE.GOTHIC_BOSS: {
         // Il marcatore sta sotto la volta e Lucio ci nasce appeso: la cella è
         // il suo soffitto, non il suo pavimento.
@@ -575,7 +578,7 @@ export class World {
         // Non fa niente. È esattamente questo il punto: se ne prende nota solo
         // per poter dare la colpa a lui quando il gatto arriva in fondo.
         this.lastDeadVent = this.ticks;
-      } else if (tile === TILE.DEAD_WIND) {
+      } else if (tile === TILE.DEAD_WIND || tile === TILE.DEAD_WIND_LEFT) {
         // Idem: non spinge, e l'unica traccia che lascia è di chi è la colpa.
         this.lastDeadWind = this.ticks;
       } else if (tile === TILE.QUICKSAND) {

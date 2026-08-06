@@ -189,10 +189,11 @@ export function drawTile(r: Renderer, tile: string, x: number, y: number, ctx: T
       drawWind(r, x, y, ctx, -1);
       break;
     case TILE.DEAD_WIND:
-      // Stessa sabbia, stesso verso, stesso fischio. Solo che non spinge.
-      // Il verso si ricava dalla cella, così due correnti morte vicine non
-      // soffiano a caso: il livello resta memorizzabile, che è il patto.
-      drawWind(r, x, y, ctx, cellNoise(ctx.col, ctx.row, 91) > 0.5 ? 1 : -1);
+    case TILE.DEAD_WIND_LEFT:
+      // Stessa sabbia, stesso fischio, stesso disegno delle correnti vere: il
+      // verso è quello dichiarato dal carattere, perché è l'unica cosa che il
+      // giocatore userà per decidere quanto saltare. Solo che non spinge.
+      drawWind(r, x, y, ctx, tile === TILE.DEAD_WIND ? 1 : -1);
       break;
     case TILE.DOWNDRAFT:
       drawDowndraft(r, x, y, ctx);

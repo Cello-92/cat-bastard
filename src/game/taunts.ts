@@ -49,6 +49,7 @@ export const DEATH_CAUSE = {
   // --- mondo 3
   deadWind: 'deadWind',
   quicksand: 'quicksand',
+  scarab: 'scarab',
   plate: 'plate',
   generic: 'generic',
 } as const;
@@ -207,6 +208,11 @@ const BY_CAUSE: Record<Exclude<DeathCause, 'generic'>, readonly string[]> = {
     'la sabbia non ti ha ucciso. ti ha solo tenuto fermo abbastanza',
     'si nuota, sai. bastava insistere col tasto',
     'sei affondato con molta dignità',
+  ],
+  scarab: [
+    'lo scarabeo non ti stava nemmeno cercando. andava dove andava il vento',
+    'guarda dove vanno loro, e saprai dove finirai tu',
+    'si schiacciava, sai. era l\'unica cosa qui che si schiacciava',
   ],
   plate: [
     'hai pestato una lastra e il soffitto se l\'è ricordato',

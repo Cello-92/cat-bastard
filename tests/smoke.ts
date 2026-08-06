@@ -730,6 +730,30 @@ console.log('\nCorrenti e congegni del mondo 3');
     check(world.state === 'playing', 'e uscirne non richiede di morire prima');
   }
 
+  // Lo scarabeo: se lo porta la corrente, con lo stesso numero del gatto.
+  //
+  // Non è un dettaglio estetico ed è per questo che ha un test: è l'unico modo
+  // che il giocatore ha di *vedere* dove lo porterà il salto prima di farlo. Se
+  // un giorno smettesse di farsi trascinare resterebbe un nemico qualunque, il
+  // livello continuerebbe a funzionare, e nessuno capirebbe più il vento.
+  //
+  // Non essendoci un modo di guardare dentro la lista delle entità, si usa il
+  // gatto come sonda: lo si piazza a terra (dove il vento non lo tocca) sulla
+  // traiettoria che lo scarabeo avrà solo se la corrente lo vince.
+  {
+    const probe = (tile: string): boolean => {
+      const band = '  ' + tile.repeat(7) + 'k' + tile.repeat(9);
+      const { world } = withRows({ 9: band, 10: SAND_FLOOR, 11: SAND_FLOOR });
+      world.player.x = 4 * TILE_SIZE;
+      world.player.y = 9 * TILE_SIZE;
+      for (let tick = 0; tick < 200 && world.state === 'playing'; tick++) world.update(idle);
+      return world.state !== 'playing';
+    };
+
+    check(probe(TILE.WIND_LEFT), 'la corrente contraria vince il volo dello scarabeo e se lo porta');
+    check(!probe(TILE.WIND_RIGHT), 'a favore invece se ne va, e non torna a cercarti');
+  }
+
   // La piastra a pressione: sgancia i mattoni nel raggio, non quelli fuori, e
   // una volta sola. È l'unico congegno del gioco in cui causa ed effetto stanno
   // in due posti diversi, quindi è anche l'unico che può rompersi in silenzio.

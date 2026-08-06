@@ -578,7 +578,16 @@ npm run build   # typecheck + build
   disegnata a mezz'aria, spuntoni invisibili sospesi sul vuoto, un nastro murato
   sotto un solido, una piastra murata o senza un solo mattone da sganciare, un
   carattere sconosciuto (che è aria, quindi la trappola che credevi di aver
-  messo non c'è), un checkpoint dopo l'arrivo;
+  messo non c'è), un checkpoint dopo l'arrivo. E una regola che non c'era e che
+  è costata due livelli ingiocabili: **sotto un risucchio che arriva fino a
+  terra, il vuoto vale al massimo due colonne**. Dentro una colonna che scende
+  l'accelerazione verso il basso è `gravity + downdraftPull`, quindi il salto
+  pieno passa da 122px a 48 e da sei colonne a due e mezzo — una pozza larga
+  quattro col risucchio piantato sopra non si scavalca, e la regola dei cinque
+  salti dice di sì. Il risolutore non se ne accorgeva perché la sabbia sa
+  nuotarla: attraversava quelle pozze affondando, con pochi tick di margine,
+  cioè per una via che nessuno troverebbe giocando. L'hanno trovato in 3-6 e in
+  3-7 giocandoci, che è l'unico posto in cui certe cose si trovano;
 - **le correnti del mondo 3**, che sono la modifica alla fisica più invasiva del
   gioco e quindi hanno il contratto più stretto: che il vento sposti chi è in
   aria e non chi tocca terra, che non tocchi mai la velocità del gatto, che la

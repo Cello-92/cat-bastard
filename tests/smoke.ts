@@ -208,6 +208,50 @@ for (const level of LEVELS) {
     `${level.name}: niente appeso al nulla${problems.length ? ` — ${problems.slice(0, 4).join('; ')}` : ''}`,
   );
 
+  // Buche sotto un risucchio che arriva fino a terra.
+  //
+  // È l'unico caso in cui la regola dei cinque salti mente, e l'ha trovato un
+  // giocatore vero in 3-6 dopo che tutti i test erano verdi. Dentro una colonna
+  // che scende l'accelerazione verso il basso è `gravity + downdraftPull`,
+  // quindi il salto pieno passa da 122px a 48 e da sei colonne a due e mezzo:
+  // una pozza larga quattro con il risucchio piantato sopra fino al pavimento
+  // non si scavalca, e basta.
+  //
+  // Il risolutore non se ne accorge perché la sabbia sa nuotarla — attraversava
+  // quella pozza affondando, in una manciata di tick di margine, cioè per una
+  // via che nessuno troverebbe giocando. Quindi la regola va scritta qui: sotto
+  // un risucchio che scende fino in fondo, il vuoto vale al massimo due colonne.
+  {
+    const DEEP = LEVEL_ROWS - 4;
+    let run = 0;
+    let worst = 0;
+    let start = -1;
+    for (let c = 0; c < cols; c++) {
+      let solid = false;
+      let deepDraft = false;
+      for (let r = 0; r < LEVEL_ROWS; r++) {
+        const tile = at(c, r);
+        if (tile === TILE.DOWNDRAFT && r >= DEEP) deepDraft = true;
+        const vanishes =
+          tile === TILE.FAKE_GROUND ||
+          tile === TILE.GHOST ||
+          tile === TILE.COLLAPSE ||
+          tile === TILE.BRITTLE_ICE;
+        if (!vanishes && isSolid(tile)) solid = true;
+      }
+      run = !solid && deepDraft ? run + 1 : 0;
+      if (run > worst) {
+        worst = run;
+        start = c - run + 1;
+      }
+    }
+    check(
+      worst <= 2,
+      `${level.name}: nessun vuoto più largo di 2 colonne sotto un risucchio che arriva a terra` +
+        `${worst > 2 ? ` (${worst} alla colonna ${start}: lì il salto pieno copre due colonne e mezzo)` : ''}`,
+    );
+  }
+
   // L'arrivo sta in fondo, e il checkpoint da qualche parte nel mezzo: un
   // checkpoint nelle prime colonne non salva niente, uno dopo l'arrivo è
   // decorazione.

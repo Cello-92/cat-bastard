@@ -46,6 +46,10 @@ export const DEATH_CAUSE = {
   sentry: 'sentry',
   drone: 'drone',
   snowball: 'snowball',
+  // --- mondo 3
+  deadWind: 'deadWind',
+  quicksand: 'quicksand',
+  plate: 'plate',
   generic: 'generic',
 } as const;
 
@@ -193,6 +197,21 @@ const BY_CAUSE: Record<Exclude<DeathCause, 'generic'>, readonly string[]> = {
     'rotolava verso di te da tre secondi',
     'una palla di ghiaccio. correva più di te',
     'era in salita per lei e in discesa per te, eppure',
+  ],
+  deadWind: [
+    'quella corrente non spingeva. hai saltato per due',
+    'stessa sabbia, stesso fischio, zero vento',
+    'contavi su una mano che non c\'era',
+  ],
+  quicksand: [
+    'la sabbia non ti ha ucciso. ti ha solo tenuto fermo abbastanza',
+    'si nuota, sai. bastava insistere col tasto',
+    'sei affondato con molta dignità',
+  ],
+  plate: [
+    'hai pestato una lastra e il soffitto se l\'è ricordato',
+    'quella piastra non faceva niente lì. faceva tutto più avanti',
+    'clack. e trenta metri dopo, tutto il resto',
   ],
 };
 

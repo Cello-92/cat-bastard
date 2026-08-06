@@ -75,8 +75,12 @@ export function drawBackground(r: Renderer, camX: number, sky: SkyName, tick: nu
 
   if (!theme.landscape) {
     if (theme.interior === 'factory') drawFactoryDepth(r, theme, camX, tick, W, H);
+    else if (theme.interior === 'temple') drawTempleDepth(r, theme, camX, tick, W, H);
     else drawCaveDepth(r, theme, camX, tick, W, H);
     drawGroundHaze(r, theme, horizon, W, H);
+    // Anche al chiuso il vento c'è: entra dai lucernari e porta dentro la
+    // stessa sabbia di fuori. È l'unica cosa che lega il tempio al deserto.
+    if (theme.sand) drawSandDrift(r, theme, camX, tick, W, H);
     return;
   }
 
@@ -87,12 +91,21 @@ export function drawBackground(r: Renderer, camX: number, sky: SkyName, tick: nu
   drawRange(r, theme, camX, MID_RANGE, horizon, W);
   drawClouds(r, theme, camX, tick, W, H);
   drawRange(r, theme, camX, NEAR_RANGE, horizon, W);
-  drawForest(r, theme, camX, horizon, W);
-  drawTreeLine(r, theme, camX, tick, horizon, W);
+  // Nel deserto i due piani vicini sono dune, non alberi: un filare di pioppi
+  // sopra il mondo 3 sarebbe la cosa più fuori posto di tutto il gioco.
+  if (theme.sand) {
+    drawDunes(r, theme, camX, tick, horizon, W);
+  } else {
+    drawForest(r, theme, camX, horizon, W);
+    drawTreeLine(r, theme, camX, tick, horizon, W);
+  }
   drawGroundHaze(r, theme, horizon, W, H);
   // La neve sta davanti a tutto, compreso il filare in primo piano: è l'aria
-  // tra il giocatore e il mondo, non un altro piano del paesaggio.
+  // tra il giocatore e il mondo, non un altro piano del paesaggio. La sabbia
+  // sospesa sta lì per la stessa ragione, e per una in più: dice da che parte
+  // tira il vento, che qui è una regola di gioco.
   if (theme.snow) drawSnowfall(r, theme, camX, tick, W, H);
+  if (theme.sand) drawSandDrift(r, theme, camX, tick, W, H);
 }
 
 // ---------------------------------------------------------------- grotta
@@ -228,6 +241,211 @@ function drawFactoryDepth(
       r.rect(bx, y - 4, 5, 13 - lane * 2, mix(color, '#000000', 0.3));
     }
   }
+}
+
+// ---------------------------------------------------------------- tempio
+/**
+ * Il fondo del tempio: colonne, e niente altro.
+ *
+ * La grotta usava il buio per dare profondità e la fabbrica usava la scala;
+ * qui la dà la **ripetizione**. Due colonnati identici che scorrono a velocità
+ * diverse producono un battimento che l'occhio legge come volume, ed è lo
+ * stesso trucco di qualunque corridoio infinito: le cose fatte dall'uomo sono
+ * tutte uguali, e questo si vede solo quando ce ne sono tante.
+ */
+function drawTempleDepth(
+  r: Renderer,
+  theme: SkyTheme,
+  camX: number,
+  tick: number,
+  W: number,
+  H: number,
+): void {
+  const naves = [
+    { speed: 0.07, depth: 0.72, spacing: 120, width: 34, seed: 4.3 },
+    { speed: 0.19, depth: 0.4, spacing: 168, width: 52, seed: 9.1 },
+  ];
+
+  for (const nave of naves) {
+    const stone = mix(theme.ridge, '#000000', nave.depth * 0.72);
+    const lit = mix(stone, theme.sunGlow, 0.14 * (1 - nave.depth));
+    const offset = camX * nave.speed;
+    const top = H * (0.06 + nave.depth * 0.1);
+    const floor = H * (0.94 - nave.depth * 0.08);
+
+    // Architrave continuo: è quello che dice "stanza" invece di "pali".
+    r.rect(0, top, W, 12 - nave.depth * 5, stone);
+    r.rect(0, top, W, 1.5, alpha(lit, 0.6));
+
+    const first = Math.floor(offset / nave.spacing) - 1;
+    for (let i = first; i < first + Math.ceil(W / nave.spacing) + 3; i++) {
+      const x = i * nave.spacing - offset;
+      if (x < -nave.width || x > W + nave.width) continue;
+
+      const w = nave.width;
+      // Il fusto si rastrema verso l'alto, come qualunque colonna vera.
+      r.polygon(
+        [x - w * 0.36, top + 10, x + w * 0.36, top + 10, x + w * 0.44, floor, x - w * 0.44, floor],
+        stone,
+      );
+      // Capitello e base: due dadi appena più larghi del fusto.
+      r.rect(x - w * 0.5, top + 6, w, 9 - nave.depth * 4, mix(stone, lit, 0.35));
+      r.rect(x - w * 0.5, floor - 8, w, 8, mix(stone, '#000000', 0.25));
+      // Scanalature: solo sul lato illuminato, che è sempre quello a sinistra.
+      r.push();
+      r.setAlpha(0.35 * (1 - nave.depth));
+      r.line([x - w * 0.24, top + 14, x - w * 0.3, floor - 8], 1.6, lit);
+      r.pop();
+      // Fascia incisa a metà fusto: la sola cosa che distingue una colonna
+      // dall'altra, e viene dal seme, quindi non cambia mai.
+      if (hash(i * 2.9 + nave.seed) > 0.55) {
+        r.rect(x - w * 0.4, (top + floor) / 2, w * 0.8, 5 - nave.depth * 2, alpha(theme.sunTint, 0.22));
+      }
+    }
+  }
+
+  // Lucernari insabbiati: coni di luce polverosa che scendono dalla volta.
+  // Sono l'unica sorgente del tempio e si muovono col mondo, molto lenti.
+  r.push();
+  r.setBlend('add');
+  for (let i = 0; i < 3; i++) {
+    const span = W + 520;
+    let x = (i * 280 - camX * 0.24) % span;
+    if (x < 0) x += span;
+    const px = x - 260;
+    r.setAlpha(0.09 + Math.abs(Math.sin(tick / 300 + i * 1.7)) * 0.04);
+    r.polygon(
+      [px - 14, 0, px + 14, 0, px + 64, H * 0.82, px - 64, H * 0.82],
+      alpha(theme.sunGlow, 0.5),
+    );
+    r.radial(px, H * 0.78, 70, 26, [
+      { at: 0, color: alpha(theme.sunGlow, 0.5) },
+      { at: 1, color: alpha(theme.sunGlow, 0) },
+    ]);
+  }
+  r.pop();
+}
+
+// ---------------------------------------------------------------- deserto
+/**
+ * Dune.
+ *
+ * Una duna non ha creste aguzze: ha una schiena lunghissima sopravvento e un
+ * taglio netto sottovento, e la cosa che la rende riconoscibile è proprio
+ * l'asimmetria. Quindi non si riusa `ridgeAt` (che fa montagne) ma una somma
+ * di seni con la fase spostata, e la linea di cresta si disegna a parte: nel
+ * deserto quella riga di luce è l'unica cosa che dice dove finisce una duna e
+ * comincia il cielo.
+ */
+function drawDunes(
+  r: Renderer,
+  theme: SkyTheme,
+  camX: number,
+  tick: number,
+  horizon: number,
+  W: number,
+): void {
+  const layers = [
+    { speed: 0.3, depth: 0.3, height: 54, base: 16, frequency: 0.0042, seed: 2.2 },
+    { speed: 0.52, depth: 0.1, height: 76, base: 30, frequency: 0.0027, seed: 7.6 },
+  ];
+
+  for (const layer of layers) {
+    const worldX = camX * layer.speed;
+    const baseY = horizon + layer.base;
+    const body = mix(theme.canopy, theme.fog, layer.depth);
+    const lit = mix(body, theme.sunCore, 0.3 - layer.depth * 0.15);
+    const shade = mix(body, '#000000', 0.22 + layer.depth * 0.1);
+
+    const step = 8;
+    const crest: number[] = [];
+    for (let x = -step; x <= W + step; x += step) {
+      const t = (worldX + x) * layer.frequency + layer.seed;
+      // La schiena sale piano (seno lento) e il taglio scende di colpo (il
+      // termine al cubo): è la forma di una duna vista di profilo.
+      const back = Math.sin(t) * 0.5 + 0.5;
+      const slip = Math.sin(t * 2.1 + 1.2) ** 3 * 0.28;
+      crest.push(x, baseY - (back * 0.82 + slip) * layer.height);
+    }
+
+    const filled = [...crest, W + step, baseY + 60, -step, baseY + 60];
+    r.blob(filled, body);
+
+    // Versante sottovento in ombra: sta sempre dalla stessa parte del sole.
+    r.push();
+    r.setAlpha(0.5);
+    for (let i = 2; i < crest.length - 2; i += 2) {
+      const y0 = crest[i + 1] ?? baseY;
+      const y1 = crest[i + 3] ?? y0;
+      if (y1 <= y0) continue;
+      const x = crest[i] ?? 0;
+      r.polygon([x, y0, x + step, y1, x + step, y1 + 26, x, y0 + 20], shade);
+    }
+    r.pop();
+
+    // La cresta: un filo di luce che corre lungo tutta la duna.
+    r.push();
+    r.setAlpha(0.6 - layer.depth * 0.3);
+    r.line(crest, 2, lit);
+    r.pop();
+
+    // Il fumo di sabbia che si stacca dalle creste col vento. È lento e
+    // deterministico: non è pulviscolo, è la duna che si sposta.
+    r.push();
+    r.setAlpha(0.14);
+    const drift = theme.sandDrift ?? 1;
+    for (let i = 4; i < crest.length - 4; i += 6) {
+      const x = crest[i] ?? 0;
+      const y = crest[i + 1] ?? baseY;
+      const puff = 8 + Math.abs(Math.sin(tick / 90 + i)) * 10;
+      r.radial(x + drift * puff, y - 4, puff * 1.6, 5, [
+        { at: 0, color: alpha(theme.cloudLight, 0.7) },
+        { at: 1, color: alpha(theme.cloudLight, 0) },
+      ]);
+    }
+    r.pop();
+  }
+}
+
+/**
+ * Sabbia sospesa: veli che attraversano lo schermo in orizzontale.
+ *
+ * È il gemello di `drawSnowfall` e fa il lavoro opposto. La neve cade, e
+ * cadendo riempie l'aria; questa corre, e correndo dice da che parte tira il
+ * vento — informazione di gioco, non decorazione, perché nel terzo mondo il
+ * vento sposta il gatto mentre è a mezz'aria.
+ */
+function drawSandDrift(
+  r: Renderer,
+  theme: SkyTheme,
+  camX: number,
+  tick: number,
+  W: number,
+  H: number,
+): void {
+  const drift = theme.sandDrift ?? 1;
+  const layers = [
+    { count: 30, speed: 1.6, length: 26, size: 0.9, parallax: 0.1, alpha: 0.18 },
+    { count: 18, speed: 3.1, length: 44, size: 1.4, parallax: 0.26, alpha: 0.24 },
+    { count: 9, speed: 5.4, length: 78, size: 2.2, parallax: 0.5, alpha: 0.3 },
+  ];
+
+  r.push();
+  for (const layer of layers) {
+    r.setAlpha(layer.alpha);
+    for (let i = 0; i < layer.count; i++) {
+      const seed = hash(i * 5.3 + layer.size);
+      const span = W + layer.length * 2 + 120;
+      let x = (seed * span + tick * layer.speed * drift - camX * layer.parallax) % span;
+      if (x < 0) x += span;
+      const px = x - layer.length - 60;
+      // La quota oscilla piano: un velo di sabbia non corre mai dritto.
+      const y = seed * H + Math.sin(tick / (80 + seed * 90) + i) * 9;
+
+      r.line([px, y, px + drift * layer.length, y - 1.5], layer.size, theme.cloudLight);
+    }
+  }
+  r.pop();
 }
 
 // ---------------------------------------------------------------- gelo

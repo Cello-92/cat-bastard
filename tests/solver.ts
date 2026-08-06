@@ -1,6 +1,6 @@
 import { PHYSICS, RULES, SURFACE, TILE_SIZE } from '@game/config';
 import { LEVELS, type LevelDef } from '@game/levels';
-import { TILE, beltDirection, isIcy, isSolid } from '@game/tiles';
+import { TILE, beltDirection, isIcy, isSolid, windDirection } from '@game/tiles';
 import { TileMap } from '@engine/tilemap';
 import { applyGravity, groundTiles, moveX, moveY, updateGrounded } from '@engine/physics';
 import type { Body } from '@engine/types';
@@ -115,6 +115,11 @@ function step(state: SearchState, map: TileMap, action: { dir: number; jump: boo
   // `Player.sampleSurface`. Se qui si campionasse dopo, il risolutore
   // troverebbe traiettorie che nel gioco non esistono.
   const inVent = overlapsTile(body.x, body.y, map, TILE.VENT);
+  // Mondo 3: risucchio, sabbie mobili e correnti d'aria. La corrente morta non
+  // compare, e non deve: nel gioco non spinge, quindi qui non esiste proprio.
+  const inDowndraft = overlapsTile(body.x, body.y, map, TILE.DOWNDRAFT);
+  const inSand = overlapsTile(body.x, body.y, map, TILE.QUICKSAND);
+  const wind = windAt(body.x, body.y, map);
   let onIce = false;
   let belt = 0;
   if (body.onGround) {
@@ -126,17 +131,24 @@ function step(state: SearchState, map: TileMap, action: { dir: number; jump: boo
   }
 
   // 1. moto orizzontale
-  const push = onIce ? SURFACE.iceAcceleration : PHYSICS.acceleration;
+  const push = inSand
+    ? SURFACE.sandAcceleration
+    : onIce
+      ? SURFACE.iceAcceleration
+      : PHYSICS.acceleration;
   if (action.dir < 0) body.vx -= push;
   if (action.dir > 0) body.vx += push;
   if (action.dir === 0) {
-    body.vx *= body.onGround
-      ? onIce
-        ? SURFACE.iceFriction
-        : PHYSICS.groundFriction
-      : PHYSICS.airFriction;
+    body.vx *= inSand
+      ? SURFACE.sandFriction
+      : body.onGround
+        ? onIce
+          ? SURFACE.iceFriction
+          : PHYSICS.groundFriction
+        : PHYSICS.airFriction;
   }
-  body.vx = Math.max(-PHYSICS.maxSpeed, Math.min(PHYSICS.maxSpeed, body.vx));
+  const cap = inSand ? SURFACE.sandMaxSpeed : PHYSICS.maxSpeed;
+  body.vx = Math.max(-cap, Math.min(cap, body.vx));
   if (Math.abs(body.vx) < 0.05) body.vx = 0;
 
   moveX(body, map, isStableSolid);
@@ -149,11 +161,22 @@ function step(state: SearchState, map: TileMap, action: { dir: number; jump: boo
     body.vx = own;
   }
 
-  // 2. salto (con jump buffer e coyote time, come nel gioco)
+  // 1c. la corrente d'aria: come il nastro, ma solo per chi non tocca terra.
+  if (wind !== 0 && !body.onGround) {
+    const own = body.vx;
+    body.vx = wind * SURFACE.windSpeed;
+    moveX(body, map, isStableSolid);
+    body.vx = own;
+  }
+
+  // 2. salto (con jump buffer e coyote time, come nel gioco). Dentro la sabbia
+  // si può bracciare anche senza appoggio: è l'unico modo di uscire da una
+  // pozza, quindi ignorarlo qui vorrebbe dire dichiarare impossibile un
+  // livello che si gioca benissimo.
   const justPressed = action.jump && !state.jumpHeld;
   if (justPressed) buffer = PHYSICS.jumpBufferTicks;
-  if (buffer > 0 && (body.onGround || coyote > 0)) {
-    body.vy = -PHYSICS.jumpImpulse;
+  if (buffer > 0 && (body.onGround || coyote > 0 || inSand)) {
+    body.vy = -(inSand ? SURFACE.sandStroke : PHYSICS.jumpImpulse);
     body.onGround = false;
     coyote = 0;
     buffer = 0;
@@ -165,8 +188,17 @@ function step(state: SearchState, map: TileMap, action: { dir: number; jump: boo
     body.vy = Math.min(body.vy, Math.max(body.vy - SURFACE.ventLift, -SURFACE.ventMaxRise));
   }
 
+  // 2c. risucchio: il getto al contrario, e nello stesso punto della sequenza.
+  if (inDowndraft) {
+    body.vy = Math.max(body.vy, Math.min(body.vy + SURFACE.downdraftPull, SURFACE.downdraftMaxFall));
+  }
+
   // 3. gravità e moto verticale
   applyGravity(body, PHYSICS.gravity, PHYSICS.terminalVelocity);
+  // 3b. la sabbia limita la velocità DOPO la gravità: è densità, non spinta.
+  if (inSand) {
+    body.vy = Math.max(-SURFACE.sandRise, Math.min(SURFACE.sandSink, body.vy));
+  }
   moveY(body, map, isStableSolid);
   updateGrounded(body, map, isStableSolid);
 
@@ -207,6 +239,26 @@ function overlapsTile(x: number, y: number, map: TileMap, tile: string): boolean
     }
   }
   return false;
+}
+
+/**
+ * Il verso della corrente d'aria che tocca il gatto, come in `sampleSurface`:
+ * l'ultima cella letta vince, e le celle si leggono nello stesso ordine.
+ */
+function windAt(x: number, y: number, map: TileMap): number {
+  const c0 = Math.floor(x / TILE_SIZE);
+  const c1 = Math.floor((x + PLAYER_W - 1) / TILE_SIZE);
+  const r0 = Math.floor(y / TILE_SIZE);
+  const r1 = Math.floor((y + PLAYER_H - 1) / TILE_SIZE);
+
+  let direction = 0;
+  for (let r = r0; r <= r1; r++) {
+    for (let c = c0; c <= c1; c++) {
+      const gust = windDirection(map.get(c, r));
+      if (gust !== 0) direction = gust;
+    }
+  }
+  return direction;
 }
 
 /** Il gatto è morto? Caduta fuori mappa o contatto con qualcosa di letale. */

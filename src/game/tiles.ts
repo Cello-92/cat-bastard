@@ -73,6 +73,16 @@ export const TILE = {
    * seconda volta la trappola è evitabile — che è l'unica regola che resta.
    */
   HIDDEN_SPIKES: '!',
+  /**
+   * Corrente morta: stesse strisce di sabbia, stesso verso, stesso fischio.
+   * Non spinge.
+   *
+   * È il getto spento del terzo mondo, e non è una ripetizione: là ci si
+   * buttava dentro per essere sollevati, qui ci si butta *attraverso* contando
+   * su una spinta laterale che non arriva — e in aria, quando ci si accorge che
+   * manca, non c'è più niente da fare.
+   */
+  DEAD_WIND: 'w',
 
   // --- Mondo 2: il ghiaccio e la fabbrica. Vocabolario tutto suo.
   /**
@@ -107,9 +117,68 @@ export const TILE = {
    */
   DEAD_VENT: ',',
 
+  // --- Mondo 3: il deserto e il tempio. Qui a cambiare non è il pavimento: è
+  //     l'aria. Il mondo 2 aveva superfici che rispondevano in modo diverso
+  //     sotto le zampe; qui ci sono correnti che spostano il gatto mentre è a
+  //     mezz'aria, cioè nell'unico momento in cui non poteva farci niente.
+  /**
+   * Sabbia compatta: il pavimento onesto del deserto.
+   * Si comporta esattamente come `#` e come `+`. Cambia solo il manto — dune
+   * increspate dal vento invece di erba o neve.
+   */
+  SAND: '.',
+  /** Arenaria: la pietra del tempio, squadrata e incisa. Solida e onesta. */
+  SANDSTONE: '-',
+  /**
+   * Corrente d'aria verso destra.
+   *
+   * È l'esatto contrario del nastro trasportatore: quello sposta chi ci
+   * cammina sopra, questa sposta chi **non tocca terra**. A terra gli artigli
+   * tengono e il vento non conta niente; in aria non c'è niente a cui
+   * aggrapparsi, e il salto che avevi calcolato arriva da un'altra parte.
+   */
+  WIND_RIGHT: ')',
+  /** Corrente d'aria verso sinistra. Di solito verso qualcosa. */
+  WIND_LEFT: '(',
+  /**
+   * Risucchio: una colonna di sabbia che cade.
+   *
+   * Il gemello capovolto del getto di vapore del mondo 2. Quello ti solleva
+   * finché ci resti dentro, questo ti schiaccia: il salto pieno dentro un
+   * risucchio arriva a metà altezza, sempre alla stessa metà.
+   */
+  DOWNDRAFT: 'v',
+  /**
+   * Sabbie mobili.
+   *
+   * Non sono solide e non uccidono di per sé: rallentano. Dentro si affonda
+   * piano, ci si muove piano, e si risale solo a bracciate — è l'unica cosa
+   * del gioco che si nuota, ed è vocabolario di Mario tanto quanto la molla.
+   * Quello che uccide è il fondo, e sotto le pozze di solito non c'è fondo.
+   */
+  QUICKSAND: 's',
+  /**
+   * Piastra a pressione del tempio.
+   *
+   * L'unica trappola del gioco che succede **da un'altra parte**: pestarla non
+   * fa niente lì dove sei, fa venire giù il soffitto più avanti. Si vede
+   * benissimo — è una lastra con la fuga tutt'intorno — e il tradimento non è
+   * che sia nascosta: è che quando capisci a cosa serviva stai già correndo
+   * sotto la parte di corridoio che hai appena sganciato.
+   */
+  PLATE: 'p',
+
   // --- Segreti: non uccidono, si nascondono.
   /** Parete d'acciaio attraversabile: dietro c'è sempre qualcosa. */
   FAKE_WALL: ':',
+  /**
+   * La stessa cosa, in arenaria: la parete finta del tempio.
+   *
+   * Esiste perché una lamiera d'acciaio in mezzo alla pietra sarebbe un
+   * cartello luminoso con scritto "di qua": il muro finto funziona solo se è
+   * fatto della stessa roba di tutti gli altri muri della stanza.
+   */
+  FAKE_STONE: '/',
   /** Gomitolo: uno per livello, ben nascosto. Sblocca i gatti. */
   YARN: '*',
 
@@ -195,6 +264,9 @@ const SOLID = new Set<string>([
   TILE.STEEL,
   TILE.BELT_RIGHT,
   TILE.BELT_LEFT,
+  TILE.SAND,
+  TILE.SANDSTONE,
+  TILE.PLATE,
   TILE.BOSS_BRICK,
   TILE.BOSS_GATE,
 ]);
@@ -249,12 +321,23 @@ const METAL = new Set<string>([
   TILE.FAKE_WALL,
 ]);
 
+/**
+ * Muratura del tempio. Ci sta dentro la parete finta, per lo stesso motivo per
+ * cui la lamiera finta sta nel metallo: deve saldarsi alle vere esattamente
+ * come farebbero fra loro, o il segreto si vede da mezzo schermo.
+ */
+const MASONRY = new Set<string>([TILE.SANDSTONE, TILE.FAKE_STONE, TILE.PLATE]);
+
 export const isSolid = (tile: string): boolean => SOLID.has(tile);
 export const isDeadly = (tile: string): boolean => DEADLY.has(tile);
 export const isSpawner = (tile: string): boolean => SPAWNERS.has(tile);
 export const isEarth = (tile: string): boolean => EARTH.has(tile);
 export const isIcy = (tile: string): boolean => ICY.has(tile);
 export const isMetal = (tile: string): boolean => METAL.has(tile);
+export const isMasonry = (tile: string): boolean => MASONRY.has(tile);
+/** Una parete che non è una parete: acciaio finto o arenaria finta. */
+export const isFakeWall = (tile: string): boolean =>
+  tile === TILE.FAKE_WALL || tile === TILE.FAKE_STONE;
 
 /**
  * Due celle si "saldano" (niente bordo, niente ombra tra loro)?
@@ -268,6 +351,8 @@ export const joins = (tile: string, other: string): boolean => {
   if (isEarth(tile)) return isEarth(other);
   if (isIcy(tile)) return isIcy(other);
   if (isMetal(tile)) return isMetal(other);
+  if (isMasonry(tile)) return isMasonry(other);
+  if (tile === TILE.SAND) return other === TILE.SAND;
   return isSolid(other);
 };
 
@@ -277,3 +362,12 @@ export const isHiddenUntilTouched = (tile: string): boolean => tile === TILE.INV
 /** Verso in cui il nastro trascina: -1, 0 o +1. */
 export const beltDirection = (tile: string): number =>
   tile === TILE.BELT_RIGHT ? 1 : tile === TILE.BELT_LEFT ? -1 : 0;
+
+/**
+ * Verso in cui la corrente d'aria spinge: -1, 0 o +1.
+ *
+ * La corrente morta non compare qui, e non è una svista: è tutta la trappola.
+ * Si disegna come le altre due, fischia come le altre due, e vale zero.
+ */
+export const windDirection = (tile: string): number =>
+  tile === TILE.WIND_RIGHT ? 1 : tile === TILE.WIND_LEFT ? -1 : 0;

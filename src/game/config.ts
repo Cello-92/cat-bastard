@@ -62,6 +62,57 @@ export const SURFACE = {
   ventLift: 1.6,
   /** Velocità massima di risalita dentro il getto. */
   ventMaxRise: 7,
+
+  // --- Mondo 3: le correnti. Qui non cambia il pavimento, cambia l'aria — e
+  //     l'aria agisce nell'unico momento in cui il gatto non può correggere.
+  /**
+   * Pixel al tick con cui una corrente sposta chi **non tocca terra**.
+   *
+   * È l'immagine speculare di `beltSpeed`: il nastro sposta chi cammina, il
+   * vento sposta chi vola. Deve restare ben sotto `PHYSICS.maxSpeed`, o
+   * controvento diventerebbe impossibile avanzare invece che faticoso — e
+   * "impossibile" non è un sinonimo di "difficile" nemmeno qui.
+   */
+  windSpeed: 1.5,
+  /** Accelerazione verso il basso dentro un risucchio di sabbia. */
+  downdraftPull: 0.85,
+  /** Velocità massima di caduta imposta dal risucchio: sotto la terminale. */
+  downdraftMaxFall: 9,
+  /**
+   * Le sabbie mobili, in quattro numeri.
+   *
+   * Affondare è lento (`sandSink`) e risalire a bracciate è appena più veloce
+   * (`sandRise`): la differenza fra i due è tutto il margine che il giocatore
+   * ha, e va tenuta stretta. Se risalire fosse molto più rapido dell'affondare
+   * la pozza sarebbe un fastidio; se fosse più lento sarebbe una condanna, cioè
+   * una trappola travestita da superficie — e le superfici, per patto, si
+   * vedono prima e si possono giocare.
+   */
+  sandSink: 1.05,
+  sandRise: 2.3,
+  /** Dentro la sabbia si spinge poco e ci si ferma subito: è melma, non aria. */
+  sandAcceleration: 0.3,
+  sandFriction: 0.8,
+  /**
+   * E soprattutto non si corre: dentro la pozza la velocità massima è meno
+   * della metà di quella normale.
+   *
+   * Senza questo tetto la sabbia non sarebbe una superficie ma un piccolo
+   * fastidio — l'attrito frena solo chi lascia i comandi, quindi bastava
+   * tenere premuto per uscirne camminando come se niente fosse. Con il tetto,
+   * l'unico modo di uscire da una pozza è quello giusto: risalire a bracciate
+   * e scavalcare il bordo.
+   */
+  sandMaxSpeed: 1.9,
+  /**
+   * La bracciata.
+   *
+   * Vale come un salto dentro la sabbia — si può dare anche senza toccare
+   * niente, ed è l'unico posto del gioco in cui succede — ma viene comunque
+   * tagliata da `sandRise`: quello che conta è il ritmo con cui si martella il
+   * tasto, non quanto forte si salta. È il nuoto di Mario, e si riconosce.
+   */
+  sandStroke: 7,
 } as const;
 
 export const RULES = {
@@ -113,6 +164,29 @@ export const RULES = {
    * cima, e la colpa deve arrivare fino in fondo al buco.
    */
   vanishBlameTicks: 60,
+  /**
+   * Per quanti tick dopo una corrente morta una caduta è ancora colpa sua.
+   * Stessa idea del nastro e del getto spento: chi si è buttato contando su una
+   * spinta che non c'era non è "caduto nel vuoto" (CLAUDE.md, punto 7).
+   */
+  deadWindBlameTicks: 44,
+  /**
+   * Quante colonne avanti e indietro sente una piastra a pressione.
+   *
+   * È larga poco più di uno schermo apposta: quello che viene giù dev'essere
+   * roba che il giocatore ha *appena visto* o che sta per attraversare. Una
+   * piastra che facesse crollare un soffitto a mezzo livello di distanza
+   * sarebbe indistinguibile da un bug.
+   */
+  plateRange: 11,
+  /**
+   * Tick consecutivi senza toccare niente che valgono l'impresa del vento.
+   *
+   * Quattro secondi. In tutto il resto del gioco un salto dura mezzo secondo:
+   * per arrivare qui bisogna farsi portare da una corrente e non poggiare mai,
+   * che è esattamente la cosa che il terzo mondo insegna a fare per sbaglio.
+   */
+  aloftTicks: 240,
   /**
    * Quanto bisogna restare immobili perché il gioco se ne accorga: mezzo
    * minuto. Un platform si aspetta che tu ti muova — non fare niente, e farlo

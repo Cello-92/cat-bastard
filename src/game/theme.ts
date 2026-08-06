@@ -100,6 +100,22 @@ export const MATERIAL = {
   /** Rame degli impianti: caldo, l'unica cosa tiepida quaggiù. */
   copper: material('#a4653a', '#e2a071', '#5c3319', '#2e180b', '#ffd7ae'),
 
+  // --- Mondo 3: il deserto e il tempio.
+  /**
+   * Sabbia asciutta: quasi senza riflesso, perché è fatta di grani e ogni
+   * grano rimanda la luce da un'altra parte. È il materiale più chiaro del
+   * gioco dopo la neve, e a differenza della neve non è freddo.
+   */
+  sand: material('#c9a367', '#f2dda9', '#8a6738', '#4d381b', '#fff3d2'),
+  /** Arenaria squadrata del tempio: più rosa della sabbia, e più compatta. */
+  sandstone: material('#b0865c', '#dcb98e', '#6b4a2e', '#3a2617', '#f0d6b4'),
+  /**
+   * Faïence: lo smalto turchese delle incisioni. L'unico colore freddo di
+   * tutto il mondo 3, e serve esattamente a questo — è il colore delle cose
+   * fatte da qualcuno, in un posto dove tutto il resto è stato fatto dal vento.
+   */
+  faience: material('#2e8f8a', '#7fd7cf', '#14504f', '#082a2a', '#dffffb'),
+
   // --- Manti e occhi dei gatti sbloccabili (vedi game/cats.ts).
   /** Nero fuliggine: mai davvero nero, altrimenti sparisce sul fondo scuro. */
   soot: material('#2f3038', '#5c5f6b', '#17171c', '#0b0b0e', '#9aa0ad'),
@@ -215,6 +231,8 @@ export const PALETTE = {
   steam: '#e7f1f8',
   /** Lana del gomitolo: l'unico oggetto del gioco che non è una trappola. */
   yarn: '#e2607f',
+  /** Sabbia sollevata: dai passi, dalle correnti, da quello che ti sta ingoiando. */
+  sand: '#dcc08a',
 } as const;
 
 // ---------------------------------------------------------------- atmosfera
@@ -256,9 +274,19 @@ export interface SkyTheme {
    */
   landscape: boolean;
   /** Cosa disegnare al posto del paesaggio quando `landscape` è false. */
-  interior?: 'cave' | 'factory';
+  interior?: 'cave' | 'factory' | 'temple';
   /** Nevica. La neve è deterministica come tutto il resto: non è rumore. */
   snow?: boolean;
+  /**
+   * Sabbia sospesa nell'aria: veli orizzontali che corrono col vento.
+   *
+   * È il gemello della neve e fa il lavoro opposto: la neve cade e riempie il
+   * vuoto verticale, questa scorre e dice da che parte tira il vento — che nel
+   * terzo mondo è un'informazione di gioco, non un effetto.
+   */
+  sand?: boolean;
+  /** Da che parte corre la sabbia sospesa: è il vento dominante del livello. */
+  sandDrift?: number;
   /** Aurora boreale: tende di luce lente sopra l'orizzonte. */
   aurora?: boolean;
 }
@@ -531,6 +559,79 @@ export const SKIES = {
     rays: false,
     landscape: false,
     interior: 'factory',
+  },
+
+  // ---------------------------------------------------------------- mondo 3
+  /**
+   * Mezzogiorno nel deserto: il cielo più chiaro del gioco.
+   *
+   * È l'opposto esatto della grotta di 1-2 e della fabbrica di 2-8 — lì non si
+   * vedeva niente perché era buio, qui non si vede niente perché c'è troppa
+   * luce e troppa sabbia in sospensione. Il sole sta quasi allo zenit, quindi
+   * le ombre sono corte e non aiutano a leggere le distanze: un buco a otto
+   * metri e un buco a due si assomigliano parecchio.
+   */
+  desert: {
+    stops: [
+      { at: 0, color: '#2f6fa8' },
+      { at: 0.3, color: '#79aac4' },
+      { at: 0.58, color: '#c3ccb8' },
+      { at: 0.8, color: '#e8d3a0' },
+      { at: 1, color: '#f6dfae' },
+    ],
+    sunX: 0.6,
+    sunY: 0.08,
+    sunRadius: 38,
+    sunCore: '#fffdf0',
+    sunGlow: '#ffe08a',
+    fog: '#e3cfa4',
+    ridge: '#a58256',
+    canopy: '#c9a367',
+    cloudLight: '#fdf3dd',
+    cloudShade: '#c2a887',
+    sunTint: '#ffe3a8',
+    sunTintAmount: 0.16,
+    ambient: '#b79a72',
+    haze: 0.58,
+    stars: false,
+    rays: true,
+    landscape: true,
+    sand: true,
+    sandDrift: 1,
+  },
+  /**
+   * Dentro il tempio: nessun cielo, nessuna foschia, solo pietra e la luce che
+   * scende dai lucernari insabbiati.
+   *
+   * La grotta era nera e la fabbrica era grigia; qui il buio è **caldo**, e
+   * quello che si intravede in fondo non è roccia né macchine ma colonne
+   * allineate — cioè qualcosa che qualcuno ha costruito e poi lasciato.
+   */
+  tomb: {
+    stops: [
+      { at: 0, color: '#0d0a08' },
+      { at: 0.42, color: '#1c1510' },
+      { at: 0.76, color: '#2b2018' },
+      { at: 1, color: '#392a1d' },
+    ],
+    sunX: 0.5,
+    sunY: 0.1,
+    sunRadius: 18,
+    sunCore: '#ffeec4',
+    sunGlow: '#ffc266',
+    fog: '#2c2118',
+    ridge: '#403020',
+    canopy: '#241a13',
+    cloudLight: '#5a4531',
+    cloudShade: '#161009',
+    sunTint: '#ffcc80',
+    sunTintAmount: 0.15,
+    ambient: '#33271c',
+    haze: 0.52,
+    stars: false,
+    rays: false,
+    landscape: false,
+    interior: 'temple',
   },
 } as const satisfies Record<string, SkyTheme>;
 

@@ -30,6 +30,13 @@ export const FEAT = {
   ownRock: 'contrappasso',
   /** Spegnere Gothic Lucio: quattro tuffi finiti sul cero sbagliato. */
   gothic: 'requiem',
+  /**
+   * Restare in aria quattro secondi filati, portati dalle correnti del terzo
+   * mondo. È l'unica impresa che si scopre giocando bene invece che facendo
+   * una cosa strana: chi capisce il vento ci arriva senza che nessuno glielo
+   * dica, ed è esattamente il momento in cui ha capito il vento.
+   */
+  aloft: 'aliseo',
 
   // --- L'album delle imboscate: una marca per ciascuna delle sette trappole
   //     che non danno **nessun** preavviso. Si collezionano morendo, ed è

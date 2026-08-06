@@ -25,7 +25,7 @@ import { drawBackground } from './render/background';
 import { drawTile, type OpenSides } from './render/tiles';
 import { MATERIAL, PALETTE, SKIES, alpha } from './theme';
 import { DEATH_CAUSE, tauntFor, type DeathCause } from './taunts';
-import { TILE, beltDirection, isDeadly, isSpawner, joins } from './tiles';
+import { TILE, beltDirection, isDeadly, isFakeWall, isSpawner, joins } from './tiles';
 
 /**
  * Il mondo di gioco: mappa, entità, regole, camera.
@@ -123,6 +123,20 @@ interface TrapBrick {
   instant: boolean;
 }
 
+/**
+ * Una piastra a pressione del tempio (mondo 3).
+ *
+ * È l'unica trappola del gioco che non succede dove sei, e per questo è anche
+ * l'unica che ha bisogno di ricordarsi di essere già scattata: una piastra che
+ * si potesse ripestare farebbe piovere lo stesso soffitto due volte, e la
+ * seconda pioggia sarebbe indistinguibile da un bug.
+ */
+interface Plate {
+  c: number;
+  r: number;
+  fired: boolean;
+}
+
 export class World {
   readonly player = new Player();
   readonly effects = new Effects();
@@ -153,6 +167,8 @@ export class World {
 
   private entities: Entity[] = [];
   private trapBricks: TrapBrick[] = [];
+  /** Le piastre a pressione del terzo mondo, raccolte al caricamento. */
+  private plates: Plate[] = [];
   /** Blocchi invisibili già scoperti, per chiave "c,r". */
   private revealed = new Set<string>();
   /** Piattaforme che stanno cedendo: chiave -> tick rimasti. */
@@ -190,6 +206,26 @@ export class World {
    * quella trappola lì, e il gioco glielo deve dire (CLAUDE.md, punto 7).
    */
   private lastDeadVent = -1000;
+  /**
+   * Tick dell'ultima corrente morta attraversata, e dell'ultima pozza di
+   * sabbie mobili toccata.
+   *
+   * Stessa identica ragione del getto spento qui sopra: chi si è buttato
+   * contando su una spinta che non c'era, e chi è finito in fondo a una pozza,
+   * non è "caduto nel vuoto". Senza questi due numeri le due battute del terzo
+   * mondo sarebbero scritte e non le leggerebbe nessuno.
+   */
+  private lastDeadWind = -1000;
+  private lastSand = -1000;
+  /**
+   * Tick consecutivi senza toccare terra (vedi `FEAT.aloft`).
+   *
+   * Il terzo mondo è pieno di correnti che portano, e restare in aria per
+   * quattro secondi è una cosa che si fa per sbaglio a furia di provare a
+   * usarle. Il conteggio sta qui e non nel giocatore perché è una regola del
+   * mondo, non della fisica: il gatto non sa niente di imprese.
+   */
+  private aloftTicks = 0;
   /**
    * L'ultimo pavimento svanito sotto le zampe, e di che tipo era.
    *
@@ -334,6 +370,7 @@ export class World {
     this.map = new TileMap(this.level.rows, TILE_SIZE);
     this.entities = [];
     this.trapBricks = [];
+    this.plates = [];
     this.revealed.clear();
     this.crumbling.clear();
     this.extensions.clear();
@@ -374,6 +411,8 @@ export class World {
         this.gateCells.push({ c, r });
       } else if (tile === TILE.CANDLE) {
         this.candles.push({ c, r });
+      } else if (tile === TILE.PLATE) {
+        this.plates.push({ c, r, fired: false });
       } else if (tile === TILE.POP_SPIKES) {
         this.popSpikes.push({ c, r, snap: false });
       } else if (tile === TILE.SNAP_SPIKES) {
@@ -385,6 +424,9 @@ export class World {
     this.player.reset(spawn.c * TILE_SIZE + 5, spawn.r * TILE_SIZE);
     this.camera.snapTo(this.player.centerX, this.map.widthPx);
     this.lastDeadVent = -1000;
+    this.lastDeadWind = -1000;
+    this.lastSand = -1000;
+    this.aloftTicks = 0;
     this.lastVanish = null;
   }
 
@@ -454,6 +496,7 @@ export class World {
 
     this.player.update(this, input);
     this.handleStillness(input);
+    this.handleAloft();
 
     if (this.beltGrace > 0) this.beltGrace--;
 
@@ -467,6 +510,7 @@ export class World {
     if (this.state !== 'playing') return;
 
     this.handleStandingTiles();
+    this.handlePlates();
     this.handleCrumbling();
     this.handleBossBricks();
     this.handlePopSpikes();
@@ -521,15 +565,21 @@ export class World {
         this.collectCoin(c, r);
       } else if (tile === TILE.YARN) {
         this.collectYarn(c, r);
-      } else if (tile === TILE.FAKE_WALL) {
+      } else if (isFakeWall(tile)) {
         // Una volta che ci sei passato attraverso resta segnata per tutto il
         // tentativo: il segreto è nasconderla la prima volta, non farti
-        // ricercare a memoria una parete che hai già trovato.
+        // ricercare a memoria una parete che hai già trovato. Vale per la
+        // lamiera del mondo 2 e per l'arenaria del mondo 3: è lo stesso muro.
         this.discovered.add(TileMap.key(c, r));
       } else if (tile === TILE.DEAD_VENT) {
         // Non fa niente. È esattamente questo il punto: se ne prende nota solo
         // per poter dare la colpa a lui quando il gatto arriva in fondo.
         this.lastDeadVent = this.ticks;
+      } else if (tile === TILE.DEAD_WIND) {
+        // Idem: non spinge, e l'unica traccia che lascia è di chi è la colpa.
+        this.lastDeadWind = this.ticks;
+      } else if (tile === TILE.QUICKSAND) {
+        this.lastSand = this.ticks;
       } else if (tile === TILE.CHECKPOINT) {
         this.activateCheckpoint(c, r);
       } else if (tile === TILE.GOAL) {
@@ -818,24 +868,122 @@ export class World {
       // Scatta solo se il giocatore è passato SOTTO il mattone.
       if (this.player.y < brick.r * TILE_SIZE) continue;
 
-      brick.fired = true;
-      this.map.clear(brick.c, brick.r);
-      this.entities.push(
-        brick.instant
-          ? // Il masso che crolla: nessun tremolio, e una battuta sua — è una
-            // trappola diversa dalla stalattite, non la stessa senza preavviso.
-            new FallingSpike(brick.c * TILE_SIZE + 4, brick.r * TILE_SIZE + 6, 0, DEATH_CAUSE.collapse)
-          : new FallingSpike(brick.c * TILE_SIZE + 4, brick.r * TILE_SIZE + 6),
-      );
-      this.audio.play('trap');
-      this.camera.shake(FEEL.screenShakeOnTrap);
-      this.effects.burst(
-        brick.c * TILE_SIZE + TILE_SIZE / 2,
-        brick.r * TILE_SIZE + TILE_SIZE,
-        PALETTE.brick,
-        { count: 10, speed: 2.6, size: 4 },
-      );
+      // Il masso che crolla non trema: nessun preavviso, e una battuta sua —
+      // è una trappola diversa dalla stalattite, non la stessa senza avviso.
+      if (brick.instant) this.fireBrick(brick, DEATH_CAUSE.collapse, 0);
+      else this.fireBrick(brick, DEATH_CAUSE.fallingSpike);
     }
+  }
+
+  /**
+   * Stacca un mattone-trappola.
+   *
+   * Sta in un metodo suo perché adesso i modi di farlo sono due: passarci
+   * sotto, che è la trappola di sempre, e pestare una piastra a pressione dieci
+   * colonne prima, che è la trappola del tempio. Il mattone si comporta uguale;
+   * cambia chi lo ha chiamato e cosa dice la battuta dopo.
+   */
+  private fireBrick(brick: TrapBrick, cause: DeathCause, telegraph?: number): void {
+    brick.fired = true;
+    this.map.clear(brick.c, brick.r);
+    // `telegraph` non passato significa "quello di sempre": il tremolio della
+    // stalattite sta scritto in `FallingSpike`, ed è giusto che stia lì.
+    this.entities.push(
+      new FallingSpike(brick.c * TILE_SIZE + 4, brick.r * TILE_SIZE + 6, telegraph, cause),
+    );
+    this.audio.play('trap');
+    this.camera.shake(FEEL.screenShakeOnTrap);
+    this.effects.burst(
+      brick.c * TILE_SIZE + TILE_SIZE / 2,
+      brick.r * TILE_SIZE + TILE_SIZE,
+      PALETTE.brick,
+      { count: 10, speed: 2.6, size: 4 },
+    );
+  }
+
+  /**
+   * Le piastre a pressione (mondo 3).
+   *
+   * Pestarne una non fa succedere niente dove sei: fa venire giù tutti i
+   * mattoni-trappola nel raggio di `RULES.plateRange` colonne, cioè poco più di
+   * uno schermo, quindi roba che hai appena visto o che stai per attraversare.
+   * È l'unico congegno del gioco in cui causa ed effetto stanno in due posti
+   * diversi, e regge il patto per due motivi: la piastra si vede benissimo, e
+   * quello che sgancia si vede cadere. Chi muore capisce cosa l'ha ucciso — poi
+   * deve solo ricordarsi di non pestarla, o di pestarla e correre.
+   */
+  private handlePlates(): void {
+    if (this.plates.length === 0 || !this.player.onGround) return;
+
+    for (const plate of this.plates) {
+      if (plate.fired) continue;
+      if (!this.playerStandsOn(plate.c, plate.r)) continue;
+
+      plate.fired = true;
+      // Da qui in poi resta abbassata: una trappola scattata che continuasse a
+      // sembrare carica sarebbe una bugia (CLAUDE.md, punto 7). Si usa
+      // `revealed` e non `discovered` perché questa memoria deve morire col
+      // tentativo: alla rinascita la piastra è di nuovo carica, e si vede.
+      this.revealed.add(TileMap.key(plate.c, plate.r));
+      this.audio.play('block');
+      this.camera.shake(3);
+      this.effects.floatingText(
+        plate.c * TILE_SIZE + TILE_SIZE / 2,
+        plate.r * TILE_SIZE - 6,
+        'CLACK',
+        PALETTE.sand,
+        12,
+      );
+
+      let dropped = 0;
+      for (const brick of this.trapBricks) {
+        const distance = Math.abs(brick.c - plate.c);
+        if (brick.fired || distance > RULES.plateRange) continue;
+        // I massi che crollano (`K`) restano roba loro: quelli non hanno mai
+        // un preavviso, e una piastra che ne sganciasse dieci in una volta
+        // sarebbe una fucilata, non una trappola.
+        if (brick.instant) continue;
+        // Non cadono tutti insieme: il ritardo cresce con la distanza, quindi
+        // il soffitto viene giù *a partire da dove sei* e prosegue in avanti.
+        // È la stessa identica informazione, data in un ordine che si può
+        // correre — e correre è l'unica risposta che questa trappola accetta.
+        this.fireBrick(brick, DEATH_CAUSE.plate, 6 + distance * 5);
+        dropped++;
+      }
+      if (dropped === 0) {
+        // Una piastra che non sgancia niente non è un mistero, è un errore di
+        // mappa: lo dice, così chi prova il livello se ne accorge subito.
+        this.effects.floatingText(
+          plate.c * TILE_SIZE + TILE_SIZE / 2,
+          plate.r * TILE_SIZE - 20,
+          '...niente?',
+          PALETTE.stone,
+          11,
+        );
+      }
+    }
+  }
+
+  /**
+   * L'impresa del vento: quattro secondi senza toccare niente.
+   *
+   * Non c'è nessun posto in cui il gioco la chieda, e non ce n'è bisogno: il
+   * terzo mondo è fatto di correnti che portano, e il primo che ci si diverte
+   * scopre che si può restare su. Il conto si azzera appena si poggia — e
+   * quindi non si può mettere insieme a pezzi.
+   */
+  private handleAloft(): void {
+    if (this.player.onGround) {
+      this.aloftTicks = 0;
+      return;
+    }
+
+    this.aloftTicks++;
+    if (this.aloftTicks !== RULES.aloftTicks) return;
+
+    this.effects.ring(this.player.centerX, this.player.centerY, PALETTE.sand, 4, 20);
+    this.effects.floatingText(this.player.centerX, this.player.y - 8, 'IN ARIA', PALETTE.sand, 13);
+    this.claim(FEAT.aloft);
   }
 
   // ---------------------------------------------------------------- boss
@@ -1178,6 +1326,14 @@ export class World {
     }
   }
 
+  /** Il gatto ha i piedi su quella cella precisa? Serve alle piastre. */
+  private playerStandsOn(c: number, r: number): boolean {
+    for (const cell of groundTiles(this.player, this.map)) {
+      if (cell.c === c && cell.r === r) return true;
+    }
+    return false;
+  }
+
   private playerOverlapsCell(c: number, r: number): boolean {
     const x = c * TILE_SIZE;
     const y = r * TILE_SIZE;
@@ -1227,6 +1383,13 @@ export class World {
     if (cause === DEATH_CAUSE.pit) {
       if (this.ticks - this.lastDeadVent < RULES.deadVentBlameTicks) {
         cause = DEATH_CAUSE.deadVent;
+      } else if (this.ticks - this.lastDeadWind < RULES.deadWindBlameTicks) {
+        cause = DEATH_CAUSE.deadWind;
+      } else if (this.ticks - this.lastSand < RULES.vanishBlameTicks) {
+        // Le sabbie mobili non uccidono: ti tengono finché non c'è più niente
+        // sotto. La morte è del vuoto, la colpa è della pozza, e chi ci è
+        // affondato deve leggere la seconda cosa.
+        cause = DEATH_CAUSE.quicksand;
       } else if (
         this.lastVanish &&
         this.ticks - this.lastVanish.tick < RULES.vanishBlameTicks

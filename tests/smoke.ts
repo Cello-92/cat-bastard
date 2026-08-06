@@ -181,6 +181,23 @@ for (const level of LEVELS) {
         flag(c, r, `nemico "${tile}" senza pavimento sotto`);
       if (tile !== TILE.EMPTY && isSolid(at(c, r - 1)) && (tile === TILE.BELT_LEFT || tile === TILE.BELT_RIGHT))
         flag(c, r, 'nastro murato: non ci si può salire');
+      // Una piastra murata è una trappola che non scatterà mai, e una piastra
+      // che non sgancia niente è una lastra decorativa: due errori che non
+      // rompono nulla e che nessuno noterebbe giocando, perché il livello si
+      // finisce lo stesso — semplicemente senza la trappola che ci avevi messo.
+      if (tile === TILE.PLATE && isSolid(at(c, r - 1)))
+        flag(c, r, 'piastra murata: non ci si può salire sopra');
+      if (tile === TILE.PLATE) {
+        let bricks = 0;
+        for (let cc = c - RULES.plateRange; cc <= c + RULES.plateRange; cc++) {
+          for (let rr = 0; rr < LEVEL_ROWS; rr++) if (at(cc, rr) === TILE.TRAP_BRICK) bricks++;
+        }
+        if (bricks === 0) flag(c, r, 'piastra senza mattoni da sganciare nel raggio');
+      }
+      // Sabbie mobili col coperchio: non ci si entra e, se ci si entra, non se
+      // ne esce. Non è una trappola cattiva, è una cella sprecata.
+      if (tile === TILE.QUICKSAND && isSolid(at(c, r - 1)) && at(c, r - 1) !== TILE.EMPTY)
+        flag(c, r, 'sabbie mobili murate: nuotare in su non porta da nessuna parte');
       if ((tile === TILE.COIN || tile === TILE.LURE_COIN) && isSolid(at(c, r - 1)) && isSolid(below))
         flag(c, r, 'moneta sepolta nel terreno');
     }
@@ -544,6 +561,221 @@ console.log('\nSuperfici del mondo 2');
     world.player.y = 12 * TILE_SIZE;
     for (let tick = 0; tick < 20; tick++) world.update(idle);
     check(world.map.get(5, 13) === TILE.EMPTY, 'il ghiaccio sottile si crepa e cede');
+  }
+}
+
+// ------------------------------------------------- correnti e congegni del mondo 3
+//
+// Il mondo 2 aveva cambiato il pavimento, il mondo 3 cambia l'aria: una
+// corrente sposta il gatto **mentre è a mezz'aria**, cioè nell'unico momento
+// in cui non può correggere. È la modifica alla fisica più invasiva del gioco,
+// quindi ha bisogno del contratto scritto più stretto — e tutto quello che
+// c'è qui sotto deve valere identico in `tests/solver.ts`, altrimenti il
+// risolutore approva un livello che nessuno può giocare (o viceversa).
+console.log('\nCorrenti e congegni del mondo 3');
+{
+  const windAudio = new Audio();
+  const SAND_FLOOR = '.'.repeat(SEGMENT_COLS);
+
+  const withRows = (rows: Record<number, string>) => {
+    const level = defineLevel({
+      id: 'wind-test',
+      name: 'TEST',
+      title: 'correnti',
+      sky: 'desert',
+      spawn: { c: 1, r: 12 },
+      segments: [segment({ rows })],
+    });
+    const feats: string[] = [];
+    const world = new World(level, windAudio, {
+      onTaunt: () => {},
+      onWin: () => {},
+      onFeat: (feat) => feats.push(feat),
+    });
+    return { world, feats };
+  };
+
+  const idle = { isDown: () => false, justPressed: () => false, endTick: () => {} } as unknown as Input;
+  /** Tiene premuto "destra" e martella il salto: è come si nuota. */
+  const swim = (tick: number) =>
+    ({
+      isDown: (a: string) => a === 'right' || (a === 'jump' && tick % 8 < 3),
+      justPressed: (a: string) => a === 'jump' && tick % 8 === 0,
+      endTick: () => {},
+    }) as unknown as Input;
+
+  // Il vento sposta chi è in aria, nel verso disegnato, e la corrente morta —
+  // identica in tutto — non sposta niente.
+  const driftInAir = (tile: string): number => {
+    const band = '   ' + tile.repeat(12);
+    const { world } = withRows({ 8: band, 9: band, 10: band, 11: band, 12: band });
+    world.player.x = 6 * TILE_SIZE;
+    world.player.y = 8 * TILE_SIZE;
+    const start = world.player.x;
+    for (let tick = 0; tick < 20; tick++) world.update(idle);
+    return world.player.x - start;
+  };
+
+  check(driftInAir(TILE.WIND_RIGHT) > 20, 'la corrente d\'aria trascina a destra chi non tocca terra');
+  check(driftInAir(TILE.WIND_LEFT) < -20, 'e a sinistra, se è disegnata a sinistra');
+  check(
+    Math.abs(driftInAir(TILE.DEAD_WIND)) < 1,
+    'la corrente morta, identica a vedersi, non sposta un pixel',
+  );
+
+  // A terra il vento non conta: gli artigli tengono. È l'esatto contrario del
+  // nastro trasportatore, ed è la regola che rende leggibili tutti e due.
+  {
+    const band = '.'.repeat(20);
+    const { world } = withRows({ 11: ')'.repeat(20), 12: ')'.repeat(20), 13: band, 14: band });
+    world.player.x = 5 * TILE_SIZE;
+    world.player.y = 12 * TILE_SIZE;
+    for (let tick = 0; tick < 10; tick++) world.update(idle);
+    const settled = world.player.x;
+    for (let tick = 0; tick < 40; tick++) world.update(idle);
+    check(
+      Math.abs(world.player.x - settled) < 1 && world.player.onGround,
+      'a terra la corrente non sposta niente: il vento non è un nastro',
+    );
+  }
+
+  // E non tocca la velocità del gatto: sposta il mondo sotto di lui, come il
+  // nastro. Se toccasse `vx`, i comandi risponderebbero diverso dentro una
+  // corrente — cioè il gioco tradirebbe i controlli, che è l'unica cosa che
+  // non può fare.
+  {
+    const band = '   ' + ')'.repeat(12);
+    const { world } = withRows({ 8: band, 9: band, 10: band, 11: band });
+    world.player.x = 6 * TILE_SIZE;
+    world.player.y = 8 * TILE_SIZE;
+    world.player.vx = 0;
+    for (let tick = 0; tick < 12; tick++) world.update(idle);
+    check(world.player.vx === 0, 'la corrente non tocca la velocità del gatto');
+  }
+
+  // Il risucchio: schiaccia il salto, e lo schiaccia sempre della stessa cosa.
+  {
+    const jumpApex = (column: string): number => {
+      const shaft = ' '.repeat(5) + column;
+      const { world } = withRows({
+        8: shaft,
+        9: shaft,
+        10: shaft,
+        11: shaft,
+        12: shaft,
+        13: SAND_FLOOR,
+        14: SAND_FLOOR,
+      });
+      world.player.x = 5 * TILE_SIZE;
+      world.player.y = 12 * TILE_SIZE;
+      for (let tick = 0; tick < 5; tick++) world.update(idle);
+      const floor = world.player.y;
+      let apex = floor;
+      for (let tick = 0; tick < 60; tick++) {
+        const held = {
+          isDown: (a: string) => a === 'jump',
+          justPressed: (a: string) => a === 'jump' && tick === 0,
+          endTick: () => {},
+        } as unknown as Input;
+        world.update(held);
+        apex = Math.min(apex, world.player.y);
+      }
+      return floor - apex;
+    };
+
+    const free = jumpApex(' ');
+    const sucked = jumpApex(TILE.DOWNDRAFT);
+    check(free > 100, `il salto pieno sale di ${Math.round(free)}px`);
+    check(sucked < free * 0.6, `dentro il risucchio sale ${Math.round(sucked)}px, molto meno`);
+  }
+
+  // Sabbie mobili: si affonda, ma piano. La differenza col vuoto è tutto il
+  // margine che il giocatore ha per accorgersene e reagire.
+  {
+    const pool = ' '.repeat(4) + 's'.repeat(6);
+    const rows: Record<number, string> = { 9: pool, 10: pool, 11: pool, 12: pool, 13: pool, 14: pool };
+    const { world } = withRows(rows);
+    world.player.x = 6 * TILE_SIZE;
+    world.player.y = 9 * TILE_SIZE;
+    const start = world.player.y;
+    for (let tick = 0; tick < 30; tick++) world.update(idle);
+    const sunk = world.player.y - start;
+
+    const { world: air } = withRows({});
+    air.player.x = 6 * TILE_SIZE;
+    air.player.y = 9 * TILE_SIZE;
+    const airStart = air.player.y;
+    for (let tick = 0; tick < 30; tick++) air.update(idle);
+    const fell = air.player.y - airStart;
+
+    check(sunk > 0 && sunk < fell / 3, `nella sabbia si scende ${Math.round(sunk)}px invece di ${Math.round(fell)}px`);
+  }
+
+  // E se ne esce: a bracciate, tenendo una direzione. Non è una trappola —
+  // è una superficie, e una superficie deve avere una risposta giusta.
+  {
+    const { world } = withRows({
+      12: '    ssss',
+      13: '....ssss............',
+      14: '....ssss............',
+    });
+    world.player.x = 5 * TILE_SIZE;
+    world.player.y = 12 * TILE_SIZE;
+    let escaped = false;
+    for (let tick = 0; tick < 240 && !escaped; tick++) {
+      world.update(swim(tick));
+      escaped = world.player.onGround && world.player.x > 8 * TILE_SIZE;
+    }
+    check(escaped, 'dalle sabbie mobili si esce nuotando, se si insiste');
+    check(world.state === 'playing', 'e uscirne non richiede di morire prima');
+  }
+
+  // La piastra a pressione: sgancia i mattoni nel raggio, non quelli fuori, e
+  // una volta sola. È l'unico congegno del gioco in cui causa ed effetto stanno
+  // in due posti diversi, quindi è anche l'unico che può rompersi in silenzio.
+  {
+    const { world } = withRows({
+      6: '     T             T',
+      13: '..p.................',
+      14: SAND_FLOOR,
+    });
+    world.player.x = 2 * TILE_SIZE + 4;
+    world.player.y = 12 * TILE_SIZE;
+    for (let tick = 0; tick < 6; tick++) world.update(idle);
+
+    check(world.map.get(5, 6) === TILE.EMPTY, 'pestare la piastra fa cadere il mattone vicino');
+    check(
+      world.map.get(19, 6) === TILE.TRAP_BRICK,
+      `il mattone a ${19 - 2} colonne resta su: la piastra sente fino a ${RULES.plateRange}`,
+    );
+  }
+
+  // L'impresa del vento: quattro secondi senza toccare niente. Non la chiede
+  // nessuno, quindi nessuno si accorgerebbe se smettesse di funzionare.
+  {
+    const shaft = ' '.repeat(5) + '^';
+    const { world, feats } = withRows({
+      6: shaft,
+      7: shaft,
+      8: shaft,
+      9: shaft,
+      10: shaft,
+      11: shaft,
+      12: shaft,
+      13: '.....' + ' ' + '..............',
+      14: '.....' + ' ' + '..............',
+    });
+    world.player.x = 5 * TILE_SIZE + 5;
+    world.player.y = 10 * TILE_SIZE;
+    for (let tick = 0; tick < RULES.aloftTicks + 30; tick++) world.update(idle);
+    check(feats.includes(FEAT.aloft), 'restare in aria quattro secondi vale il gatto ALISEO');
+
+    // E toccare terra azzera: non si mette insieme a pezzi.
+    const { world: grounded, feats: none } = withRows({ 13: SAND_FLOOR, 14: SAND_FLOOR });
+    grounded.player.x = 5 * TILE_SIZE;
+    grounded.player.y = 12 * TILE_SIZE;
+    for (let tick = 0; tick < RULES.aloftTicks + 60; tick++) grounded.update(idle);
+    check(!none.includes(FEAT.aloft), 'e stare fermi a terra per lo stesso tempo non vale niente');
   }
 }
 

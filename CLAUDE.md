@@ -92,7 +92,7 @@ src/
               effects (particelle/juice),
               world.ts (orchestratore), game.ts (composition root)
     entities/ player, walker, shroom, falling-spike, diver,
-              sentry, drone, snowball, boss + rubble (solo 1-11),
+              sentry, drone, snowball, scarab, boss + rubble (solo 1-11),
               gothic-boss (solo 2-11)
     levels/   level.ts (helper) + un file per livello + index.ts (registro)
     render/   background.ts (parallasse), tiles.ts (disegno dei tile)
@@ -160,7 +160,7 @@ ingiocabile.
 | `O` | terreno normale, senza feritoia | spuntoni che scattano quando ci sei già sopra |
 | `!` | niente. Proprio niente | spuntoni invisibili. Dopo la prima morte restano visibili per tutto il tentativo |
 | `,` | un getto di vapore identico a `^` | non spinge. Ci si butta dentro contando su una spinta che non arriva |
-| `w` | una corrente d'aria identica a `(` e `)` | non spinge. Si salta corti contando su una mano che non arriva |
+| `w` `q` | una corrente d'aria identica a `)` e `(` | non spinge. Due caratteri perché il *verso disegnato* è la bugia: `w` fa saltare corti, `q` fa saltare lunghi |
 
 **`w` non entra nell'album di CAVIA, e non è una dimenticanza.** Le imprese
 richieste da un gatto non si toccano più: chi aveva già chiuso l'album se lo
@@ -204,8 +204,9 @@ comandi rispondono immediati (il vento sposta il *corpo*, non tocca `vx`).
 | `v` | risucchio: il getto `^` capovolto. Schiaccia il salto, non lo annulla |
 | `s` | sabbie mobili: non solide. Dentro si affonda piano e si risale a bracciate |
 | `p` | piastra a pressione: pestarla sgancia i mattoni `T` entro `RULES.plateRange` colonne |
+| `k` | scarabeo: vola piano e si fa portare dalle correnti, con lo stesso numero del gatto |
 
-Tre cose che è meglio sapere prima di toccare qualcosa qui:
+Quattro cose che è meglio sapere prima di toccare qualcosa qui:
 
 - **Il vento e il nastro sono la stessa funzione, letta da due lati.** Il
   nastro agisce a terra, il vento in aria, e non possono mai agire insieme: è
@@ -225,6 +226,15 @@ Tre cose che è meglio sapere prima di toccare qualcosa qui:
   correre. Il congegno vive in `World.handlePlates`, e i massi che crollano
   (`K`) restano fuori apposta: una piastra che ne sganciasse dieci senza
   preavviso sarebbe una fucilata, non una trappola.
+- **Lo scarabeo è il vento reso visibile, ed è il suo mestiere.** Vola sempre
+  alla stessa velocità (molto meno del vento) e le correnti se lo portano con lo
+  stesso `SURFACE.windSpeed` del gatto: dove va uno scarabeo va l'aria, e
+  guardarlo dice dove finirà il salto *prima* di farlo. Campiona la corrente su
+  una sagoma allargata di mezza cella per lato, perché il marcatore `k` viene
+  tolto dalla griglia al caricamento e con la sagoma esatta la bestia
+  nascerebbe dentro un buco d'aria ferma largo quanto lei — impigliata sul
+  bordo invece che portata, cioè l'unica cosa che non deve fare. Si schiaccia, e
+  non è mai un appoggio necessario: il risolutore non conosce le entità.
 
 Le costanti stanno in `SURFACE` e in `RULES`, e vale la stessa regola del mondo
 2, solo più stretta: **chi le tocca deve toccare anche `tests/solver.ts`**, che
@@ -313,7 +323,7 @@ in una pagina è `game.ts`, che è il composition root.
 Tre cose da sapere prima di toccarlo:
 
 - **La gerarchia è a due livelli, non piatta.** Radice → mondi → livelli. Con
-  ventitré livelli una lista sola non è una lista, è uno scorrimento; e i mondi
+  venticinque livelli una lista sola non è una lista, è uno scorrimento; e i mondi
   esistono già nel gioco (cambiano cielo, tileset e regole del pavimento).
   `WORLDS` in `levels/index.ts` si ricava dagli id (`w2-3` → mondo 2): un mondo
   nuovo nasce da solo il giorno in cui compare un `w3-1`.
@@ -354,7 +364,7 @@ volte è solo una parete, e l'unico modo di saperlo è perderci tempo. Chi aggiu
 livello non è tenuto a metterci un gomitolo: `SECRET_COUNT` si conta dalle mappe.
 
 **Ma chi ce lo mette deve mettere anche il gatto.** Sulla strada dei gomitoli
-c'è un manto per ogni quota, senza buchi — dodici gomitoli, tredici manti
+c'è un manto per ogni quota, senza buchi — tredici gomitoli, quattordici manti
 contando quello che c'è da sempre — e `tests/smoke.ts` rifiuta un buco nella
 scala. Non è pignoleria: un gomitolo sta in una stanza murata che non serve a
 finire il livello, quindi l'unica ragione per andarci è quello che dà. Se il
@@ -683,9 +693,11 @@ e allegare uno zip offline: non servono a ospitare la pagina.
    E 2-11, Gothic Lucio: sta appeso alla volta, si attira invece di guidarlo, e
    si spegne facendolo cadere sui suoi stessi ceri
 8. ~~Account (nickname e password, niente email) e classifica dei tempi~~ ✅ — Supabase
-9. **Terzo mondo: il deserto e il tempio** — in corso. Ci sono 3-1 e 3-2, e con
-   loro la regola nuova: dopo il pavimento del mondo 2, qui cambia l'**aria**
-   (correnti, risucchi, sabbie mobili) e compare il primo congegno a distanza
-   (la piastra a pressione). Mancano i livelli da 3-3 in poi e il boss di 3-11,
+9. **Terzo mondo: il deserto e il tempio** — in corso. Ci sono da 3-1 a 3-4, e
+   con loro la regola nuova: dopo il pavimento del mondo 2, qui cambia l'**aria**
+   (correnti, risucchi, sabbie mobili), compare il primo congegno a distanza
+   (la piastra a pressione) e il primo nemico che serve a *leggere* il livello
+   invece che a chiuderlo (lo scarabeo, che il vento porta come porta te).
+   Mancano i livelli da 3-5 in poi e il boss di 3-11,
    che per non somigliare agli altri due dovrà essere un problema di *spazio*:
    il Padrone si guida, Lucio si attira, il terzo dovrebbe togliere il terreno.

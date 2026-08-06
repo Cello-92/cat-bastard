@@ -600,6 +600,44 @@ export const SKIES = {
     sandDrift: 1,
   },
   /**
+   * La tempesta di sabbia: lo stesso deserto, con l'aria piena.
+   *
+   * Il sole c'è ancora ma è un disco senza raggi, i piani lontani spariscono
+   * quasi del tutto nella foschia (`haze` è il valore più alto del gioco) e la
+   * sabbia sospesa corre veloce e verso sinistra — cioè controvento rispetto a
+   * dove sta andando il gatto, che è un'informazione e non un effetto: in
+   * questo livello le correnti contrarie sono la regola e quelle a favore
+   * l'eccezione, e si vede prima di saltare.
+   */
+  sandstorm: {
+    stops: [
+      { at: 0, color: '#7a5f3c' },
+      { at: 0.3, color: '#a8804f' },
+      { at: 0.6, color: '#c79a63' },
+      { at: 0.82, color: '#d9b07c' },
+      { at: 1, color: '#e6c495' },
+    ],
+    sunX: 0.34,
+    sunY: 0.22,
+    sunRadius: 30,
+    sunCore: '#ffe9b0',
+    sunGlow: '#e0a25a',
+    fog: '#cfa976',
+    ridge: '#8d6b45',
+    canopy: '#b08a5c',
+    cloudLight: '#e8d0a6',
+    cloudShade: '#8a6743',
+    sunTint: '#ffcf90',
+    sunTintAmount: 0.2,
+    ambient: '#8f6f4c',
+    haze: 0.78,
+    stars: false,
+    rays: false,
+    landscape: true,
+    sand: true,
+    sandDrift: -1,
+  },
+  /**
    * Dentro il tempio: nessun cielo, nessuna foschia, solo pietra e la luce che
    * scende dai lucernari insabbiati.
    *

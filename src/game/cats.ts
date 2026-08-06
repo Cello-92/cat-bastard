@@ -244,6 +244,18 @@ export const CATS: readonly CatSkin[] = [
     pattern: 'spotted',
   },
 
+  {
+    id: 'faraone',
+    name: 'FARAONE',
+    blurb: 'Oro sull\'arenaria, come le incisioni del tempio. Ti hanno disegnato sui muri e poi lasciato lì',
+    yarn: 13,
+    fur: MATERIAL.sandstone,
+    marks: MATERIAL.gold,
+    eye: MATERIAL.faience,
+    nose: MATERIAL.skin,
+    pattern: 'tabby',
+  },
+
   // ------------------------------------------------------------- le imprese
   // Da qui in giù i gomitoli non c'entrano niente: sono i gatti che si prendono
   // facendo qualcosa che nessuno ha chiesto. Restano estetici come gli altri —

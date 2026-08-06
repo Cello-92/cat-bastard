@@ -66,19 +66,65 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     environment:
+      # Il link va preso dal tentativo che è andato a buon fine, non dal primo:
+      # se il primo ha fallito il suo `page_url` è vuoto e l'ambiente
+      # comparirebbe senza link proprio nei run in cui serve guardarlo.
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: >-
+        ${{ steps.deployment.outputs.page_url
+            || steps.deployment2.outputs.page_url
+            || steps.deployment3.outputs.page_url }}
     steps:
-      # Il timeout di default dell'action è 10 minuti, e allo scadere non si
-      # limita a fallire: *annulla* la deployment. Se la coda di Pages è lenta
-      # — cosa che succede, e il 6 agosto 2026 è successo per due merge di
-      # fila — l'action ammazza da sola una pubblicazione che sarebbe arrivata,
-      # e il sito resta indietro di un merge senza che niente sia rotto.
-      # Trenta minuti: la coda si aspetta, non si uccide. E un report ogni 15
-      # secondi invece di 5, altrimenti il log diventa un muro di righe uguali.
+      # Perché tre tentativi invece di uno.
+      #
+      # Quando la coda di Pages non serve la deployment entro il suo timeout,
+      # `deploy-pages` non si limita a fallire: chiama `Canceling Pages
+      # deployment...` e ammazza la pubblicazione. In un repo dove `main` è la
+      # produzione questo è il guasto peggiore possibile, perché non somiglia a
+      # un guasto: build verde, test verdi, e il link pubblico fermo al merge
+      # prima. Il 6 agosto 2026 il mondo 3 è restato offline così.
+      #
+      # E il timeout **non si può alzare**: 600000 ms non è il default
+      # dell'action, è il suo massimo. Passandogli di più risponde `timeout
+      # value is greater than the allowed maximum` e lo riporta a dieci minuti.
+      # Quindi l'unica leva che resta è ritentare.
+      #
+      # Ritentare funziona perché la coda è intermittente, non morta: nella
+      # mezz'ora del guasto un tentativo su cinque è passato in 4 minuti. I 90
+      # secondi di attesa in mezzo non sono decorativi: una deployment ricreata
+      # subito dopo il proprio annullamento torna indietro già cancellata (è
+      # successo, 50 secondi dopo), perché l'id della deployment Pages *è* lo
+      # SHA del commit e l'annullamento precedente deve prima propagarsi.
+      #
+      # `reporting_interval` a 15 secondi invece di 5 perché tre attese da dieci
+      # minuti a 5 secondi di polling fanno trecentosessanta righe identiche, e
+      # il log va letto proprio quando va male.
       - name: Pubblica
         id: deployment
+        continue-on-error: true
         uses: actions/deploy-pages@v4
         with:
-          timeout: 1800000
+          reporting_interval: 15000
+
+      - name: Aspetta che l'annullamento si propaghi
+        if: steps.deployment.outcome == 'failure'
+        run: sleep 90
+
+      - name: Ripubblica (2° tentativo)
+        id: deployment2
+        if: steps.deployment.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+        with:
+          reporting_interval: 15000
+
+      - name: Aspetta che l'annullamento si propaghi
+        if: steps.deployment.outcome == 'failure' && steps.deployment2.outcome == 'failure'
+        run: sleep 90
+
+      - name: Ripubblica (3° tentativo)
+        id: deployment3
+        if: steps.deployment.outcome == 'failure' && steps.deployment2.outcome == 'failure'
+        uses: actions/deploy-pages@v4
+        with:
           reporting_interval: 15000

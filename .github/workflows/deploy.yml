@@ -10,10 +10,13 @@ on:
   workflow_dispatch:
 
 # Permessi minimi necessari alla pubblicazione su Pages.
+# `actions: read` serve al passo di pubblicazione, che si cerca da solo l'id
+# dell'artifact di questo run invece di farselo dare da un'action.
 permissions:
   contents: read
   pages: write
   id-token: write
+  actions: read
 
 # Un deploy alla volta; i push successivi aspettano invece di sovrascriversi.
 concurrency:
@@ -31,10 +34,9 @@ concurrency:
 # distinto: quello lascia indietro il sito in silenzio, questo ferma il job e
 # almeno si vede.
 #
-# Chi le aggiorna controlli due cose sole: che il major nuovo dichiari
-# `runs.using: node24` (sta nel suo action.yml) e che `deploy-pages` accetti
-# ancora `reporting_interval`, che è quello che rende leggibile il log dei tre
-# tentativi.
+# Chi le aggiorna controlli una cosa sola: che il major nuovo dichiari
+# `runs.using: node24` (sta nel suo action.yml). `actions/deploy-pages` non
+# c'è più — il perché sta nel job `deploy`.
 jobs:
   build:
     name: Build
@@ -78,70 +80,151 @@ jobs:
         with:
           path: dist
 
+  # ------------------------------------------------------------------ deploy
+  #
+  # Perché qui non c'è `actions/deploy-pages`, che sarebbe la strada ovvia.
+  #
+  # Quando la coda di Pages non serve la deployment entro il suo timeout,
+  # quell'action non si limita a fallire: chiama `Canceling Pages
+  # deployment...` e ammazza una pubblicazione che stava solo aspettando il suo
+  # turno. In un repo dove `main` è la produzione è il guasto peggiore
+  # possibile, perché non somiglia a un guasto: build verde, test verdi, e il
+  # link pubblico fermo al merge prima. Il 6 agosto 2026 il mondo 3 è restato
+  # offline così.
+  #
+  # E il timeout **non si può alzare**: 600000 ms non è il default dell'action,
+  # è il suo massimo (`MAX_TIMEOUT` nel suo sorgente). Passandogli di più
+  # risponde `timeout value is greater than the allowed maximum` e lo riporta a
+  # dieci minuti. Con dieci minuti fissi e l'annullamento automatico in fondo,
+  # ritentare non basta e anzi peggiora: l'id della deployment Pages **è** lo
+  # SHA del commit, quindi il tentativo dopo ricrea *la stessa* deployment e se
+  # l'annullamento non si è ancora propagato se la ritrova già cancellata. È
+  # esattamente quello che si legge nel log del 6 agosto: primo tentativo dieci
+  # minuti in coda e poi annullato, secondo e terzo `Deployment cancelled.` in
+  # quindici secondi.
+  #
+  # Quindi qui la deployment si crea a mano — sono tre chiamate REST, le stesse
+  # tre che fa l'action — e la si aspetta **senza mai annullarla**. È la sola
+  # differenza sostanziale, ed è tutto il punto: se la coda è lenta il sito
+  # esce comunque, in ritardo; e se il nostro tempo scade, la pubblicazione
+  # resta viva e GitHub la porta a termine per conto suo. Il job fallisce e si
+  # vede — che è la cosa giusta da fare quando non si sa — ma non lascia
+  # indietro il sito per averlo ucciso da solo.
+  #
+  # Ritentare serve ancora, ma solo per gli stati di errore *definitivi*
+  # (`deployment_failed` e compagnia): lì GitHub dice davvero "riprova", e la
+  # deployment vecchia è finita, quindi ricrearla non inciampa in se stessa.
+  # I 90 secondi in mezzo sono per la propagazione, come prima.
   deploy:
     name: Deploy
     needs: build
     runs-on: ubuntu-latest
+    # L'attesa massima è 2 x 25 minuti più le pause: il tetto del job sta
+    # sopra, se no lo taglia il runner a metà polling e non si capisce perché.
+    timeout-minutes: 60
     environment:
-      # Il link va preso dal tentativo che è andato a buon fine, non dal primo:
-      # se il primo ha fallito il suo `page_url` è vuoto e l'ambiente
-      # comparirebbe senza link proprio nei run in cui serve guardarlo.
       name: github-pages
-      url: >-
-        ${{ steps.deployment.outputs.page_url
-            || steps.deployment2.outputs.page_url
-            || steps.deployment3.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      # Perché tre tentativi invece di uno.
-      #
-      # Quando la coda di Pages non serve la deployment entro il suo timeout,
-      # `deploy-pages` non si limita a fallire: chiama `Canceling Pages
-      # deployment...` e ammazza la pubblicazione. In un repo dove `main` è la
-      # produzione questo è il guasto peggiore possibile, perché non somiglia a
-      # un guasto: build verde, test verdi, e il link pubblico fermo al merge
-      # prima. Il 6 agosto 2026 il mondo 3 è restato offline così.
-      #
-      # E il timeout **non si può alzare**: 600000 ms non è il default
-      # dell'action, è il suo massimo. Passandogli di più risponde `timeout
-      # value is greater than the allowed maximum` e lo riporta a dieci minuti.
-      # Quindi l'unica leva che resta è ritentare.
-      #
-      # Ritentare funziona perché la coda è intermittente, non morta: nella
-      # mezz'ora del guasto un tentativo su cinque è passato in 4 minuti. I 90
-      # secondi di attesa in mezzo non sono decorativi: una deployment ricreata
-      # subito dopo il proprio annullamento torna indietro già cancellata (è
-      # successo, 50 secondi dopo), perché l'id della deployment Pages *è* lo
-      # SHA del commit e l'annullamento precedente deve prima propagarsi.
-      #
-      # `reporting_interval` a 15 secondi invece di 5 perché tre attese da dieci
-      # minuti a 5 secondi di polling fanno trecentosessanta righe identiche, e
-      # il log va letto proprio quando va male.
       - name: Pubblica
         id: deployment
-        continue-on-error: true
-        uses: actions/deploy-pages@v5
-        with:
-          reporting_interval: 15000
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Quanto aspettiamo la coda, per tentativo, e ogni quanto guardiamo.
+          # 15 secondi invece di 5: un'attesa lunga a 5 secondi fa centinaia di
+          # righe identiche, e il log va letto proprio quando va male.
+          WAIT_SECONDS: '1500'
+          POLL_SECONDS: '15'
+          ATTEMPTS: '2'
+        run: |
+          set -euo pipefail
 
-      - name: Aspetta che l'annullamento si propaghi
-        if: steps.deployment.outcome == 'failure'
-        run: sleep 90
+          api="repos/$GITHUB_REPOSITORY"
 
-      - name: Ripubblica (2° tentativo)
-        id: deployment2
-        if: steps.deployment.outcome == 'failure'
-        continue-on-error: true
-        uses: actions/deploy-pages@v5
-        with:
-          reporting_interval: 15000
+          # L'artifact è quello caricato dal job `build` di questo stesso run.
+          # Si prende l'ultimo con quel nome: in un re-run parziale ce n'è più
+          # d'uno e quello buono è il più recente.
+          artifact_id=$(gh api "$api/actions/runs/$GITHUB_RUN_ID/artifacts" \
+            --jq '[.artifacts[] | select(.name == "github-pages")] | last | .id')
+          if [ -z "$artifact_id" ] || [ "$artifact_id" = "null" ]; then
+            echo "::error::Nessun artifact 'github-pages' in questo run."
+            exit 1
+          fi
+          echo "Artifact github-pages: id $artifact_id"
 
-      - name: Aspetta che l'annullamento si propaghi
-        if: steps.deployment.outcome == 'failure' && steps.deployment2.outcome == 'failure'
-        run: sleep 90
+          # Il token OIDC è quello che dimostra a Pages che la deployment
+          # arriva da questo workflow. Nessuna audience: è quello che fa
+          # `core.getIDToken()` senza argomenti, cioè quello che faceva
+          # l'action.
+          oidc_token=$(curl -sS \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r '.value')
+          if [ -z "$oidc_token" ] || [ "$oidc_token" = "null" ]; then
+            echo "::error::Token OIDC non ottenuto (serve id-token: write)."
+            exit 1
+          fi
 
-      - name: Ripubblica (3° tentativo)
-        id: deployment3
-        if: steps.deployment.outcome == 'failure' && steps.deployment2.outcome == 'failure'
-        uses: actions/deploy-pages@v5
-        with:
-          reporting_interval: 15000
+          attempt=1
+          while [ "$attempt" -le "$ATTEMPTS" ]; do
+            echo "::group::Tentativo $attempt di $ATTEMPTS"
+
+            created=$(gh api --method POST "$api/pages/deployments" \
+              -F artifact_id="$artifact_id" \
+              -f pages_build_version="$GITHUB_SHA" \
+              -f oidc_token="$oidc_token")
+
+            # L'id lo dà la risposta; se non c'è, sta in fondo a status_url, e
+            # in ultima istanza è lo SHA. Stessa scaletta dell'action.
+            deployment_id=$(jq -r \
+              '.id // (.status_url // "" | split("/") | last) // ""' <<<"$created")
+            [ -n "$deployment_id" ] || deployment_id="$GITHUB_SHA"
+            page_url=$(jq -r '.page_url // ""' <<<"$created")
+            echo "Deployment $deployment_id creata per $GITHUB_SHA"
+
+            deadline=$(( $(date +%s) + WAIT_SECONDS ))
+            outcome=timeout
+            while [ "$(date +%s)" -lt "$deadline" ]; do
+              sleep "$POLL_SECONDS"
+              status=$(gh api "$api/pages/deployments/$deployment_id" \
+                --jq '.status' 2>/dev/null || echo 'unknown_status')
+              echo "Stato: $status"
+              case "$status" in
+                succeed)
+                  outcome=success
+                  break
+                  ;;
+                deployment_failed|deployment_content_failed|deployment_cancelled|deployment_lost)
+                  outcome=failed
+                  break
+                  ;;
+              esac
+            done
+            echo "::endgroup::"
+
+            if [ "$outcome" = success ]; then
+              echo "page_url=$page_url" >> "$GITHUB_OUTPUT"
+              echo "Pubblicato: $page_url"
+              exit 0
+            fi
+
+            if [ "$outcome" = timeout ]; then
+              # Qui **non** si annulla, ed è tutto il motivo per cui questo
+              # passo esiste: la deployment resta in coda e GitHub la
+              # pubblicherà da sé. Ritentare adesso ricreerebbe lo stesso id
+              # mentre è ancora in volo, quindi si smette e si fallisce forte.
+              echo "::error::La coda di Pages non ha servito la deployment in $((WAIT_SECONDS / 60)) minuti. NON è stata annullata: dovrebbe uscire da sola. Controllare la tab Actions > Pages prima di rilanciare."
+              exit 1
+            fi
+
+            echo "::warning::Stato definitivo di errore ($status)."
+            attempt=$((attempt + 1))
+            if [ "$attempt" -le "$ATTEMPTS" ]; then
+              # 90 secondi perché l'id della deployment è lo SHA: ricrearla
+              # troppo presto la ritrova nello stato vecchio.
+              echo "Aspetto 90 secondi che lo stato si propaghi, poi ritento."
+              sleep 90
+            fi
+          done
+
+          echo "::error::Pubblicazione fallita dopo $ATTEMPTS tentativi."
+          exit 1

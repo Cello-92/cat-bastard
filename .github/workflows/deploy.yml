@@ -69,6 +69,16 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # Il timeout di default dell'action è 10 minuti, e allo scadere non si
+      # limita a fallire: *annulla* la deployment. Se la coda di Pages è lenta
+      # — cosa che succede, e il 6 agosto 2026 è successo per due merge di
+      # fila — l'action ammazza da sola una pubblicazione che sarebbe arrivata,
+      # e il sito resta indietro di un merge senza che niente sia rotto.
+      # Trenta minuti: la coda si aspetta, non si uccide. E un report ogni 15
+      # secondi invece di 5, altrimenti il log diventa un muro di righe uguali.
       - name: Pubblica
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          timeout: 1800000
+          reporting_interval: 15000

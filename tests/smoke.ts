@@ -8,7 +8,7 @@ import { TILE_SIZE } from '@game/config';
 import { LEVELS, SECRET_COUNT } from '@game/levels';
 import { CATS, catRequirement, isCatUnlocked, type UnlockState } from '@game/cats';
 import { AMBUSH_FEATS, FEAT, KONAMI } from '@game/feats';
-import { BOSS, SEGMENT_COLS, LEVEL_ROWS, RULES } from '@game/config';
+import { BOSS, LUCIO, SEGMENT_COLS, LEVEL_ROWS, RULES } from '@game/config';
 import { defineLevel, segment } from '@game/levels/level';
 import { TILE, isSolid } from '@game/tiles';
 import { World } from '@game/world';
@@ -1130,6 +1130,284 @@ console.log('\nLo scontro col Padrone');
   }
 }
 
+// ------------------------------------------------------ lo scontro con Lucio
+//
+// Gothic Lucio non ha niente in comune col Padrone, e proprio per questo niente
+// di quello che è stato provato qui sopra dice qualcosa su di lui.
+//
+// Il punto delicato è uno solo, ed è la ragione per cui questa sezione esiste:
+// **l'unica arma dell'arena è una cella della mappa**. Il colpo non è un
+// incontro fra due entità che volano, è un'entità che finisce sopra un tile
+// acceso — e un tile acceso non esplode se smette di funzionare, si limita a
+// non fare niente. Un Lucio che atterra sui ceri e non prende fuoco è un boss
+// invincibile che passa tutti gli altri test.
+console.log('\nGothic Lucio');
+{
+  const lucioAudio = new Audio();
+  const idle = { isDown: () => false, justPressed: () => false, endTick: () => {} } as unknown as Input;
+
+  /**
+   * Cappella minima: volta, pietre, e una nicchia sopra lo spawn.
+   *
+   * La nicchia non è arredamento. Lucio si tuffa sulla colonna del gatto, e in
+   * una stanza vuota qualunque attesa lunga finisce con lui che ammazza un
+   * giocatore che non si muove: il livello si ricostruisce, `world.lucio`
+   * diventa un altro oggetto e la prova misura un boss che non è quello che
+   * stava esaminando. Sotto la mensola il tuffo atterra sopra la testa del
+   * gatto senza toccarlo, e il tempo si può far passare davvero.
+   */
+  const chapel = (rows: Record<number, string>): World => {
+    const level = defineLevel({
+      id: 'lucio-test',
+      name: 'TEST',
+      title: 'lucio',
+      sky: 'cave',
+      boss: true,
+      spawn: { c: 1, r: 12 },
+      segments: [
+        segment({ rows: { 0: FULL_GROUND, 11: '###', ...rows, 13: FULL_GROUND, 14: FULL_GROUND } }),
+      ],
+    });
+    return new World(level, lucioAudio, { onTaunt: () => {}, onWin: () => {} });
+  };
+
+  /** Lo porta dal soffitto dentro il pavimento, che è l'unica cosa che conta. */
+  const dropOn = (world: World, column: number): void => {
+    const lucio = world.lucio;
+    if (!lucio) return;
+    lucio.x = column * TILE_SIZE + (TILE_SIZE - lucio.w) / 2;
+    lucio.y = lucio.ceilingY;
+    lucio.state = 'dive';
+    for (let tick = 0; tick < 120 && lucio.state === 'dive'; tick++) world.update(idle);
+  };
+
+  const arena = LEVELS.find((level) => level.rows.some((row) => row.includes(TILE.GOTHIC_BOSS)));
+  check(arena !== undefined, 'esiste una cappella con dentro Gothic Lucio');
+  check(arena?.boss === true, "la cappella è dichiarata arena di un boss (niente checkpoint)");
+  check(
+    arena?.rows.some((row) => row.includes(TILE.BOSS_GATE)) === true,
+    'anche la cappella è chiusa da un portone',
+  );
+  check(
+    (arena?.rows.reduce((n, row) => n + [...row].filter((c) => c === TILE.CANDLE).length, 0) ?? 0) >= 4,
+    "la cappella ha almeno quattro ceri (uno per candela del candelabro)",
+  );
+  // Ogni cero dev'essere posato su qualcosa. Un cero a mezz'aria non è un
+  // errore che si vede: è semplicemente un posto in cui Lucio non atterrerà
+  // mai, cioè un'arma che non esiste.
+  if (arena) {
+    const floating = arena.rows.flatMap((row, r) =>
+      [...row].flatMap((tile, c) =>
+        tile === TILE.CANDLE && !isSolid(arena.rows[r + 1]?.[c] ?? ' ') ? [`${c},${r}`] : [],
+      ),
+    );
+    check(floating.length === 0, `nessun cero è appeso al nulla${floating.length ? ` (${floating.join('; ')})` : ''}`);
+  }
+
+  // Nasce appeso, e ci resta.
+  {
+    const world = chapel({ 2: '     $' });
+    const lucio = world.lucio;
+    check(lucio !== null, 'il marcatore "$" diventa davvero un Gothic Lucio');
+    if (lucio) {
+      const start = lucio.y;
+      for (let tick = 0; tick < 40; tick++) world.update(idle);
+      check(lucio.y <= start + 1, 'appeso alla volta ci resta: non cade da solo');
+    }
+  }
+
+  // Toccarlo, in qualunque modo, è un modo di morire.
+  {
+    const world = chapel({ 2: '     $' });
+    const lucio = world.lucio;
+    if (lucio) {
+      world.player.x = lucio.x + 8;
+      world.player.y = lucio.y + 10;
+      world.update(idle);
+      check(world.state === 'dying', 'toccare Lucio uccide');
+    }
+  }
+  {
+    const world = chapel({ 2: '     $' });
+    world.lucio?.onStomp(world);
+    check(world.state === 'dying', 'saltargli addosso uccide: il collare ha le borchie in su');
+  }
+
+  // Il colpo: si tuffa dentro un cero acceso e brucia. È l'unico modo che
+  // esiste di fargli male in tutta la cappella.
+  {
+    const world = chapel({ 2: '     $', 12: '     "' });
+    const lucio = world.lucio;
+    if (lucio) {
+      dropOn(world, 5);
+      check(lucio.hits === 1, `finire dentro un cero acceso spegne una candela (colpi: ${lucio.hits})`);
+    }
+  }
+
+  // E il tuffo sulle pietre nude non fa niente: se bastasse atterrare, lo
+  // scontro si vincerebbe aspettando, e non sarebbe uno scontro.
+  {
+    const world = chapel({ 2: '     $' });
+    const lucio = world.lucio;
+    if (lucio) {
+      dropOn(world, 5);
+      check(lucio.hits === 0, 'atterrare sulle pietre nude non gli fa niente');
+      check(lucio.isStuck, 'ma ci resta conficcato: il tuffo sbagliato costa comunque');
+    }
+  }
+
+  // Il cero su cui atterra se lo porta via, e poi torna.
+  {
+    const world = chapel({ 2: '     $', 12: '     "' });
+    const lucio = world.lucio;
+    if (lucio) {
+      dropOn(world, 5);
+      check(!world.candleLit(5, 12), "il cero su cui è atterrato si spegne: schiacciato");
+      const afterFirst = lucio.hits;
+      dropOn(world, 5);
+      check(lucio.hits === afterFirst, 'e finché è spento lo stesso posto non funziona più');
+
+      // Ma torna. Senza, la cappella diventerebbe una stanza con dentro un boss
+      // e niente con cui spegnerlo: partita finita, non partita persa.
+      for (let tick = 0; tick < LUCIO.candleRelightTicks + 40 && !world.candleLit(5, 12); tick++) {
+        world.update(idle);
+      }
+      check(world.candleLit(5, 12), 'il cero si riaccende da solo');
+      dropOn(world, 5);
+      check(lucio.hits === afterFirst + 1, 'e allora ricolpisce');
+    }
+  }
+
+  // Quattro candele, due fasi, e il portone che si apre solo alla fine.
+  //
+  // I colpi si danno a mano, come per il Padrone: che il cero faccia male è
+  // già provato qui sopra, e legare questa prova all'economia dei ceri
+  // vorrebbe dire misurare due cose insieme e non sapere quale delle due si è
+  // rotta il giorno che diventa rossa.
+  {
+    const world = chapel({ 2: '     $', 12: '        |' });
+    const lucio = world.lucio;
+    if (lucio) {
+      check(world.map.get(8, 12) === TILE.BOSS_GATE, 'il portone parte chiuso');
+
+      for (let hit = 1; hit <= 4; hit++) {
+        lucio.state = 'stuck';
+        check(lucio.takeHit(world), `il colpo ${hit} va a segno`);
+        if (hit === 2) {
+          for (let guard = 0; guard < 400 && lucio.phase === 1; guard++) world.update(idle);
+          check(lucio.phase === 2, 'due candele spente e Lucio cambia fase');
+        }
+      }
+
+      check(lucio.hits === 4, 'quattro colpi spengono tutto il candelabro');
+      check(lucio.isDead, 'con il candelabro spento Lucio cade');
+      for (let tick = 0; tick < 20; tick++) world.update(idle);
+      check(world.map.get(8, 12) === TILE.EMPTY, 'il portone si apre quando Lucio cade');
+    }
+  }
+
+  // Colpirlo mentre non è conficcato non conta: la finestra è quella lì, e non
+  // esiste nessun altro momento in cui sia raggiungibile.
+  {
+    const world = chapel({ 2: '     $' });
+    const lucio = world.lucio;
+    if (lucio) {
+      for (const state of ['hang', 'aim', 'dive', 'climb'] as const) {
+        lucio.state = state;
+        check(!lucio.takeHit(world), `in stato "${state}" non si fa niente`);
+      }
+    }
+  }
+
+  // In seconda fase l'onda dell'atterraggio spegne anche i ceri lì intorno: i
+  // quattro colpi non si possono dare tutti dallo stesso angolo di cappella.
+  // In prima fase no — quella metà dello scontro serve a insegnare il tuffo.
+  {
+    const neighbourAfterDive = (phase: 1 | 2): boolean => {
+      // Due ceri vicini: si atterra sul primo e si guarda il secondo.
+      const world = chapel({ 2: '     $', 12: '     "  "' });
+      const lucio = world.lucio;
+      if (!lucio) return false;
+      lucio.phase = phase;
+      dropOn(world, 5);
+      return world.candleLit(8, 12);
+    };
+    check(neighbourAfterDive(1), "in prima fase l'atterraggio non tocca i ceri vicini");
+    check(!neighbourAfterDive(2), "in seconda fase l'onda spegne anche quelli intorno");
+  }
+
+  // ------------------------------------------------------------------------
+  // E adesso la domanda che nessuno dei controlli qui sopra pone: **si vince?**
+  //
+  // È il controllo più importante della sezione, ed è costato quanto il
+  // risolutore. Tutti i contratti possono essere verdi e lo scontro essere
+  // matematicamente impossibile: è successo davvero, ed è successo in modo
+  // istruttivo. La cattiveria di seconda fase, scritta la prima volta, spegneva
+  // i ceri che Lucio sorvolava mentre scorreva — solo che per tuffarsi deve
+  // arrivare *sopra* il gatto, e il gatto per farsi esca deve stare *sopra il
+  // cero*: quindi spegneva sempre il bersaglio qualche tick prima di poterci
+  // finire dentro. Seconda fase invincibile, tutti i test verdi.
+  //
+  // Quindi qui non si controlla lo scontro: si combatte. Un giocatore finto
+  // gioca la strategia dichiarata dal livello — piazzarsi sul cero acceso più
+  // vicino, aspettare che Lucio si stacchi, togliersi — e deve vincere. Non
+  // dimostra che sia divertente, né che sia facile: dimostra che una strada
+  // esiste, che è l'unica cosa che un test può dire di un boss.
+  {
+    const arenaLevel = LEVELS.find((level) => level.rows.some((row) => row.includes(TILE.GOTHIC_BOSS)));
+    if (arenaLevel) {
+      const world = new World(arenaLevel, lucioAudio, { onTaunt: () => {}, onWin: () => {} });
+      const lit: { c: number; r: number }[] = [];
+      arenaLevel.rows.forEach((row, r) =>
+        [...row].forEach((tile, c) => {
+          if (tile === TILE.CANDLE) lit.push({ c, r });
+        }),
+      );
+
+      let held: string | null = null;
+      let jumping = false;
+      const bot = {
+        isDown: (action: string) => action === held || (action === 'jump' && jumping),
+        justPressed: () => false,
+        endTick: () => {},
+      } as unknown as Input;
+
+      let won = false;
+      let ticks = 0;
+      for (; ticks < 12000; ticks++) {
+        const boss = world.lucio;
+        if (!boss) break;
+        if (boss.isDead) {
+          won = true;
+          break;
+        }
+
+        const px = world.player.centerX;
+        if (boss.state === 'aim' || boss.state === 'dive') {
+          // Sta arrivando: togliersi, e in seconda fase saltare l'onda.
+          held = px < boss.centerX ? 'left' : 'right';
+          jumping = boss.phase === 2 && boss.state === 'dive';
+        } else {
+          // Piazzarsi sul cero acceso più vicino e aspettare lì.
+          jumping = false;
+          let target: number | null = null;
+          for (const { c, r } of lit) {
+            if (!world.candleLit(c, r)) continue;
+            const x = c * TILE_SIZE + TILE_SIZE / 2;
+            if (target === null || Math.abs(x - px) < Math.abs(target - px)) target = x;
+          }
+          held =
+            target === null ? null : Math.abs(target - px) < 6 ? null : target > px ? 'right' : 'left';
+        }
+
+        world.update(bot);
+      }
+
+      check(won, `lo scontro con Lucio si può vincere davvero (${ticks} tick, ${world.deaths} morti)`);
+    }
+  }
+}
+
 // ---------------------------------------------------------------- le imprese
 //
 // Gli easter egg sono l'unica parte del gioco che nessuno andrà a controllare
@@ -1359,7 +1637,22 @@ console.log('\nImprese');
   // I gatti da impresa: chiusi finché l'impresa non è finita, tutta.
   {
     const featCats = CATS.filter((cat) => cat.feats);
-    check(featCats.length === 5, `cinque gatti si sbloccano con un'impresa (sono ${featCats.length})`);
+    check(featCats.length > 0, `ci sono gatti che si sbloccano con un'impresa (sono ${featCats.length})`);
+
+    // Ogni marca dev'essere chiesta da qualcuno.
+    //
+    // Il numero dei gatti da impresa qui era scritto a mano, e un numero
+    // scritto a mano dice solo che qualcuno ha contato una volta. Questo
+    // invece dice la cosa che conta davvero: un'impresa che non sblocca
+    // niente è codice che gira, scrive nei progressi, viaggia fino al
+    // database e non dà nessuna ricompensa — cioè un lavoro fatto per
+    // sbaglio a metà, che è esattamente com'era arrivata qui `FEAT.gothic`.
+    const wanted = new Set(featCats.flatMap((cat) => cat.feats ?? []));
+    const unclaimed = Object.values(FEAT).filter((feat) => !wanted.has(feat));
+    check(
+      unclaimed.length === 0,
+      `ogni impresa sblocca qualcosa${unclaimed.length ? ` (senza gatto: ${unclaimed.join(', ')})` : ''}`,
+    );
     check(
       featCats.every((cat) => cat.yarn === 0 && !cat.needsEveryLevel),
       'un gatto da impresa non chiede anche i gomitoli: sarebbe un segreto dietro una collezione',

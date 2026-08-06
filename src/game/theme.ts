@@ -128,6 +128,19 @@ export const MATERIAL = {
   ash: material('#7c8794', '#b6c2cf', '#454d57', '#232830', '#dbe4ee'),
   /** Iride di brace: il rosso caldo di chi è stato dall'altra parte. */
   ember: material('#e0503a', '#ff9d7c', '#7d1f13', '#3d0d07', '#ffd9cc'),
+
+  // --- La cappella di 2-11: Gothic Lucio, i ceri e chi si veste come lui.
+  /**
+   * Onice: il nero di Lucio. Non è il nero dell'ombra — quello mangia la luce,
+   * questo la restituisce viola, perché è velluto e il velluto si vede.
+   */
+  onyx: material('#231a2c', '#463456', '#120c18', '#08050c', '#8f6dab'),
+  /** Osso: il bianco delle marcature gotiche, freddo e un po' sporco. */
+  bone: material('#ddd6c4', '#fffaf0', '#9a927f', '#5d564a', '#ffffff'),
+  /** Iride viola: l'unica cosa accesa addosso a un gatto tutto spento. */
+  violet: material('#8b4fd0', '#c79bff', '#43206e', '#1f0c36', '#f3e6ff'),
+  /** Cera del cero: opaca da spenta, e traslucida vicino alla fiamma. */
+  wax: material('#d9cdb4', '#f6efdd', '#948a75', '#544e42', '#fffaf0'),
 } as const satisfies Record<string, Material>;
 
 export type MaterialName = keyof typeof MATERIAL;

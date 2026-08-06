@@ -5,10 +5,11 @@ import { groundTiles } from '@engine/physics';
 import type { Renderer } from '@engine/render/renderer';
 import { TileMap } from '@engine/tilemap';
 import { overlaps } from '@engine/types';
-import { BOSS, FEEL, PHYSICS, RULES, TILE_SIZE, VIEW_HEIGHT, VIEW_WIDTH } from './config';
+import { BOSS, LUCIO, FEEL, PHYSICS, RULES, TILE_SIZE, VIEW_HEIGHT, VIEW_WIDTH } from './config';
 import { Effects } from './effects';
 import { Entity } from './entities/entity';
 import { Boss } from './entities/boss';
+import { GothicBoss } from './entities/gothic-boss';
 import { Diver } from './entities/diver';
 import { Drone } from './entities/drone';
 import { FallingSpike } from './entities/falling-spike';
@@ -240,6 +241,21 @@ export class World {
   private brickRespawn = new Map<string, number>();
   private gateCells: { c: number; r: number }[] = [];
   private gateOpen = false;
+
+  // ------------------------------------------------------- Gothic Lucio (2-11)
+  /**
+   * Lucio, se questo livello è la cappella.
+   *
+   * Vale la stessa ragione del Padrone: il combattimento ha bisogno di sapere
+   * dov'è e in che stato è, e nessuna entità può chiederglielo senza passare da
+   * qui. È pubblico per lo stesso motivo — il contratto di uno scontro è
+   * troppo importante per fidarsi di un "non esplode".
+   */
+  lucio: GothicBoss | null = null;
+  /** Le celle dei ceri, nell'ordine in cui stanno nella mappa. */
+  private candles: { c: number; r: number }[] = [];
+  /** Ceri spenti che si stanno riaccendendo: chiave -> tick rimasti. */
+  private candleRelight = new Map<string, number>();
   /**
    * Tick di "colpa del nastro" rimasti.
    *
@@ -332,6 +348,9 @@ export class World {
     this.brickRespawn.clear();
     this.gateCells = [];
     this.gateOpen = false;
+    this.lucio = null;
+    this.candles = [];
+    this.candleRelight.clear();
 
     // Il gomitolo già preso non torna: la mappa è appena stata ricostruita
     // dalle righe del livello, e lì lui c'è ancora.
@@ -353,6 +372,8 @@ export class World {
         this.bossBricks.push({ c, r });
       } else if (tile === TILE.BOSS_GATE) {
         this.gateCells.push({ c, r });
+      } else if (tile === TILE.CANDLE) {
+        this.candles.push({ c, r });
       } else if (tile === TILE.POP_SPIKES) {
         this.popSpikes.push({ c, r, snap: false });
       } else if (tile === TILE.SNAP_SPIKES) {
@@ -385,6 +406,15 @@ export class World {
         return new Drone(c * TILE_SIZE + 3, r * TILE_SIZE + 8);
       case TILE.SNOWBALL:
         return new Snowball(c * TILE_SIZE + 1, r * TILE_SIZE + 2);
+      case TILE.GOTHIC_BOSS: {
+        // Il marcatore sta sotto la volta e Lucio ci nasce appeso: la cella è
+        // il suo soffitto, non il suo pavimento.
+        this.lucio = new GothicBoss(
+          c * TILE_SIZE + (TILE_SIZE - LUCIO.width) / 2,
+          r * TILE_SIZE,
+        );
+        return this.lucio;
+      }
       case TILE.BOSS: {
         // Il marcatore sta nella cella *sopra* il pavimento: il Padrone ci
         // poggia i piedi, non ci sta dentro.
@@ -445,6 +475,10 @@ export class World {
     if (this.state !== 'playing') return;
 
     this.handleBossFight();
+    if (this.state !== 'playing') return;
+
+    this.handleCandles();
+    this.handleLucioFight();
     if (this.state !== 'playing') return;
 
     this.effects.update();
@@ -965,7 +999,157 @@ export class World {
     this.callbacks.onTaunt('si è rifatto il soffitto. certo che sì');
   }
 
-  /** Il Padrone è caduto: il portone non ha più motivo di stare chiuso. */
+  // ------------------------------------------------------- Gothic Lucio (2-11)
+  /**
+   * I ceri che si riaccendono.
+   *
+   * Stesso ciclo chiuso della muratura del Padrone, e per lo stesso identico
+   * motivo: se i ceri finissero, la cappella diventerebbe una stanza con dentro
+   * un gatto che si tuffa e niente con cui spegnerlo. Non sarebbe una partita
+   * persa, sarebbe una partita finita.
+   */
+  private handleCandles(): void {
+    for (const [key, remaining] of [...this.candleRelight]) {
+      if (remaining > 0) {
+        this.candleRelight.set(key, remaining - 1);
+        continue;
+      }
+      this.candleRelight.delete(key);
+      const [c, r] = cellOf(key);
+      this.audio.play('block');
+      this.effects.burst(c * TILE_SIZE + TILE_SIZE / 2, r * TILE_SIZE + 10, PALETTE.gold, {
+        count: 6,
+        speed: 1.4,
+        size: 3,
+        life: 22,
+        light: true,
+        angle: -Math.PI / 2,
+        spread: Math.PI * 0.6,
+      });
+    }
+  }
+
+  /**
+   * Un cero è acceso in questo momento?
+   *
+   * Pubblico per la stessa ragione per cui lo sono `boss` e `lucio`: è lo stato
+   * osservabile di uno scontro, e in questa cappella è *l'unico* — il colpo non
+   * è un incontro fra due entità, è un'entità che finisce sopra una cella
+   * accesa. Un cero che smette di riaccendersi non lancia niente e non rompe
+   * niente: rende Lucio invincibile in silenzio.
+   */
+  candleLit(c: number, r: number): boolean {
+    return !this.candleRelight.has(TileMap.key(c, r));
+  }
+
+  private snuffCandle(c: number, r: number): void {
+    const key = TileMap.key(c, r);
+    if (this.candleRelight.has(key)) return;
+    this.candleRelight.set(key, LUCIO.candleRelightTicks);
+    this.audio.play('crumble');
+    this.effects.burst(c * TILE_SIZE + TILE_SIZE / 2, r * TILE_SIZE + 12, PALETTE.steam, {
+      count: 7,
+      speed: 1.6,
+      size: 4,
+      life: 30,
+      gravity: -0.03,
+      shape: 'circle',
+    });
+  }
+
+  /**
+   * Lucio si è appena conficcato nel pavimento: c'era un cero acceso lì sotto?
+   *
+   * Sta qui e non nell'entità per la regola di sempre — serve sapere insieme
+   * dove sta lui e dove stanno i ceri, e nel progetto quel posto è uno solo.
+   * Il cero paga comunque: se l'ha centrato brucia lui, se l'ha mancato di poco
+   * se lo porta via schiacciandolo. In tutti e due i casi lì non si può
+   * ricombattere subito, ed è quello che tiene in movimento lo scontro.
+   */
+  lucioPlanted(lucio: GothicBoss): void {
+    let hitCandle: { c: number; r: number } | null = null;
+
+    for (const { c, r } of this.candles) {
+      const x = c * TILE_SIZE;
+      const y = r * TILE_SIZE;
+      const overlapping =
+        lucio.x < x + TILE_SIZE &&
+        lucio.x + lucio.w > x &&
+        lucio.feetY > y &&
+        lucio.y < y + TILE_SIZE;
+      if (!overlapping) continue;
+      if (this.candleLit(c, r) && !hitCandle) hitCandle = { c, r };
+      // Acceso o spento, il cero se lo porta via: ci è caduto sopra.
+      this.snuffCandle(c, r);
+    }
+
+    // Fase 2: l'onda si porta via anche le fiamme lì intorno. Serve a impedire
+    // che i quattro colpi si diano tutti dallo stesso angolo di cappella — è
+    // il suo modo di barare, e succede **dopo** che il colpo è stato risolto,
+    // perché un boss che si toglie il bersaglio da solo prima di arrivarci non
+    // è difficile: è invincibile (vedi `LUCIO.snuffRadius`).
+    if (lucio.phase === 2) {
+      let blown = 0;
+      for (const { c, r } of this.candles) {
+        if (!this.candleLit(c, r)) continue;
+        if (Math.abs(c * TILE_SIZE + TILE_SIZE / 2 - lucio.centerX) > LUCIO.snuffRadius) continue;
+        this.snuffCandle(c, r);
+        blown++;
+      }
+      if (blown > 0) {
+        this.effects.floatingText(lucio.centerX, lucio.feetY + 14, 'psss', PALETTE.paper, 12);
+      }
+    }
+
+    if (!hitCandle) return;
+
+    this.effects.floatingText(lucio.centerX, lucio.y - 16, 'AL FUOCO', PALETTE.hot, 14);
+    if (lucio.takeHit(this) && lucio.isDead) {
+      // Il gatto gotico si sblocca qui e da nessun'altra parte: non è un
+      // segreto e non ha bisogno di esserlo — è l'ultimo boss del gioco.
+      this.claim(FEAT.gothic);
+    }
+  }
+
+  /** Cambio di fase: spegne tutto quello che vede, perché può. */
+  onLucioRage(): void {
+    // Uno resta acceso, sempre. Spegnerli tutti sarebbe una fase due che si
+    // vince aspettando, ed è esattamente quello che il gioco non deve chiedere.
+    const spared = this.candles.findIndex(({ c, r }) => this.candleLit(c, r));
+    this.candles.forEach(({ c, r }, i) => {
+      if (i === spared) return;
+      if (!this.candleLit(c, r)) return;
+      this.snuffCandle(c, r);
+    });
+    this.callbacks.onTaunt('ha spento la luce. era prevedibile, ripensandoci');
+  }
+
+  /**
+   * Il combattimento con Lucio: l'onda dell'atterraggio e il portone.
+   *
+   * Il resto — chi colpisce chi — succede in `lucioPlanted`, perché il colpo
+   * non è un incontro fra due entità ma fra un'entità e una cella: è il
+   * pavimento a fare male, non qualcosa che vola.
+   */
+  private handleLucioFight(): void {
+    const lucio = this.lucio;
+    if (!lucio) return;
+
+    // L'onda: in seconda fase schivare per un pelo smette di bastare. Uccide
+    // solo chi tocca terra — saltare sopra l'onda è la risposta, e si vede.
+    if (lucio.waveTicks > 0 && this.player.onGround) {
+      const dx = Math.abs(this.player.centerX - lucio.centerX);
+      const dy = Math.abs(this.player.y + this.player.h - lucio.feetY);
+      if (dx < LUCIO.waveRadius && dy < TILE_SIZE) {
+        this.kill(DEATH_CAUSE.lucioWave);
+        return;
+      }
+    }
+
+    if (lucio.isDead && !this.gateOpen) this.openGate();
+  }
+
+  /** Il boss è caduto: il portone non ha più motivo di stare chiuso. */
   private openGate(): void {
     this.gateOpen = true;
     for (const { c, r } of this.gateCells) {
@@ -1162,6 +1346,7 @@ export class World {
           revealed: this.revealed.has(key) || this.discovered.has(key),
           crumbling: this.crumbling.has(key) || this.brickFalling.has(key),
           checkpointActive: this.checkpoint?.c === col && this.checkpoint.r === row,
+          candleLit: this.candleLit(col, row),
           hasFlagAbove: above === tile && (tile === TILE.FAKE_FLAG || tile === TILE.GOAL),
           extension: this.extensions.get(key) ?? 0,
           open: this.openSidesOf(col, row, tile),

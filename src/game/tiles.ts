@@ -124,10 +124,29 @@ export const TILE = {
    */
   BOSS_BRICK: '?',
   /**
-   * Il portone in fondo all'arena: solido finché il Padrone è vivo, aperto
+   * Il portone in fondo all'arena: solido finché il boss è vivo, aperto
    * nell'istante in cui smette di esserlo. Non è una trappola, è una serratura.
+   * Lo usano tutte e due le arene: una serratura è una serratura.
    */
   BOSS_GATE: '|',
+
+  // --- La cappella di 2-11: l'attrezzatura dello scontro con Gothic Lucio.
+  /**
+   * Cero votivo.
+   *
+   * Non è solido, non uccide, non si raccoglie: è un'**incudine**. Gothic Lucio
+   * vive appeso alla volta e si tuffa dritto verso il punto in cui eri; se il
+   * tuffo finisce dentro un cero acceso, gli prende fuoco il mantello e si
+   * spegne una gemma. Non c'è nessun altro modo di fargli male.
+   *
+   * È l'inverso esatto dell'arma del Padrone: là si portava *lui* sotto il
+   * mattone, qui si porta *sé stessi* sopra la fiamma e lo si lascia arrivare.
+   * Il cero su cui atterra si spegne — schiacciato — e si riaccende da solo
+   * dopo un po', per la stessa ragione per cui il soffitto dell'arena si
+   * ricompone: un'arena senza armi non è una partita persa, è una partita
+   * finita.
+   */
+  CANDLE: '"',
 
   // --- Marcatori: rimossi dalla griglia al caricamento e sostituiti da entità.
   /** Nemico che cammina, schiacciabile. */
@@ -144,6 +163,14 @@ export const TILE = {
   SNOWBALL: '&',
   /** Il Padrone: il boss di 1-11. Ne esiste uno solo per livello. */
   BOSS: '@',
+  /**
+   * Gothic Lucio: il boss di 2-11.
+   *
+   * Il marcatore va messo **sotto la volta**, non sul pavimento: Lucio nasce
+   * appeso a testa in giù e sul pavimento non ci mette piede se non per
+   * sbaglio, che è tutto il combattimento.
+   */
+  GOTHIC_BOSS: '$',
 } as const;
 
 export type TileChar = (typeof TILE)[keyof typeof TILE];
@@ -191,6 +218,7 @@ const SPAWNERS = new Set<string>([
   TILE.DRONE,
   TILE.SNOWBALL,
   TILE.BOSS,
+  TILE.GOTHIC_BOSS,
 ]);
 
 /**

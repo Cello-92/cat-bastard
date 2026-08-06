@@ -300,6 +300,23 @@ export const CATS: readonly CatSkin[] = [
     nose: MATERIAL.sable,
     pattern: 'points',
   },
+  {
+    id: 'gothic',
+    name: 'GOTHIC',
+    blurb: 'Le righe sembrano un costato e non è un caso. Lucio le portava meglio',
+    yarn: 0,
+    feats: [FEAT.gothic],
+    // È l'unica impresa che non è un easter egg: sta in fondo all'ultimo
+    // livello e ci arriva chiunque giochi fino in fondo. L'indovinello quindi
+    // non nasconde niente — dice il nome, e a quel punto il nome è già una
+    // minaccia.
+    riddle: 'In fondo alla cappella c\'è un gatto appeso al soffitto. Spegnigli il candelabro',
+    fur: MATERIAL.onyx,
+    marks: MATERIAL.bone,
+    eye: MATERIAL.violet,
+    nose: MATERIAL.onyx,
+    pattern: 'tabby',
+  },
 ];
 
 const DEFAULT_CAT = CATS[0] as CatSkin;

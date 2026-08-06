@@ -42,6 +42,14 @@ export interface TileDrawContext {
   crumbling: boolean;
   /** Per il checkpoint: già preso? */
   checkpointActive: boolean;
+  /**
+   * Per il cero di 2-11: è acceso?
+   *
+   * Un cero spento non sparisce — resta lì, storto e nero — perché è ancora
+   * l'incudine dello scontro e sapere *dove* si riaccenderà è metà del
+   * combattimento.
+   */
+  candleLit: boolean;
   /** Per le bandiere: c'è un'altra cella di bandiera sopra questa? */
   hasFlagAbove: boolean;
   /** Per gli spuntoni a scatto: quanto sono usciti, in [0,1]. */
@@ -172,6 +180,9 @@ export function drawTile(r: Renderer, tile: string, x: number, y: number, ctx: T
       // Stessa lanterna. L'unica differenza è che questa non si accende mai,
       // ma per scoprirlo bisogna toccarla, e toccarla è la trappola.
       drawCheckpoint(r, x, y, ctx);
+      break;
+    case TILE.CANDLE:
+      drawCandle(r, x, y, ctx);
       break;
     case TILE.FAKE_FLAG:
       drawFlag(r, x, y, ctx, false);
@@ -1532,6 +1543,74 @@ function drawFlag(r: Renderer, x: number, y: number, ctx: TileDrawContext, real:
     ]);
     r.pop();
   }
+}
+
+/**
+ * Il cero votivo della cappella di 2-11.
+ *
+ * Deve dire due cose da lontano e in mezzo tick: **dove sta** e **se è acceso**.
+ * La prima la dà la colonna di cera, che resta identica in tutti e due gli
+ * stati; la seconda la dà la fiamma e soprattutto l'alone, perché è l'alone che
+ * si vede con la coda dell'occhio mentre si scappa da un gatto che cade.
+ *
+ * Il cero spento non viene tolto dal disegno di proposito: è ancora il posto in
+ * cui conviene stare fra duecento tick, e nasconderlo vorrebbe dire nascondere
+ * al giocatore l'unica arma che ha.
+ */
+function drawCandle(r: Renderer, x: number, y: number, ctx: TileDrawContext): void {
+  const wax = MATERIAL.wax;
+  const lit = ctx.candleLit;
+  const cx = x + TILE_SIZE / 2;
+  const base = y + TILE_SIZE;
+  // Altezza consumata: derivata dalla cella, quindi due ceri diversi non sono
+  // mai identici e lo stesso cero non cambia mai (vedi le texture dei tile).
+  const height = 15 + cellNoise(ctx.col, ctx.row, 5) * 5;
+  const top = base - height;
+
+  // Il piattino di ferro: è quello che lo tiene su e che lo fa sembrare posato
+  // sul pavimento invece che disegnato sopra.
+  r.ellipse(cx, base - 2, 8, 2.6, MATERIAL.iron.dark);
+  r.ellipse(cx, base - 3, 7, 2.2, MATERIAL.iron.base);
+  r.rect(cx - 7, base - 4, 14, 1, alpha(MATERIAL.iron.light, 0.6));
+
+  // La colonna di cera, con la colata sul fianco in ombra.
+  const body = lit ? wax.base : wax.dark;
+  r.roundedRect(cx - 3.4, top, 6.8, height - 3, 2, body);
+  r.rect(cx - 3.4, top, 2.4, height - 3, alpha(lit ? wax.light : wax.base, 0.55));
+  r.rect(cx + 1.6, top, 1.8, height - 3, alpha(wax.deep, 0.4));
+  r.push();
+  r.setAlpha(0.55);
+  r.line([cx + 2.6, top + 3, cx + 3.4, top + 9], 1.6, alpha(wax.light, 0.8));
+  r.pop();
+
+  if (!lit) {
+    // Spento: lo stoppino carbonizzato e un filo di fumo che sale piano.
+    r.line([cx, top, cx + 0.6, top - 3], 1.4, PALETTE.ink);
+    r.push();
+    r.setAlpha(0.16 + wave(ctx.tick, 70) * 0.1);
+    r.line(
+      [cx, top - 3, cx + 2.5 - wave(ctx.tick, 40) * 5, top - 10, cx - 1, top - 17],
+      1.4,
+      PALETTE.steam,
+    );
+    r.pop();
+    return;
+  }
+
+  // Acceso: fiamma che respira, e l'alone che la fa vedere da mezzo schermo.
+  const flick = wave(ctx.tick, 9);
+  const flameY = top - 4 - flick * 2;
+  r.push();
+  r.setBlend('add');
+  r.setAlpha(0.22 + flick * 0.16);
+  r.radial(cx, flameY + 3, 30, 30, [
+    { at: 0, color: alpha(PALETTE.gold, 0.85) },
+    { at: 1, color: alpha(PALETTE.gold, 0) },
+  ]);
+  r.pop();
+  r.ellipse(cx, flameY, 3, 5.4 + flick * 1.6, MATERIAL.gold.base);
+  r.ellipse(cx, flameY + 0.6, 1.7, 3.4 + flick, PALETTE.gold);
+  r.ellipse(cx, flameY + 1.6, 0.9, 1.8, PALETTE.paper);
 }
 
 export { ALL_OPEN };

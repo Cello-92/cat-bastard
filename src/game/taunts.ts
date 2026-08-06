@@ -33,6 +33,11 @@ export const DEATH_CAUSE = {
   bossCharge: 'bossCharge',
   bossStomp: 'bossStomp',
   bossRubble: 'bossRubble',
+  // --- Gothic Lucio (2-11)
+  lucio: 'lucio',
+  lucioDive: 'lucioDive',
+  lucioWave: 'lucioWave',
+  lucioStomp: 'lucioStomp',
   // --- mondo 2
   ice: 'ice',
   brittleIce: 'brittleIce',
@@ -143,6 +148,26 @@ const BY_CAUSE: Record<Exclude<DeathCause, 'generic'>, readonly string[]> = {
     'quello era il TUO mattone',
     'l\'hai staccato tu. è caduto dove eri tu',
     'il soffitto non distingue chi lo ha fatto cadere',
+  ],
+  lucio: [
+    'gli sei passato accanto. lui non si sposta per nessuno',
+    'era appeso lì da prima che tu nascessi',
+    'il velluto è morbido. il resto no',
+  ],
+  lucioDive: [
+    'ha guardato dove eri e si è staccato. tu eri ancora lì',
+    'si tuffa dove ERI. il problema è che non ti sei mosso',
+    'mezzo secondo di preavviso. te l\'ha dato tutto',
+  ],
+  lucioWave: [
+    'schivato per un pelo, e il pelo non bastava più',
+    'in seconda fase l\'atterraggio fa male anche a distanza',
+    'stavi accanto al cero. bravo. troppo accanto',
+  ],
+  lucioStomp: [
+    'saltare in testa a un gatto appeso a testa in giù. rifletti',
+    'ha le borchie sul collare. tutte in su',
+    'non era la testa. era il collare',
   ],
   belt: [
     'il nastro ti ha accompagnato. gentile',

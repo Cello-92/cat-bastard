@@ -195,6 +195,118 @@ export const BOSS = {
   ragTicks: 70,
 } as const;
 
+/**
+ * Gothic Lucio, il boss di 2-11.
+ *
+ * Il Padrone si combatte in orizzontale: cammina verso di te, e tu scegli sotto
+ * quale mattone farlo arrivare. Lucio si combatte **in verticale**, e le sue
+ * costanti dicono esattamente questo — non c'è una velocità di carica, c'è una
+ * velocità di scorrimento lungo la volta e una velocità di caduta.
+ *
+ * Due numeri reggono tutto lo scontro, e sono in tensione fra loro. Lo
+ * scorrimento (`slideSpeed`) è più lento del gatto, quindi è il gatto a
+ * decidere sopra quale cero avviene il tuffo: se un giorno superasse
+ * `PHYSICS.maxSpeed`, Lucio smetterebbe di farsi guidare e comincerebbe a
+ * inseguire, che è il combattimento di qualcun altro. Il preavviso del tuffo
+ * (`aimTicks`) è il tempo che il giocatore ha per togliersi: accorciarlo sotto
+ * una decina di tick vuol dire chiedere riflessi invece che memoria, e il patto
+ * dice memoria.
+ */
+export const LUCIO = {
+  width: 40,
+  height: 44,
+  /** Colpi da incassare in ciascuna delle due fasi. */
+  hitsPerPhase: 2,
+  /** Scorrimento lungo la volta, appeso. Sempre più lento del gatto. */
+  slideSpeed: 2.6,
+  slideSpeedFurious: 3.4,
+  /**
+   * Tick appeso, **al massimo**, fra un tuffo e l'altro.
+   *
+   * Non è il tempo che passa sempre: è la valvola di sicurezza. Normalmente
+   * Lucio si stacca quando arriva *sopra* il gatto (vedi `alignRange`), che è
+   * l'unica versione della cosa che si possa imparare a memoria — un boss che
+   * si tuffasse allo scadere di un cronometro, da dove capita, non sarebbe
+   * difficile: sarebbe rumore. Il tetto esiste perché scorre più lento del
+   * gatto e senza di lui bastarebbe correre per sempre.
+   */
+  hangTicks: 150,
+  hangTicksFurious: 110,
+  /**
+   * Quanto vicino alla colonna del gatto deve arrivare prima di staccarsi.
+   *
+   * È la ragione per cui il combattimento funziona: piazzarsi su un cero e
+   * aspettare lo porta lì sopra ogni volta, sempre allo stesso modo. Allargarlo
+   * vorrebbe dire tuffi che cadono di fianco al cero, cioè un'arma che a volte
+   * c'è e a volte no.
+   */
+  alignRange: 14,
+  /**
+   * Mira: allunga gli artigli e sceglie la colonna. Da qui in poi il bersaglio
+   * è **congelato** — Lucio si tuffa dove eri quando ha cominciato a mirare, non
+   * dove sei. È la stessa idea del ruggito del Padrone: il preavviso serve a
+   * qualcosa solo se quello che annuncia non cambia più.
+   */
+  aimTicks: 26,
+  aimTicksFurious: 20,
+  /** Caduta del tuffo: molto più veloce della gravità normale. */
+  diveSpeed: 12,
+  diveSpeedFurious: 14.5,
+  /**
+   * Tick conficcato nel pavimento dopo un tuffo a vuoto.
+   *
+   * È la finestra, ed è lunga apposta: non serve a colpirlo (colpirlo non si
+   * può) ma a fargli capire, e a far capire a chi guarda, che il tuffo sbagliato
+   * costa. Su un cero acceso questo tempo non passa mai: brucia e basta.
+   */
+  stuckTicks: 74,
+  stuckTicksFurious: 54,
+  /** Risalita verso la volta dopo essersi sfilato dal pavimento. */
+  climbSpeed: 5.5,
+  /** Rinculo dopo un colpo incassato: appeso, fermo, e furioso. */
+  hurtTicks: 52,
+  /** Cambio di fase: sta appeso e spegne tutto quello che vede. */
+  rageTicks: 76,
+  /**
+   * Fase 2: l'onda dell'atterraggio.
+   *
+   * Il tuffo smette di essere un problema puntuale e diventa un problema di
+   * spazio: schivare per un pelo non basta più, bisogna proprio non essere lì.
+   * In fase 1 vale zero — l'onda non esiste — perché la prima metà dello
+   * scontro serve a insegnare il tuffo, non a punirlo due volte.
+   */
+  waveRadius: 44,
+  waveTicks: 10,
+  /**
+   * Tick prima che un cero spento si riaccenda da solo.
+   *
+   * Stessa ragione di `bossBrickRespawnTicks`: se i ceri finissero, la cappella
+   * diventerebbe una stanza con dentro un boss e niente con cui spegnerlo.
+   */
+  candleRelightTicks: 150,
+  /**
+   * Fase 2: l'onda dell'atterraggio spegne i ceri lì intorno.
+   *
+   * È il suo modo di barare, ed è l'equivalente dello scarto del Padrone:
+   * impedisce di vincere quattro volte nello stesso posto. Ogni tuffo lascia
+   * un pezzo di cappella al buio, quindi il combattimento si sposta di continuo
+   * e va portato dove le fiamme ci sono ancora.
+   *
+   * **Non è così che era stato scritto la prima volta, e la differenza conta.**
+   * Prima spegneva quello che sorvolava mentre scorreva — e siccome per
+   * tuffarsi deve arrivare *sopra* il gatto, e il gatto per farsi esca deve
+   * stare *sopra il cero*, spegneva sempre il bersaglio qualche tick prima di
+   * poterci finire dentro: la seconda fase era matematicamente invincibile e
+   * nessuno dei controlli sul contratto se ne accorgeva. L'ha trovata un
+   * giocatore finto che ha provato a vincere davvero.
+   */
+  //
+  // Il raggio è tarato sulla distanza fra due ceri vicini della cappella: ogni
+  // tuffo si porta via il bersaglio *e* il suo vicino, mai tutta la stanza.
+  // Tenuto stretto non spegnerebbe mai niente e la fase due non esisterebbe.
+  snuffRadius: 170,
+} as const;
+
 export const FEEL = {
   screenShakeOnDeath: 9,
   screenShakeOnStomp: 3,

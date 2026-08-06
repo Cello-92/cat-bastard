@@ -28,6 +28,8 @@ export const FEAT = {
   ascetic: 'digiuno',
   /** Ammazzare il Padrone con un masso che ha fatto cadere lui. */
   ownRock: 'contrappasso',
+  /** Spegnere Gothic Lucio: quattro tuffi finiti sul cero sbagliato. */
+  gothic: 'requiem',
 
   // --- L'album delle imboscate: una marca per ciascuna delle sette trappole
   //     che non danno **nessun** preavviso. Si collezionano morendo, ed è

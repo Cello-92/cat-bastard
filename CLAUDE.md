@@ -92,7 +92,8 @@ src/
               effects (particelle/juice),
               world.ts (orchestratore), game.ts (composition root)
     entities/ player, walker, shroom, falling-spike, diver,
-              sentry, drone, snowball, boss + rubble (solo 1-11)
+              sentry, drone, snowball, boss + rubble (solo 1-11),
+              gothic-boss (solo 2-11)
     levels/   level.ts (helper) + un file per livello + index.ts (registro)
     render/   background.ts (parallasse), tiles.ts (disegno dei tile)
   net/        supabase.ts (fetch e basta), account.ts (sessione e sincronia),
@@ -179,7 +180,19 @@ Le costanti stanno in `SURFACE` (`game/config.ts`). Chi le tocca deve toccare an
 e lo stesso ordine di operazioni di `Player.update` — se i due si scostano, il
 risolutore mente e un livello impossibile passa i test.
 
-### Il Padrone: l'arena di 1-11
+### I due boss: le arene di 1-11 e 2-11
+
+Il gioco ha due scontri e sono costruiti per **non somigliarsi**. Il Padrone è
+un problema orizzontale: cammina verso di te, e tu scegli sotto quale mattone
+farlo arrivare. Gothic Lucio è verticale: vive appeso alla volta e si tuffa, e
+tu scegli sopra quale cero farti trovare. In tutti e due i casi il boss non si
+tocca mai e l'arma è un pezzo di mappa — di sopra la muratura, di sotto la
+fiamma — ma la mano che la usa cambia: là si *guida* lui, qui si *attira*.
+
+Vale per entrambi: niente checkpoint (un boss si impara, non si consuma), si
+rinasce dentro l'arena, e il portone `|` si apre quando il boss cade.
+
+#### Il Padrone: l'arena di 1-11
 
 Tre tile esistono solo dentro l'arena del boss, e non compaiono in nessun altro
 livello. Non sono trappole: sono l'attrezzatura di uno scontro.
@@ -190,7 +203,8 @@ livello. Non sono trappole: sono l'attrezzatura di uno scontro.
 | `?` | mattone del soffitto | ci sali, trema, si stacca. È l'unica arma contro di lui |
 | `|` | portone chiuso | solido finché il Padrone è vivo, aperto quando cade |
 
-Il combattimento sta in `world.ts` (`handleBossFight`, `bossSlam`, `onBossRage`)
+Il combattimento sta in `world.ts` (`handleBossFight`, `bossSlam`, `onBossRage`;
+per Lucio `lucioPlanted`, `handleLucioFight`, `onLucioRage`)
 e non dentro l'entità, per la regola di sempre: serve sapere insieme dove sta il
 masso e dove sta il boss, e quel posto è uno solo. Il risolutore non sa niente di
 tutto questo — tratta il mattone come un appoggio che sparisce e il portone come
@@ -199,7 +213,42 @@ già aperto — quindi il contratto dello scontro si verifica in `smoke.ts`.
 **Attenzione ai caratteri.** `?` e `|` sono quello che sono perché `H` e `=`
 erano già presi da `SENTRY` e `STEEL`: due tile diversi con lo stesso carattere
 non danno nessun errore, danno un livello che si carica sbagliato. Prima di
-battezzare un tile nuovo, guardare tutto `TILE`.
+battezzare un tile nuovo, guardare tutto `TILE`. Tutte e ventisei le lettere
+maiuscole sono occupate: per un tile nuovo restano i simboli.
+
+#### Gothic Lucio: la cappella di 2-11
+
+Sotto la fabbrica c'è una cappella, e nella cappella c'è un gatto gotico appeso
+alla volta a testa in giù. Due tile suoi, e nessuno dei due è una trappola.
+
+| Tile | Cosa sembra | Cosa fa |
+|---|---|---|
+| `$` | niente, sparisce al caricamento | marcatore: qui nasce Lucio, **appeso** — va messo sotto la volta, non sul pavimento |
+| `"` | un cero votivo acceso | è l'incudine. Lucio che ci finisce dentro col mantello perde una candela |
+
+**Il ciclo.** Lucio scorre lungo la volta verso il gatto — più lento di lui,
+sempre, come il Padrone — e si stacca quando gli arriva **sopra**
+(`LUCIO.alignRange`), non allo scadere di un cronometro: è quello che rende il
+tuffo una cosa che si può *provocare*. Poi mira (`aimTicks`) congelando la
+colonna, e piomba dritto. Se il gatto si è tolto e sotto c'è un cero acceso,
+brucia. Se sotto ci sono pietre nude, resta conficcato e basta — e il tuffo
+sprecato è l'unica risorsa che il giocatore abbia.
+
+**Come bara.** Il cero su cui atterra se lo porta via, e in fase 2 l'onda
+dell'atterraggio spegne anche quelli entro `snuffRadius`: i quattro colpi non si
+possono dare tutti dallo stesso angolo. I ceri si riaccendono da soli
+(`candleRelightTicks`) per la stessa ragione per cui il soffitto del Padrone si
+ricompone. Sempre in fase 2 l'atterraggio manda un'onda che uccide a terra entro
+`waveRadius`: togliersi per un pelo smette di bastare, e la risposta è saltare.
+
+**La cosa da sapere prima di toccare i numeri.** La cattiveria di fase 2, scritta
+la prima volta, spegneva i ceri che Lucio *sorvolava*. Ma per tuffarsi deve
+arrivare sopra il gatto, e il gatto per farsi esca deve stare sopra il cero:
+quindi spegneva sempre il bersaglio qualche tick prima di poterci finire dentro.
+**Seconda fase matematicamente invincibile, e tutti i controlli sul contratto
+verdi.** L'ha trovata il giocatore finto di `tests/smoke.ts`, che gioca lo
+scontro e pretende di vincerlo — è il risolutore applicato a un boss, e c'è per
+questo.
 
 ### Il menu
 
@@ -344,9 +393,17 @@ chi gioca, ed è la regola 7 del patto.
   Nient'altro. Le mappe sono ASCII, un segmento largo 20 colonne per riga di codice.
   Se contiene un `*`, il conteggio dei gomitoli si aggiorna da solo (`SECRET_COUNT`).
 - **Un tile**: una voce in `TILE` (`game/tiles.ts`), la sua semantica lì accanto
-  (solido? letale?), il suo disegno in `game/render/tiles.ts`.
+  (solido? letale?), il suo disegno in `game/render/tiles.ts`. Se ha uno stato
+  che cambia in partita (il cero acceso o spento) serve anche un campo in
+  `TileDrawContext`, perché il disegno di un tile non può interrogare il mondo.
 - **Un nemico**: una classe in `game/entities/` che estende `Entity` e implementa
   `update`/`draw`/`onTouch`/`onStomp`. Se nasce da un tile, aggiungerlo agli spawner.
+- **Un boss**: come un nemico, più il fatto che *lo scontro non sta nell'entità*.
+  Tutto quello che richiede di sapere due cose insieme — dov'è lui e dov'è la
+  cella che gli fa male — sta in `world.ts`, che è l'unico posto che le conosce
+  entrambe. E serve un gatto: sia il Padrone sia Lucio ne sbloccano uno
+  (`FEAT.ownRock`, `FEAT.gothic`), e `tests/smoke.ts` rifiuta un'impresa che non
+  sblocchi niente.
 - **Un'impresa**: una marca in `FEAT` (`game/feats.ts`), il punto che se ne accorge —
   `world.ts` se succede dentro un livello, `game.ts` se succede fuori — e un gatto in
   `cats.ts` che la chiede, **col suo indovinello**. Senza indovinello è un gatto che non
@@ -384,7 +441,7 @@ npm test        # struttura, risolutore, smoke test, regressioni
 npm run build   # typecheck + build
 ```
 
-`tests/` contiene nove cose diverse:
+`tests/` contiene dieci cose diverse:
 
 - **lo smoke test**, che esegue il gioco headless contro un `NullRenderer` capace di
   intercettare coordinate NaN e `push`/`pop` sbilanciati. Non dice se il gioco è bello,
@@ -423,6 +480,11 @@ npm run build   # typecheck + build
   vale il contrappasso — e soprattutto che tutte e sette le trappole dell'album
   esistano ancora in una mappa vera, altrimenti c'è un gatto irraggiungibile e
   non lo dice nessuno;
+- **lo scontro con Lucio**, che è l'unico posto in cui un test *gioca* un boss.
+  I controlli sul contratto dicono che i pezzi funzionano, non che lo scontro si
+  possa vincere: la prima versione della fase 2 era invincibile con tutti i
+  controlli verdi. Quindi un giocatore finto combatte davvero — si piazza sul
+  cero acceso più vicino, aspetta il tuffo, si toglie — e deve arrivare in fondo;
 - **il risolutore** (`tests/solver.ts`), che *gioca* ogni livello: cerca con la fisica vera
   una sequenza di comandi dallo spawn all'arrivo, considerando perso in partenza tutto ciò
   che sparisce sotto le zampe e già scattata ogni trappola. Serve perché un livello può
@@ -548,5 +610,7 @@ e allegare uno zip offline: non servono a ospitare la pagina.
    (da 2-6 in poi si dà per scontato tutto quello che i primi cinque spiegano),
    superfici che cambiano la fisica, tre nemici nuovi, gomitoli nascosti e gatti sbloccabili
 7. ~~Un boss finale che ovviamente bara~~ ✅ — 1-11, il Padrone: si guida invece di
-   inseguirlo, si colpisce col suo stesso soffitto, e scansa mentre cammina
+   inseguirlo, si colpisce col suo stesso soffitto, e scansa mentre cammina.
+   E 2-11, Gothic Lucio: sta appeso alla volta, si attira invece di guidarlo, e
+   si spegne facendolo cadere sui suoi stessi ceri
 8. ~~Account (nickname e password, niente email) e classifica dei tempi~~ ✅ — Supabase

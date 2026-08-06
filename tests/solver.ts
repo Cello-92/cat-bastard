@@ -76,6 +76,13 @@ interface SearchState {
   buffer: number;
   /** Serve a sapere se il salto è "appena premuto" o tenuto da prima. */
   jumpHeld: boolean;
+  /**
+   * Lo stato è dentro le sabbie mobili?
+   *
+   * Non serve alla simulazione — `step` se lo ricalcola — serve alla **chiave
+   * di deduplicazione**, e il motivo sta scritto per esteso su `keyOf`.
+   */
+  inSand: boolean;
 }
 
 const PLAYER_W = 22;
@@ -223,6 +230,7 @@ function step(state: SearchState, map: TileMap, action: { dir: number; jump: boo
     coyote,
     buffer,
     jumpHeld: action.jump,
+    inSand: overlapsTile(body.x, body.y, map, TILE.QUICKSAND),
   };
 }
 
@@ -294,7 +302,8 @@ function touchesGoal(state: SearchState, map: TileMap): boolean {
 
 /**
  * Chiave di deduplicazione, volutamente grossolana: posizione al quadretto di
- * quattro pixel, velocità al pixel intero.
+ * quattro pixel, velocità al pixel intero — **tranne dentro le sabbie mobili**,
+ * dove è esatta.
  *
  * La simulazione resta esatta — si arrotonda solo per decidere se due stati
  * "si somigliano abbastanza" da non esplorarli entrambi. Con una chiave fine
@@ -302,9 +311,25 @@ function touchesGoal(state: SearchState, map: TileMap): boolean {
  * per un quarto di pixel, e finiva il budget prima del secondo tubo. Con
  * questa granularità un percorso trovato resta un percorso vero, e si arriva
  * in fondo al livello in pochi secondi.
+ *
+ * L'eccezione della sabbia è costata un pomeriggio, e vale la pena scriverla.
+ * In una pozza si affonda a poco più di un pixel al tick, quindi due traiettorie
+ * che nello stesso quadretto di quattro pixel differiscono di due pixel
+ * orizzontali non sono "quasi uguali": una scavalca la pozza e l'altra ci
+ * finisce dentro. Con la chiave grossolana vinceva sempre la prima — l'arco di
+ * salto che attraversa la cella e prosegue — e la discesa non veniva mai
+ * esplorata. Il risultato era un risolutore che dichiarava **irraggiungibile**
+ * una camera sotto la sabbia in cui il gioco entra benissimo: un falso
+ * negativo, cioè un livello giocabile bocciato dai test.
+ *
+ * Dentro la sabbia gli stati sono pochi e lenti (le velocità sono limitate da
+ * `sandSink`, `sandRise` e `sandMaxSpeed`), quindi la chiave esatta lì costa
+ * poco e mente zero.
  */
 const keyOf = (s: SearchState): string =>
-  `${s.x >> 2}|${s.y >> 2}|${Math.round(s.vx)}|${Math.round(s.vy)}|${s.jumpHeld ? 1 : 0}`;
+  s.inSand
+    ? `s${s.x}|${s.y}|${(s.vx * 2) | 0}|${(s.vy * 2) | 0}|${s.jumpHeld ? 1 : 0}`
+    : `${s.x >> 2}|${s.y >> 2}|${Math.round(s.vx)}|${Math.round(s.vy)}|${s.jumpHeld ? 1 : 0}`;
 
 export interface SolveResult {
   solved: boolean;
@@ -337,6 +362,7 @@ export function solve(level: LevelDef, budget = 1_500_000): SolveResult {
     coyote: 0,
     buffer: 0,
     jumpHeld: false,
+    inSand: false,
   };
 
   // Gli stati si tengono in code separate per colonna: espandere sempre la

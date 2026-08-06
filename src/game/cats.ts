@@ -256,6 +256,18 @@ export const CATS: readonly CatSkin[] = [
     pattern: 'tabby',
   },
 
+  {
+    id: 'sepolto',
+    name: 'SEPOLTO',
+    blurb: 'Colore di terra bagnata e zampe di sabbia. Sotto una pozza c\'era una stanza, e adesso c\'è un gatto',
+    yarn: 14,
+    fur: MATERIAL.soil,
+    marks: MATERIAL.sand,
+    eye: MATERIAL.faience,
+    nose: MATERIAL.skin,
+    pattern: 'points',
+  },
+
   // ------------------------------------------------------------- le imprese
   // Da qui in giù i gomitoli non c'entrano niente: sono i gatti che si prendono
   // facendo qualcosa che nessuno ha chiesto. Restano estetici come gli altri —

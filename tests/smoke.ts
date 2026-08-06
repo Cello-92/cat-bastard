@@ -1,13 +1,14 @@
 import { Audio } from '@core/audio';
 import { GameLoop, msToTicks, ticksToMs } from '@core/loop';
-import type { Input } from '@core/input';
+import { bindKeySequence, type Input } from '@core/input';
 import type { Progress } from '@core/storage';
 import { applyRemote, errorMessage, toPayload } from '@net/payload';
 import { formatMs } from '@ui/format';
 import { TILE_SIZE } from '@game/config';
 import { LEVELS, SECRET_COUNT } from '@game/levels';
-import { CATS } from '@game/cats';
-import { SEGMENT_COLS, LEVEL_ROWS, RULES } from '@game/config';
+import { CATS, catRequirement, isCatUnlocked, type UnlockState } from '@game/cats';
+import { AMBUSH_FEATS, FEAT, KONAMI } from '@game/feats';
+import { BOSS, SEGMENT_COLS, LEVEL_ROWS, RULES } from '@game/config';
 import { defineLevel, segment } from '@game/levels/level';
 import { TILE, isSolid } from '@game/tiles';
 import { World } from '@game/world';
@@ -861,7 +862,7 @@ console.log('\nGatti');
   }
 
   check(
-    CATS.filter((cat) => cat.yarn === 0).length === 1,
+    CATS.filter((cat) => cat.yarn === 0 && !cat.feats && !cat.needsEveryLevel).length === 1,
     'esiste un solo gatto disponibile da subito',
   );
   check(
@@ -877,15 +878,21 @@ console.log('\nGatti');
   // cercare il secondo sarebbe una perdita di tempo *dimostrabile*, e la
   // collezione smetterebbe di essere una collezione. Chi aggiunge un livello
   // col suo `*` deve aggiungere anche il manto, e lo scopre qui.
-  const thresholds = new Set(CATS.map((cat) => cat.yarn));
+  //
+  // I gatti delle imprese restano fuori dal conto, e devono restarci: hanno
+  // tutti `yarn: 0` perché la loro strada è un'altra, quindi contarli qui
+  // direbbe che a quota 0 ci sono sei manti e che le quote sono piene quando
+  // non lo sono. La scala dei gomitoli si misura solo sui gatti dei gomitoli.
+  const byYarn = CATS.filter((cat) => !cat.feats?.length);
+  const thresholds = new Set(byYarn.map((cat) => cat.yarn));
   const orphans: number[] = [];
   for (let n = 0; n <= SECRET_COUNT; n++) if (!thresholds.has(n)) orphans.push(n);
   check(
     orphans.length === 0,
-    `ogni gomitolo sblocca un gatto${orphans.length ? ` — nessun manto a quota ${orphans.join(', ')}` : ` (${CATS.length} manti per ${SECRET_COUNT} gomitoli)`}`,
+    `ogni gomitolo sblocca un gatto${orphans.length ? ` — nessun manto a quota ${orphans.join(', ')}` : ` (${byYarn.length} manti per ${SECRET_COUNT} gomitoli, più ${CATS.length - byYarn.length} imprese)`}`,
   );
   check(
-    thresholds.size === CATS.length,
+    thresholds.size === byYarn.length,
     'due gatti non chiedono lo stesso numero di gomitoli: il secondo sarebbe gratis',
   );
 
@@ -1120,6 +1127,305 @@ console.log('\nLo scontro col Padrone');
         check(world.state === 'won', "dopo il portone l'arrivo è raggiungibile");
       }
     }
+  }
+}
+
+// ---------------------------------------------------------------- le imprese
+//
+// Gli easter egg sono l'unica parte del gioco che nessuno andrà a controllare
+// giocando: chi non sa che ci sono non si accorge se smettono di funzionare, e
+// chi lo sa dà per scontato di averli già fatti. Una marca che non parte è un
+// gatto che non arriva mai, e non lo segnala nessuno.
+//
+// Quello che si verifica qui è il contratto di ognuna: la condizione giusta la
+// fa scattare, la condizione quasi giusta no — perché un'impresa che si prende
+// per sbaglio non è un segreto, è un regalo.
+console.log('\nImprese');
+{
+  const featAudio = new Audio();
+  const idle = {
+    isDown: () => false,
+    justPressed: () => false,
+    endTick: () => {},
+  } as unknown as Input;
+  const runRight = {
+    isDown: (a: string) => a === 'right',
+    justPressed: () => false,
+    endTick: () => {},
+  } as unknown as Input;
+
+  const withRows = (rows: Record<number, string>, ground = true) => {
+    const level = defineLevel({
+      id: 'feat-test',
+      name: 'TEST',
+      title: 'imprese',
+      sky: 'day',
+      spawn: { c: 1, r: 12 },
+      segments: [segment({ ground, rows })],
+    });
+    const feats: string[] = [];
+    const world = new World(level, featAudio, {
+      onTaunt: () => {},
+      onWin: () => {},
+      onFeat: (feat) => feats.push(feat),
+    });
+    return { world, feats };
+  };
+
+  // La statua: mezzo minuto senza toccare niente.
+  {
+    const { world, feats } = withRows({});
+    for (let tick = 0; tick < RULES.stillTicks + 2; tick++) world.update(idle);
+    check(feats.includes(FEAT.still), 'restare fermi mezzo minuto vale il gatto OMBRA');
+    check(
+      feats.filter((f) => f === FEAT.still).length === 1,
+      'e continuare a stare fermi non lo assegna altre mille volte',
+    );
+  }
+  {
+    const { world, feats } = withRows({});
+    for (let tick = 0; tick < RULES.stillTicks + 2; tick++) world.update(runRight);
+    check(!feats.includes(FEAT.still), 'chi cammina non è fermo, per quanto a lungo lo faccia');
+  }
+  {
+    // Il conto riparte da zero a ogni morte: mezzo minuto vero, non a pezzi.
+    const { world, feats } = withRows({});
+    for (let tick = 0; tick < RULES.stillTicks - 40; tick++) world.update(idle);
+    world.kill();
+    for (let tick = 0; tick < RULES.deathFreezeTicks + 60; tick++) world.update(idle);
+    check(!feats.includes(FEAT.still), 'morire azzera il conto di chi stava fermo');
+  }
+
+  // Il digiuno: un livello finito senza morire e senza toccare una moneta.
+  {
+    const { world, feats } = withRows({ 12: '     CW' });
+    world.player.x = 6 * TILE_SIZE;
+    world.player.y = 12 * TILE_SIZE;
+    world.update(idle);
+    check(world.state === 'won', 'la prova arriva davvero in fondo al livello');
+    check(feats.includes(FEAT.ascetic), 'finire senza morti e senza monete vale il gatto MONACO');
+  }
+  {
+    const { world, feats } = withRows({ 12: '     CW' });
+    world.player.x = 5 * TILE_SIZE;
+    world.player.y = 12 * TILE_SIZE;
+    // Prima la moneta, poi l'arrivo: una moneta sola e il digiuno è rotto.
+    for (let tick = 0; tick < 60 && world.state === 'playing'; tick++) world.update(runRight);
+    check(world.coins === 1, 'la moneta sulla strada viene raccolta');
+    check(!feats.includes(FEAT.ascetic), 'chi raccoglie anche una sola moneta non sta digiunando');
+  }
+  {
+    const { world, feats } = withRows({ 12: '     W' });
+    world.kill();
+    // Il fermo immagine della morte più i tick di hit-stop: si aspetta con
+    // abbondanza, quello che conta è che il livello sia ripartito.
+    for (let tick = 0; tick < RULES.deathFreezeTicks + 20; tick++) world.update(idle);
+    world.player.x = 5 * TILE_SIZE;
+    world.player.y = 12 * TILE_SIZE;
+    world.update(idle);
+    check(world.state === 'won' && !feats.includes(FEAT.ascetic), 'e chi è morto una volta nemmeno');
+  }
+
+  // L'album: sette imboscate, sette figurine. Qui se ne provano tre, una per
+  // ciascun modo in cui il gioco può accorgersi di come sei morto: il tile che
+  // uccide da solo, l'entità che ti cade addosso, e la colpa attribuita a
+  // qualcosa che era sparito prima che tu cadessi.
+  {
+    const { world, feats } = withRows({ 12: '     E' });
+    world.player.x = 5 * TILE_SIZE;
+    world.player.y = 12 * TILE_SIZE;
+    world.update(idle);
+    check(feats.includes(FEAT.ambushLure), 'la moneta esca lascia la sua figurina');
+  }
+  {
+    const { world, feats } = withRows({ 12: '     ^' });
+    world.player.x = 5 * TILE_SIZE;
+    world.player.y = 12 * TILE_SIZE;
+    world.update(idle);
+    check(feats.length === 0, 'morire in un modo qualunque non colleziona niente');
+  }
+  {
+    // Il masso che crolla (`K`) non è una stalattite (`T`): la morte è sua, e
+    // la figurina pure. Con una causa sola erano la stessa trappola.
+    const { world, feats } = withRows({ 8: '     K' });
+    world.player.x = 5 * TILE_SIZE;
+    world.player.y = 12 * TILE_SIZE;
+    for (let tick = 0; tick < 40 && world.state === 'playing'; tick++) world.update(idle);
+    check(world.state === 'dying', 'il masso che crolla arriva fino in fondo');
+    check(feats.includes(FEAT.ambushCollapse), 'e lascia la figurina del crollo, non quella della stalattite');
+  }
+  {
+    // La piattaforma fantasma non uccide: fa cadere. Senza attribuire la colpa
+    // sarebbe una morte nel vuoto qualunque — e la battuta scritta apposta in
+    // `taunts.ts` non l'avrebbe mai letta nessuno.
+    const { world, feats } = withRows({ 13: '     L' }, false);
+    world.player.x = 5 * TILE_SIZE + 4;
+    world.player.y = 13 * TILE_SIZE - world.player.h;
+    for (let tick = 0; tick < 200 && world.state === 'playing'; tick++) world.update(idle);
+    check(world.state === 'dying', 'senza la piattaforma fantasma si finisce di sotto');
+    check(feats.includes(FEAT.ambushGhost), 'e la colpa è sua, non del vuoto');
+  }
+
+  // Le sette figurine devono esistere davvero nei livelli veri.
+  //
+  // È l'unico modo in cui il gatto CAVIA può diventare impossibile senza che
+  // niente si rompa: basta che qualcuno tolga l'ultimo getto spento da una
+  // mappa e l'album non si chiude più, in silenzio, per sempre. La coppia
+  // impresa/tile è scritta qui apposta, come la regex di cb_sync.
+  {
+    const ALBUM: ReadonlyArray<readonly [string, string]> = [
+      [FEAT.ambushLure, TILE.LURE_COIN],
+      [FEAT.ambushLantern, TILE.FAKE_CHECKPOINT],
+      [FEAT.ambushCollapse, TILE.COLLAPSE],
+      [FEAT.ambushGhost, TILE.GHOST],
+      [FEAT.ambushSnap, TILE.SNAP_SPIKES],
+      [FEAT.ambushHidden, TILE.HIDDEN_SPIKES],
+      [FEAT.ambushVent, TILE.DEAD_VENT],
+    ];
+    check(
+      ALBUM.length === AMBUSH_FEATS.length,
+      `l'album ha una trappola per figurina (${ALBUM.length} contro ${AMBUSH_FEATS.length})`,
+    );
+    const missing = ALBUM.filter(
+      ([, tile]) => !LEVELS.some((level) => level.rows.some((row) => row.includes(tile))),
+    ).map(([feat]) => feat);
+    check(
+      missing.length === 0,
+      `ogni figurina dell'album si può ancora prendere in un livello vero${missing.length ? ` (introvabili: ${missing.join(', ')})` : ''}`,
+    );
+  }
+
+  // Il contrappasso: il Padrone ucciso da un masso staccato da lui.
+  {
+    const level = defineLevel({
+      id: 'feat-boss',
+      name: 'TEST',
+      title: 'padrone',
+      sky: 'cave',
+      boss: true,
+      spawn: { c: 1, r: 12 },
+      segments: [segment({ rows: { 8: '     ?', 12: '     @', 13: FULL_GROUND, 14: FULL_GROUND } })],
+    });
+
+    /** Uccide il Padrone e dice quali imprese sono uscite dallo scontro. */
+    const fight = (lastHitBySlam: boolean): string[] => {
+      const feats: string[] = [];
+      const world = new World(level, featAudio, {
+        onTaunt: () => {},
+        onWin: () => {},
+        onFeat: (feat) => feats.push(feat),
+      });
+      const boss = world.boss;
+      if (!boss) return feats;
+
+      // Il gatto resta lontano: qui si prova chi colpisce chi, non chi scappa.
+      const away = (): void => world.player.reset(1 * TILE_SIZE, 12 * TILE_SIZE);
+      away();
+
+      const hits = BOSS.hitsPerPhase * 2;
+      for (let hit = 1; hit <= hits; hit++) {
+        for (let guard = 0; guard < 400 && !boss.vulnerable; guard++) {
+          away();
+          world.update(idle);
+        }
+        if (hit < hits || !lastHitBySlam) {
+          boss.takeHit(world);
+          continue;
+        }
+        // L'ultima gemma la spegne il suo stesso soffitto: lo si rimette sotto
+        // al mattone (nel frattempo ha camminato) e gli si fa dare la botta.
+        boss.x = 5 * TILE_SIZE + (TILE_SIZE - BOSS.width) / 2;
+        boss.state = 'stun';
+        world.bossSlam(boss);
+        for (let tick = 0; tick < 90 && !boss.isDead; tick++) {
+          away();
+          world.update(idle);
+        }
+      }
+      check(boss.isDead, `il Padrone cade${lastHitBySlam ? ' sotto il suo stesso masso' : ''}`);
+      return feats;
+    };
+
+    check(
+      fight(true).includes(FEAT.ownRock),
+      'ammazzarlo col masso che ha staccato lui vale il gatto PADRONE',
+    );
+    check(
+      !fight(false).includes(FEAT.ownRock),
+      'batterlo nel modo normale non lo regala: sarebbe la ricompensa di chiunque',
+    );
+  }
+
+  // I gatti da impresa: chiusi finché l'impresa non è finita, tutta.
+  {
+    const featCats = CATS.filter((cat) => cat.feats);
+    check(featCats.length === 5, `cinque gatti si sbloccano con un'impresa (sono ${featCats.length})`);
+    check(
+      featCats.every((cat) => cat.yarn === 0 && !cat.needsEveryLevel),
+      'un gatto da impresa non chiede anche i gomitoli: sarebbe un segreto dietro una collezione',
+    );
+    check(
+      featCats.every((cat) => (cat.riddle ?? '').length > 0),
+      'ogni gatto chiuso da un\'impresa ha il suo indovinello (CLAUDE.md, punto 7)',
+    );
+    check(
+      new Set(Object.values(FEAT)).size === Object.values(FEAT).length,
+      'due imprese diverse non hanno la stessa marca',
+    );
+
+    const nothing: UnlockState = { yarn: 0, everyLevelCleared: false, feats: new Set() };
+    check(
+      featCats.every((cat) => !isCatUnlocked(cat, nothing)),
+      'senza imprese nessuno di quei gatti è disponibile',
+    );
+    check(
+      featCats.every((cat) => catRequirement(cat, nothing).includes(cat.riddle ?? '')),
+      'e la riga che si legge nel menu è l\'indovinello, non un conteggio di gomitoli',
+    );
+
+    const album = CATS.find((cat) => (cat.feats?.length ?? 0) > 1);
+    if (album) {
+      const half = album.feats?.slice(0, 3) ?? [];
+      const partial: UnlockState = {
+        yarn: 0,
+        everyLevelCleared: false,
+        feats: new Set<string>(half),
+      };
+      check(!isCatUnlocked(album, partial), 'un album a metà non sblocca niente');
+      check(
+        catRequirement(album, partial).includes(`${half.length} su ${album.feats?.length}`),
+        'ma dice a che punto è: tre figurine su sette',
+      );
+      const complete: UnlockState = {
+        yarn: 0,
+        everyLevelCleared: false,
+        feats: new Set<string>(album.feats ?? []),
+      };
+      check(isCatUnlocked(album, complete), 'con tutte le figurine il gatto arriva');
+    }
+
+    // Il codice: la sequenza vale solo intera, e un tasto sbagliato non
+    // impedisce di ricominciare dal primo — altrimenti chi sbaglia una freccia
+    // resta bloccato senza sapere perché.
+    const listeners: Array<(e: unknown) => void> = [];
+    const fakeWindow = {
+      addEventListener: (_type: string, handler: (e: unknown) => void) => listeners.push(handler),
+      removeEventListener: () => {},
+    } as unknown as Window;
+
+    let matches = 0;
+    bindKeySequence(KONAMI, () => matches++, fakeWindow);
+    const type = (...codes: string[]): void => {
+      for (const code of codes) for (const listener of listeners) listener({ code });
+    };
+
+    type(...KONAMI.slice(0, -1));
+    check(matches === 0, 'il codice quasi completo non sblocca niente');
+    type('KeyZ');
+    type(...KONAMI);
+    check(matches === 1, 'il codice intero sblocca il gatto PLACCATO');
+    type('ArrowUp', ...KONAMI);
+    check(matches === 2, 'una freccia di troppo prima del codice non lo rompe');
   }
 }
 
@@ -1397,6 +1703,7 @@ console.log('\nGli id dei livelli sono quelli che il server accetta');
     ),
     totalDeaths: 1,
     secrets: LEVELS.map((level) => level.id),
+    feats: [],
   };
   const sent = toPayload(everyLevel) as { levels: Record<string, unknown>; secrets: string[] };
   check(
@@ -1418,24 +1725,28 @@ console.log('\nSincronizzazione dei progressi');
     },
     totalDeaths: 40,
     secrets: ['w1-1'],
+    feats: [FEAT.code],
   };
 
   const payload = toPayload(local) as {
     levels: Record<string, { ms: number }>;
     secrets: string[];
+    feats: string[];
   };
   check(payload.levels['w1-1']?.ms === 10000, 'un record di 600 tick parte come 10000ms');
   check(payload.levels['w1-2'] === undefined, 'un livello mai finito non ha un tempo da mandare');
   check(payload.secrets.includes('w1-1'), 'i gomitoli trovati partono con tutto il resto');
+  check(payload.feats.includes(FEAT.code), 'le imprese partono con tutto il resto');
 
-  // Il server ha un tempo migliore su 1-1, un livello che qui non c'è, e un
-  // gomitolo trovato su un altro computer.
+  // Il server ha un tempo migliore su 1-1, un livello che qui non c'è, un
+  // gomitolo e un'impresa fatti su un altro computer.
   const merged = applyRemote(
     {
       ok: true,
       nickname: 'gatto',
       total_deaths: 12,
       secrets: ['w2-3'],
+      feats: [FEAT.still],
       levels: {
         'w1-1': { ms: 9000, deaths: 9, coins: 1 },
         'w1-3': { ms: 20000, deaths: 2, coins: 5 },
@@ -1460,6 +1771,32 @@ console.log('\nSincronizzazione dei progressi');
   check(
     merged.secrets.length === new Set(merged.secrets).size,
     'lo stesso gomitolo non si conta due volte (varrebbe due gatti)',
+  );
+  check(
+    merged.feats.includes(FEAT.code) && merged.feats.includes(FEAT.still),
+    'le imprese si sommano: quella fatta di là e quella fatta di qua',
+  );
+
+  // Un server che non sa ancora niente di imprese non deve cancellare quelle
+  // che il giocatore ha già: è esattamente lo stato in cui si trova un database
+  // installato prima che esistessero.
+  const older = applyRemote(
+    { ok: true, nickname: 'gatto', total_deaths: 12, secrets: [], levels: {} },
+    local,
+  );
+  check(
+    older.feats.includes(FEAT.code),
+    'un server che non conosce le imprese non ne fa perdere nessuna',
+  );
+
+  // Il formato delle marche è l'unica cosa che il server controlla davvero:
+  // una maiuscola o un underscore e cb_sync la scarta in silenzio, cioè un
+  // gatto che sparisce cambiando computer (è già successo con i gomitoli).
+  const ACCEPTED_BY_CB_SYNC = /^[a-z-]{1,32}$/;
+  const badFeats = Object.values(FEAT).filter((feat) => !ACCEPTED_BY_CB_SYNC.test(feat));
+  check(
+    badFeats.length === 0,
+    `ogni impresa passa il filtro di cb_sync${badFeats.length ? ` (scartate: ${badFeats.join(', ')})` : ''}`,
   );
 }
 

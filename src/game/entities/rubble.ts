@@ -28,9 +28,20 @@ export class Rubble extends Entity {
   /** Rotazione accumulata: cade ruotando, così si legge che è un detrito. */
   private spin = 0;
   private readonly tumble: number;
+  /**
+   * L'ha staccato il Padrone con una botta a terra, non il gatto salendoci
+   * sopra.
+   *
+   * Al masso non cambia niente — fa male a tutti allo stesso modo — ma cambia
+   * a chi guarda: farsi ammazzare dal proprio soffitto è un'impresa
+   * (`FEAT.ownRock`), e senza questa riga non ci sarebbe modo di distinguerla
+   * da un tiro riuscito.
+   */
+  readonly slam: boolean;
 
-  constructor(x: number, y: number, tumble = 0.06) {
+  constructor(x: number, y: number, slam = false, tumble = 0.06) {
     super(x, y, WIDTH, HEIGHT);
+    this.slam = slam;
     this.tumble = tumble;
   }
 

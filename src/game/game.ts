@@ -1,12 +1,13 @@
 import { Audio } from '@core/audio';
 import { GameLoop } from '@core/loop';
-import { Input, type Action } from '@core/input';
+import { Input, bindKeySequence, type Action } from '@core/input';
 import { Canvas2DRenderer } from '@engine/render/canvas2d';
 import type { Renderer } from '@engine/render/renderer';
 import {
   loadProgress,
   loadSettings,
   recordClear,
+  recordFeat,
   recordSecret,
   resetProgress,
   saveProgress,
@@ -22,8 +23,9 @@ import { Menu, type MenuItem, type MenuPage, type MenuRow } from '@ui/menu';
 import { Preview } from '@ui/preview';
 import { Screens } from '@ui/screens';
 import { formatMs, formatTicksPrecise, plural } from '@ui/format';
-import { CATS, catById, catRequirement, isCatUnlocked, type UnlockState } from './cats';
+import { CATS, catById, catRequirement, isCatUnlocked, type CatSkin, type UnlockState } from './cats';
 import { VIEW_HEIGHT, VIEW_WIDTH } from './config';
+import { FEAT, KONAMI, type FeatId } from './feats';
 import { LEVELS, SECRET_COUNT, WORLDS, firstLevel, type WorldDef } from './levels';
 import { drawCatPortrait } from './render/cat-portrait';
 import { World, type RunStats } from './world';
@@ -67,6 +69,14 @@ export class Game {
    * riscriverebbe il menu che sta guardando adesso.
    */
   private leaderboardRequest = 0;
+  /**
+   * Come ridisegnare la pagina aperta, quando è una che può cambiare da sola.
+   *
+   * Ce n'è una sola: la collezione. Il codice segreto si digita quasi sempre
+   * proprio lì davanti, e un gatto che si sblocca senza che la lista se ne
+   * accorga è un gatto che sembra non essersi sbloccato.
+   */
+  private repaint: (() => void) | null = null;
 
   constructor(root: Document | HTMLElement = document) {
     const canvas = root.querySelector<HTMLCanvasElement>('#stage');
@@ -115,6 +125,11 @@ export class Game {
 
     this.world = this.createWorld(0);
     this.bindTouchControls(root);
+    // Il codice funziona ovunque — menu, gioco, pausa — perché un easter egg
+    // che pretende di essere digitato nella schermata giusta non lo trova
+    // nessuno. Non consuma i tasti: mentre lo si scrive il menu si muove, ed è
+    // giusto che si veda che il gioco sta ascoltando.
+    bindKeySequence(KONAMI, () => this.claimFeat(FEAT.code));
     // Entrando o uscendo dallo schermo intero la voce di menu cambia etichetta.
     bindFullscreenKey(() => {
       if (this.phase === 'menu') this.showRootMenu();
@@ -208,6 +223,7 @@ export class Game {
       onSecret: () => {
         this.progress = recordSecret(this.progress, level.id);
       },
+      onFeat: (feat) => this.claimFeat(feat),
     });
     world.player.skin = catById(this.settings.cat);
     return world;
@@ -218,7 +234,38 @@ export class Game {
     return {
       yarn: this.progress.secrets.length,
       everyLevelCleared: LEVELS.every((level) => this.progress.levels[level.id]?.cleared),
+      feats: new Set(this.progress.feats),
     };
+  }
+
+  private get unlockedCats(): CatSkin[] {
+    const state = this.unlockState;
+    return CATS.filter((cat) => isCatUnlocked(cat, state));
+  }
+
+  /**
+   * Un'impresa è riuscita: si scrive, si sincronizza, e se ha aperto un gatto
+   * lo si dice.
+   *
+   * L'annuncio arriva da qui e non dal mondo per il motivo di sempre: solo i
+   * progressi sanno quante figurine mancavano all'album. Le imprese che non
+   * completano niente restano mute — il posto in cui si guarda a che punto si
+   * è è la collezione, e ci si arriva dal menu.
+   */
+  private claimFeat(feat: FeatId): void {
+    const before = new Set(this.unlockedCats.map((cat) => cat.id));
+    const updated = recordFeat(this.progress, feat);
+    // Niente di nuovo: l'impresa era già segnata da un'altra partita.
+    if (updated === this.progress) return;
+    this.progress = updated;
+    this.queueSync();
+
+    for (const cat of this.unlockedCats) {
+      if (before.has(cat.id)) continue;
+      this.audio.play('win');
+      this.screens.showTaunt(`gatto sbloccato: ${cat.name}`);
+      this.repaint?.();
+    }
   }
 
   private bindTouchControls(root: ParentNode): void {
@@ -263,6 +310,9 @@ export class Game {
    */
   private page(page: MenuPage): void {
     if (page.layout !== 'gallery') this.preview.hide();
+    // Chi ha bisogno di ridisegnarsi da solo se lo riassegna subito dopo (vedi
+    // `showCatsMenu`): di default una pagina è ferma finché non la si tocca.
+    this.repaint = null;
     this.menu.show(page);
   }
 
@@ -605,9 +655,12 @@ export class Game {
     const items: MenuItem[] = CATS.map((cat) => {
       const unlocked = isCatUnlocked(cat, state);
       const current = this.settings.cat === cat.id;
+      // Un gatto da gomitoli dichiara il suo prezzo; uno da impresa no: dire
+      // "una cosa strana" è tutto quello che si può dire senza dirla.
+      const price = cat.feats ? '???' : `${cat.yarn} ✦`;
       return {
         label: unlocked ? cat.name : '???',
-        value: current ? 'IN USO' : unlocked ? '' : `${cat.yarn} ✦`,
+        value: current ? 'IN USO' : unlocked ? '' : price,
         hint: unlocked ? cat.blurb : catRequirement(cat, state),
         locked: !unlocked,
         // Scorrere la lista cambia il ritratto: è l'unico posto del gioco in
@@ -638,16 +691,21 @@ export class Game {
       onSelect: back,
     });
 
+    const secret = CATS.filter((cat) => cat.feats).length;
     this.page({
       layout: 'gallery',
       title: `GATTI · ${plural(state.yarn, 'gomitolo', 'gomitoli')} su ${SECRET_COUNT}`,
       body: [
         `${SECRET_COUNT} livelli nascondono un gomitolo dietro qualcosa che sembra un muro. Quali, si scopre andandoci a sbattere.`,
+        `Altri ${secret} non c'entrano niente coi gomitoli: si prendono facendo qualcosa che nessuno ti ha chiesto di fare. La riga sotto il nome dice cosa, a modo suo.`,
         'Non danno nessun vantaggio: cambiano solo la faccia di chi muore. Non c\'è niente da comprare, e le monete non servono a questo.',
       ],
       items,
       onBack: back,
     });
+    // Da qui in poi la pagina sa ridisegnarsi: serve al codice segreto, che si
+    // digita quasi sempre proprio mentre si sta guardando questa lista.
+    this.repaint = () => this.showCatsMenu(back);
   }
 
   private showHelpMenu(): void {

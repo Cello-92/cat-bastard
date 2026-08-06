@@ -19,6 +19,40 @@ const KEY_BINDINGS: Readonly<Record<string, Action>> = {
   KeyR: 'restart',
 };
 
+/**
+ * Ascolta una sequenza di tasti e chiama quando esce tutta intera.
+ *
+ * Sta qui e non in `game/` perché non sa cosa sia una sequenza giusta: riceve
+ * un elenco di codici e li confronta, esattamente come `Input` riceve delle
+ * associazioni. Non consuma niente e non chiama `preventDefault`: i tasti
+ * continuano a fare quello che facevano — il menu si muove, il gatto salta — e
+ * chi digita un codice segreto in un gioco che non ha codici segreti non deve
+ * accorgersi di niente finché non ha finito.
+ *
+ * Restituisce la funzione per smettere di ascoltare.
+ */
+export function bindKeySequence(
+  codes: readonly string[],
+  onMatch: () => void,
+  target: Window = window,
+): () => void {
+  // Gli ultimi tasti premuti, non "a che punto siamo": un tasto di troppo in
+  // mezzo non deve costringere a ricominciare da capo, e tenere il conto dei
+  // passi non basta a garantirlo (la sequenza contiene ripetizioni, quindi il
+  // punto giusto da cui riprendere non è sempre lo stesso).
+  const recent: string[] = [];
+  const handler = (e: Event): void => {
+    recent.push((e as KeyboardEvent).code);
+    if (recent.length > codes.length) recent.shift();
+    if (recent.length < codes.length) return;
+    if (!recent.every((code, i) => code === codes[i])) return;
+    recent.length = 0;
+    onMatch();
+  };
+  target.addEventListener('keydown', handler);
+  return () => target.removeEventListener('keydown', handler);
+}
+
 export class Input {
   private readonly held = new Set<Action>();
   private readonly pressed = new Set<Action>();

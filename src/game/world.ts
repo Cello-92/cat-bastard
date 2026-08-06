@@ -18,6 +18,7 @@ import { Sentry } from './entities/sentry';
 import { Shroom } from './entities/shroom';
 import { Snowball } from './entities/snowball';
 import { Walker } from './entities/walker';
+import { FEAT, featForDeath, type FeatId } from './feats';
 import type { LevelDef } from './levels';
 import { drawBackground } from './render/background';
 import { drawTile, type OpenSides } from './render/tiles';
@@ -58,6 +59,15 @@ export interface WorldCallbacks {
   onWin(stats: RunStats): void;
   /** Gomitolo raccolto: va segnato subito, anche se poi il livello non finisce. */
   onSecret?(): void;
+  /**
+   * Impresa compiuta (vedi `game/feats.ts`).
+   *
+   * Il mondo dice solo *cosa è successo*: non sa quante ne mancano, non sa se
+   * questa sblocca un gatto e non deve saperlo — quella roba sta nei progressi,
+   * e i progressi non entrano qui dentro (vedi la regola di sempre: `world.ts`
+   * non conosce niente che stia fuori dal livello in corso).
+   */
+  onFeat?(feat: FeatId): void;
 }
 
 /** Da quale tile letale è arrivata la morte: serve a scegliere la battuta. */
@@ -80,6 +90,18 @@ const causeOfTile = (tile: string): DeathCause => {
     default:
       return DEATH_CAUSE.generic;
   }
+};
+
+/**
+ * Di chi è la colpa quando il pavimento sparisce e si finisce di sotto.
+ *
+ * L'asse marcia (`D`) non è nell'elenco: trema per un quarto di secondo prima
+ * di cedere, quindi chi ci casca sa già benissimo cos'è successo.
+ */
+const VANISH_CAUSE: Readonly<Record<string, DeathCause>> = {
+  [TILE.GHOST]: DEATH_CAUSE.ghost,
+  [TILE.FAKE_GROUND]: DEATH_CAUSE.fakeGround,
+  [TILE.BRITTLE_ICE]: DEATH_CAUSE.brittleIce,
 };
 
 /** Ritardo di cedimento delle superfici che spariscono, per tile. */
@@ -167,8 +189,34 @@ export class World {
    * quella trappola lì, e il gioco glielo deve dire (CLAUDE.md, punto 7).
    */
   private lastDeadVent = -1000;
+  /**
+   * L'ultimo pavimento svanito sotto le zampe, e di che tipo era.
+   *
+   * Stessa idea del getto spento qui sopra: chi cade perché la piattaforma
+   * fantasma non c'è più non è morto "nel vuoto". Senza questo, le battute di
+   * `ghost`, `fakeGround` e `brittleIce` erano scritte in `taunts.ts` e non le
+   * vedeva nessuno — cioè tre trappole senza spiegazione (CLAUDE.md, punto 7).
+   */
+  private lastVanish: { tick: number; cause: DeathCause } | null = null;
   /** Il gomitolo di questo livello è già stato preso in questo tentativo. */
   secretFound = false;
+
+  /**
+   * Tick consecutivi senza toccare un comando (vedi `FEAT.still`).
+   *
+   * È l'unica cosa del gioco che si guadagna non giocando, e per questo si
+   * azzera al primo tasto e a ogni morte: mezzo minuto vero, in un tentativo
+   * solo, non mezzo minuto messo insieme a pezzi mentre si era altrove.
+   */
+  private stillTicks = 0;
+  /**
+   * Imprese già annunciate in questo livello.
+   *
+   * I progressi sono altrove e sono loro a decidere se una cosa è nuova: qui
+   * serve solo a non richiamare il callback sessanta volte al secondo mentre
+   * il gatto continua a non muoversi.
+   */
+  private claimed = new Set<FeatId>();
 
   // -------------------------------------------------------------- il boss
   /**
@@ -248,7 +296,21 @@ export class World {
     // contatore è appena stato azzerato, quindi non si regala niente.
     this.countedCoins.clear();
     this.takenYarn.clear();
+    this.stillTicks = 0;
+    this.claimed.clear();
     this.rebuild();
+  }
+
+  /**
+   * Un'impresa è appena riuscita: si dice una volta sola.
+   *
+   * Il mondo non tiene il conto di niente che duri più di un livello — chi
+   * ascolta scrive nei progressi e decide se c'è un gatto da annunciare.
+   */
+  private claim(feat: FeatId): void {
+    if (this.claimed.has(feat)) return;
+    this.claimed.add(feat);
+    this.callbacks.onFeat?.(feat);
   }
 
   /** Ricostruisce la mappa e le entità, mantenendo le statistiche. */
@@ -302,6 +364,7 @@ export class World {
     this.player.reset(spawn.c * TILE_SIZE + 5, spawn.r * TILE_SIZE);
     this.camera.snapTo(this.player.centerX, this.map.widthPx);
     this.lastDeadVent = -1000;
+    this.lastVanish = null;
   }
 
   /**
@@ -360,6 +423,7 @@ export class World {
     }
 
     this.player.update(this, input);
+    this.handleStillness(input);
 
     if (this.beltGrace > 0) this.beltGrace--;
 
@@ -386,6 +450,34 @@ export class World {
     this.effects.update();
     this.camera.follow(this.player.centerX, this.map.widthPx);
     this.camera.update();
+  }
+
+  /**
+   * L'impresa di non fare assolutamente niente.
+   *
+   * Un platform dà per scontato che ti muova: le trappole aspettano te, i
+   * nemici camminano verso di te, il tempo sale. Restare fermi mezzo minuto è
+   * l'unica cosa che nessuna mappa può prevedere, ed è per questo che vale un
+   * gatto. Si azzera al primo comando — anche `R`, anche il pad touch: la
+   * fisica non distingue chi ha premuto, e nemmeno questo.
+   */
+  private handleStillness(input: Input): void {
+    if (
+      input.isDown('left') ||
+      input.isDown('right') ||
+      input.isDown('jump') ||
+      input.isDown('restart')
+    ) {
+      this.stillTicks = 0;
+      return;
+    }
+
+    this.stillTicks++;
+    if (this.stillTicks < RULES.stillTicks) return;
+
+    this.effects.ring(this.player.centerX, this.player.centerY, PALETTE.paper, 4, 22);
+    this.effects.floatingText(this.player.centerX, this.player.y - 8, 'FERMO', PALETTE.paper, 13);
+    this.claim(FEAT.still);
   }
 
   // ---------------------------------------------------------------- tile
@@ -602,7 +694,11 @@ export class World {
       const r = Number(rs);
       // I detriti sono del materiale che ha appena ceduto: legno per l'asse,
       // ghiaccio per la lastra. Va letto prima di cancellare la cella.
-      const debris = this.map.get(c, r) === TILE.BRITTLE_ICE ? PALETTE.ice : PALETTE.wood;
+      const tile = this.map.get(c, r);
+      const debris = tile === TILE.BRITTLE_ICE ? PALETTE.ice : PALETTE.wood;
+      // Da adesso, per qualche tick, una caduta è colpa sua e non del vuoto.
+      const cause = VANISH_CAUSE[tile];
+      if (cause) this.lastVanish = { tick: this.ticks, cause };
       this.map.clear(c, r);
       this.crumbling.delete(key);
       this.effects.burst(c * TILE_SIZE + TILE_SIZE / 2, r * TILE_SIZE + TILE_SIZE / 2, debris, {
@@ -691,7 +787,11 @@ export class World {
       brick.fired = true;
       this.map.clear(brick.c, brick.r);
       this.entities.push(
-        new FallingSpike(brick.c * TILE_SIZE + 4, brick.r * TILE_SIZE + 6, brick.instant ? 0 : undefined),
+        brick.instant
+          ? // Il masso che crolla: nessun tremolio, e una battuta sua — è una
+            // trappola diversa dalla stalattite, non la stessa senza preavviso.
+            new FallingSpike(brick.c * TILE_SIZE + 4, brick.r * TILE_SIZE + 6, 0, DEATH_CAUSE.collapse)
+          : new FallingSpike(brick.c * TILE_SIZE + 4, brick.r * TILE_SIZE + 6),
       );
       this.audio.play('trap');
       this.camera.shake(FEEL.screenShakeOnTrap);
@@ -748,13 +848,16 @@ export class World {
     }
   }
 
-  /** Stacca il mattone: da qui in poi è un masso, e non è più di nessuno. */
-  private dropBrick(c: number, r: number): void {
+  /**
+   * Stacca il mattone: da qui in poi è un masso, e non è più di nessuno.
+   * `slam` dice solo chi l'ha staccato — il masso si comporta uguale.
+   */
+  private dropBrick(c: number, r: number, slam = false): void {
     if (this.map.get(c, r) !== TILE.BOSS_BRICK) return;
 
     this.map.clear(c, r);
     this.brickRespawn.set(TileMap.key(c, r), RULES.bossBrickRespawnTicks);
-    this.entities.push(new Rubble(c * TILE_SIZE + 2, r * TILE_SIZE + 4));
+    this.entities.push(new Rubble(c * TILE_SIZE + 2, r * TILE_SIZE + 4, slam));
     this.audio.play('trap');
     this.camera.shake(FEEL.screenShakeOnTrap);
     this.effects.burst(c * TILE_SIZE + TILE_SIZE / 2, r * TILE_SIZE, PALETTE.dust, {
@@ -787,7 +890,15 @@ export class World {
         entity.y + entity.h > boss.y;
 
       if (overlapping) {
-        if (boss.takeHit(this)) entity.shatter(this);
+        if (boss.takeHit(this)) {
+          entity.shatter(this);
+          // Ucciso da un masso che ha staccato lui: è l'unico modo di vincere
+          // senza aver mai alzato un dito, ed è l'impresa che se lo merita.
+          if (boss.isDead && entity.slam) {
+            this.effects.floatingText(boss.centerX, boss.y - 24, 'TUO', PALETTE.gold, 14);
+            this.claim(FEAT.ownRock);
+          }
+        }
         continue;
       }
 
@@ -833,7 +944,7 @@ export class World {
 
     if (!best) return;
     this.effects.floatingText(boss.centerX, boss.y - 10, 'GIÙ', PALETTE.hot, 14);
-    this.dropBrick(best.c, best.r);
+    this.dropBrick(best.c, best.r, true);
   }
 
   /** Cambio di fase: si rifà il soffitto, perché può. */
@@ -927,11 +1038,24 @@ export class World {
     if (this.state !== 'playing') return;
 
     // Chi è appena stato dentro un getto che non spingeva non è caduto "nel
-    // vuoto": è caduto per colpa di quello, e la battuta deve dirlo.
-    if (cause === DEATH_CAUSE.pit && this.ticks - this.lastDeadVent < RULES.deadVentBlameTicks) {
-      cause = DEATH_CAUSE.deadVent;
+    // vuoto": è caduto per colpa di quello, e la battuta deve dirlo. Vale anche
+    // per il pavimento che è appena svanito, e per la stessa ragione.
+    if (cause === DEATH_CAUSE.pit) {
+      if (this.ticks - this.lastDeadVent < RULES.deadVentBlameTicks) {
+        cause = DEATH_CAUSE.deadVent;
+      } else if (
+        this.lastVanish &&
+        this.ticks - this.lastVanish.tick < RULES.vanishBlameTicks
+      ) {
+        cause = this.lastVanish.cause;
+      }
     }
 
+    // L'album delle imboscate: certe morti valgono una figurina (feats.ts).
+    const feat = featForDeath(cause);
+    if (feat) this.claim(feat);
+
+    this.stillTicks = 0;
     this.deaths++;
     this.state = 'dying';
     this.deathTimer = RULES.deathFreezeTicks;
@@ -955,6 +1079,9 @@ export class World {
   private win(): void {
     if (this.state !== 'playing') return;
     this.state = 'won';
+    // Il livello era pieno di monete e di modi di morire, e non hai preso né
+    // le une né gli altri. È l'unica impresa che si compie non toccando niente.
+    if (this.deaths === 0 && this.coins === 0) this.claim(FEAT.ascetic);
     this.audio.play('win');
     this.effects.flash(0.5, PALETTE.paper);
     this.effects.ring(this.player.centerX, this.player.centerY, PALETTE.gold, 6, 24);

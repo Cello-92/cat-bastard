@@ -87,7 +87,9 @@ src/
     render/   renderer.ts (interfaccia) + canvas2d.ts (backend)
               Motore 2D generico: non conosce il significato dei tile.
   game/       config (costanti), theme (palette), tiles (vocabolario),
-              taunts, cats (manti sbloccabili), effects (particelle/juice),
+              taunts, cats (manti sbloccabili), feats (le imprese: gli
+              easter egg che sbloccano gli altri manti),
+              effects (particelle/juice),
               world.ts (orchestratore), game.ts (composition root)
     entities/ player, walker, shroom, falling-spike, diver,
               sentry, drone, snowball, boss + rubble (solo 1-11)
@@ -243,15 +245,20 @@ e 2-9 non ne hanno nessuno, quindi da lì in poi una parete che sembra finta a v
 è solo una parete, e l'unico modo di saperlo è perderci tempo. Chi aggiunge un
 livello non è tenuto a metterci un gomitolo: `SECRET_COUNT` si conta dalle mappe.
 
-**Ma chi ce lo mette deve mettere anche il gatto.** C'è un manto per ogni
-gomitolo — undici gomitoli, dodici gatti contando quello che c'è da sempre — e
-`tests/smoke.ts` rifiuta un buco nella scala. Non è pignoleria: un gomitolo sta
-in una stanza murata che non serve a finire il livello, quindi l'unica ragione
-per andarci è quello che dà. Se il quinto e il sesto dessero la stessa identica
-cosa (cioè niente), cercare il sesto sarebbe una perdita di tempo *dimostrabile*.
-Le soglie dei primi cinque manti non si toccano mai: i progressi salvano
-gomitoli, non gatti, quindi alzare una soglia richiude una porta già aperta a
-qualcuno.
+**Ma chi ce lo mette deve mettere anche il gatto.** Sulla strada dei gomitoli
+c'è un manto per ogni quota, senza buchi — undici gomitoli, dodici manti
+contando quello che c'è da sempre — e `tests/smoke.ts` rifiuta un buco nella
+scala. Non è pignoleria: un gomitolo sta in una stanza murata che non serve a
+finire il livello, quindi l'unica ragione per andarci è quello che dà. Se il
+sesto e il settimo dessero la stessa identica cosa (cioè niente), cercare il
+settimo sarebbe una perdita di tempo *dimostrabile*. I gatti delle imprese
+(qui sotto) non entrano in questo conto: hanno tutti `yarn: 0` perché la loro
+strada è un'altra, e il test li esclude apposta.
+
+**Le soglie che ci sono già non si toccano mai.** I progressi salvano gomitoli,
+non gatti: alzare la soglia di un manto per far tornare i conti richiude in
+faccia a qualcuno una porta che aveva già aperto. I manti nuovi riempiono i
+buchi e la coda.
 
 I manti stanno in `game/cats.ts` e sono
 **solo estetici**, per due motivi: un gatto che salta più in alto romperebbe ogni
@@ -259,12 +266,52 @@ mappa già tarata su `config.ts`, e una collezione che dà vantaggi smette di es
 una ricompensa e diventa una scorciatoia. I gomitoli trovati stanno nei progressi
 (`core/storage.ts`) e non si perdono più.
 
-I colori dei manti non stanno lì: stanno in `PELT` e `IRIS` (`game/theme.ts`),
-come tutti gli altri colori del gioco. `cats.ts` decide *quale* manto ha un gatto
-e come si sblocca; `theme.ts` di che pasta è fatto. Il motivo del manto
-(`CatPattern`: tinta unita, soriano, punte, pettorina, chiazze, rosette) è
-l'unica cosa che richiede di toccare il disegno — `drawMarkings` in
-`entities/player.ts`, che il ritratto del menu riusa tale e quale.
+I colori dei manti non stanno lì: stanno in `MATERIAL` (`game/theme.ts`), come
+tutti gli altri colori del gioco. `cats.ts` decide *quale* manto ha un gatto e
+come si sblocca; `theme.ts` di che pasta è fatto. L'unica cosa che richiede di
+toccare il disegno è il **motivo** del manto (`CatPattern`: tinta unita,
+soriano, punte, pettorina, chiazze, rosette) — sta in `drawMarkings`
+(`entities/player.ts`), che il ritratto del menu riusa tale e quale.
+
+### Le imprese: i gatti che non si trovano, si fanno
+
+L'altra metà della collezione sta in `game/feats.ts`. Sono cinque easter egg:
+cose che nessuno chiede di fare, che non compaiono in nessuna mappa e che il
+gioco non annuncia prima. Valgono un gatto ciascuno, sempre **solo estetico**:
+un easter egg che desse un vantaggio smetterebbe di essere una battuta e
+diventerebbe la strada giusta per giocare.
+
+| Gatto | Impresa | Dove sta il codice |
+|---|---|---|
+| PLACCATO | digitare *quel* codice (↑↑↓↓←→←→BA), in qualunque schermata | `core/input.ts` (`bindKeySequence`) + `game.ts` |
+| OMBRA | restare immobili `RULES.stillTicks` (mezzo minuto) in un livello | `World.handleStillness` |
+| CAVIA | morire per tutte e sette le trappole senza preavviso | `World.kill` + `featForDeath` |
+| MONACO | finire un livello senza morire e senza raccogliere una moneta | `World.win` |
+| PADRONE | ammazzare il Padrone con un masso che ha staccato lui | `World.handleBossFight` (`Rubble.slam`) |
+
+Le regole che le tengono dentro al patto sono tre, e non sono negoziabili:
+
+- **Deterministiche come le trappole.** Stessa cosa fatta, stesso gatto. Nessuna
+  è a tempo, nessuna dipende da quante volte ci provi.
+- **Ogni gatto chiuso ha il suo indovinello** (`riddle` in `cats.ts`), che è la
+  riga che si legge nel menu al posto del conteggio dei gomitoli. Vale qui la
+  regola 7 del patto: si può nascondere *cosa fare*, non si può lasciare il
+  giocatore davanti a una cosa inspiegabile. L'album dice anche a che punto è
+  (`3 su 7`), perché una collezione muta è una collezione che nessuno finisce.
+- **Il mondo non sa contare.** `world.ts` segnala l'impresa via `onFeat` e
+  basta; chi decide se ha sbloccato qualcosa è `game.ts`, che è l'unico ad avere
+  i progressi in mano.
+
+Le marche vivono in `Progress.feats` e si sincronizzano **per unione**, come i
+gomitoli: una cosa fatta non si disfa. Il formato è minuscole-e-trattini perché
+`cb_sync` accetta solo quello (`^[a-z-]{1,32}$`) e scarta il resto in silenzio —
+è la stessa trappola in cui il progetto è già caduto una volta con gli id dei
+livelli, e infatti `tests/smoke.ts` controlla anche questo.
+
+**Attenzione a chi tocca i livelli.** L'album di CAVIA si chiude solo se tutte e
+sette le trappole senza preavviso esistono ancora in una mappa vera: togliere
+l'ultimo `,` dal mondo 2 renderebbe un gatto irraggiungibile senza rompere
+niente. C'è un test apposta.
 
 ### Cosa succede alla roba raccolta quando muori
 
@@ -300,6 +347,10 @@ chi gioca, ed è la regola 7 del patto.
   (solido? letale?), il suo disegno in `game/render/tiles.ts`.
 - **Un nemico**: una classe in `game/entities/` che estende `Entity` e implementa
   `update`/`draw`/`onTouch`/`onStomp`. Se nasce da un tile, aggiungerlo agli spawner.
+- **Un'impresa**: una marca in `FEAT` (`game/feats.ts`), il punto che se ne accorge —
+  `world.ts` se succede dentro un livello, `game.ts` se succede fuori — e un gatto in
+  `cats.ts` che la chiede, **col suo indovinello**. Senza indovinello è un gatto che non
+  si sblocca: nessuno indovina una cosa che il gioco non ha mai nominato.
 
 ## Comandi
 
@@ -333,7 +384,7 @@ npm test        # struttura, risolutore, smoke test, regressioni
 npm run build   # typecheck + build
 ```
 
-`tests/` contiene otto cose diverse:
+`tests/` contiene nove cose diverse:
 
 - **lo smoke test**, che esegue il gioco headless contro un `NullRenderer` capace di
   intercettare coordinate NaN e `push`/`pop` sbilanciati. Non dice se il gioco è bello,
@@ -365,6 +416,13 @@ npm run build   # typecheck + build
   i test verdi e un gatto che non si sbloccherà mai. Si riusa il risolutore col
   gomitolo al posto dell'arrivo, sul livello tagliato subito dopo di lui — intero,
   la ricerca se ne andrebbe in fondo invece di infilarsi nella stanza;
+- **le imprese** (`game/feats.ts`), che nessuno andrebbe a controllare giocando:
+  chi non sa che ci sono non si accorge se smettono di funzionare. Si verifica
+  che la condizione giusta faccia scattare la marca e che quella quasi giusta no
+  — una moneta raccolta rompe il digiuno, battere il boss nel modo normale non
+  vale il contrappasso — e soprattutto che tutte e sette le trappole dell'album
+  esistano ancora in una mappa vera, altrimenti c'è un gatto irraggiungibile e
+  non lo dice nessuno;
 - **il risolutore** (`tests/solver.ts`), che *gioca* ogni livello: cerca con la fisica vera
   una sequenza di comandi dallo spawn all'arrivo, considerando perso in partenza tutto ciò
   che sparisce sotto le zampe e già scattata ogni trappola. Serve perché un livello può
@@ -420,11 +478,18 @@ fine livello. Le regole stanno scritte due volte, in `cb_sync` e in
 | monete del livello | la maggiore | è il massimo raccolto in un tentativo |
 | morti totali | la maggiore | è un contatore, sale e basta |
 | gomitoli trovati | l'unione | uno trovato non si perde più |
+| imprese compiute | l'unione | una cosa fatta non si disfa |
 
-I gatti sbloccati **non** viaggiano: dipendono solo da quanti gomitoli hai, quindi
-sincronizzare i gomitoli sincronizza già i gatti, senza che il server debba
-fidarsi di una lista di gatti. Il gatto *indossato* non è un progresso ma una
-preferenza, e resta in `Settings`, in locale.
+I gatti sbloccati **non** viaggiano: dipendono solo da cosa hai fatto — gomitoli
+e imprese — quindi sincronizzare quelli sincronizza già i gatti, senza che il
+server debba fidarsi di una lista di gatti. Il gatto *indossato* non è un
+progresso ma una preferenza, e resta in `Settings`, in locale.
+
+Le imprese sono arrivate dopo, quindi `players.feats` nasce da un
+`alter table ... add column if not exists`: chi ha già un database deve
+rilanciare `schema.sql` (è idempotente) o `cb_sync` fallirà. Un client nuovo
+contro un server vecchio non perde niente — la risposta senza `feats` lascia in
+piedi quelle locali.
 
 Niente di tutto questo è una verifica anti-imbroglio, e non finge di esserlo. I
 controlli sui valori servono a non farsi riempire il database di spazzatura, non

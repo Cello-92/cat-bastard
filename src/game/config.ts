@@ -100,6 +100,25 @@ export const RULES = {
    * al buco in cui il nastro ti ha spinto.
    */
   beltBlameTicks: 48,
+  /**
+   * Per quanti tick dopo che il pavimento è sparito una caduta è colpa sua.
+   *
+   * Stessa idea del nastro e del getto spento: chi cade perché la piattaforma
+   * fantasma è svanita non è "caduto nel vuoto", e la battuta deve dirlo (vedi
+   * CLAUDE.md, punto 7). Senza, le battute di `ghost`, `fakeGround` e
+   * `brittleIce` erano scritte e non le leggeva nessuno.
+   *
+   * Un secondo pieno perché tanto ci mette una caduta dal punto più alto dello
+   * schermo fino sotto al livello: la piattaforma che sparisce sta spesso in
+   * cima, e la colpa deve arrivare fino in fondo al buco.
+   */
+  vanishBlameTicks: 60,
+  /**
+   * Quanto bisogna restare immobili perché il gioco se ne accorga: mezzo
+   * minuto. Un platform si aspetta che tu ti muova — non fare niente, e farlo
+   * a lungo, è l'unica cosa che nessuna mappa può prevedere.
+   */
+  stillTicks: 1800,
   /** Quanto sotto il livello si muore. */
   fallDeathMargin: 160,
   /** Distanza verticale massima per considerare valido uno stomp. */

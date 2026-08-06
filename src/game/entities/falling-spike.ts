@@ -1,7 +1,7 @@
 import type { Renderer } from '@engine/render/renderer';
 import { PHYSICS } from '../config';
 import { MATERIAL, alpha, glare, shade } from '../theme';
-import { DEATH_CAUSE } from '../taunts';
+import { DEATH_CAUSE, type DeathCause } from '../taunts';
 import type { World } from '../world';
 import { Entity } from './entity';
 
@@ -19,16 +19,27 @@ const TELEGRAPH_TICKS = 14;
 
 export class FallingSpike extends Entity {
   private telegraph: number;
+  private readonly cause: DeathCause;
 
   /**
    * `telegraph` è quanti tick trema prima di partire. Il mattone-trappola ne
    * concede una manciata; il masso che crolla dal soffitto zero — cade
    * nell'istante in cui gli passi sotto, e la prima volta non c'è verso di
    * saperlo.
+   *
+   * E siccome sono due trappole diverse, sono anche due morti diverse: `cause`
+   * decide quale battuta arriva dopo. Con una sola, il crollo di `K` finiva
+   * spiegato come una stalattite di `T`, che è la spiegazione sbagliata.
    */
-  constructor(x: number, y: number, telegraph = TELEGRAPH_TICKS) {
+  constructor(
+    x: number,
+    y: number,
+    telegraph = TELEGRAPH_TICKS,
+    cause: DeathCause = DEATH_CAUSE.fallingSpike,
+  ) {
     super(x, y, WIDTH, HEIGHT);
     this.telegraph = telegraph;
+    this.cause = cause;
   }
 
   update(world: World): void {
@@ -43,11 +54,11 @@ export class FallingSpike extends Entity {
   }
 
   onTouch(world: World): void {
-    world.kill(DEATH_CAUSE.fallingSpike);
+    world.kill(this.cause);
   }
 
   override onStomp(world: World): boolean {
-    world.kill(DEATH_CAUSE.fallingSpike);
+    world.kill(this.cause);
     return false;
   }
 

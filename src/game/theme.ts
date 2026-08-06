@@ -100,16 +100,34 @@ export const MATERIAL = {
   /** Rame degli impianti: caldo, l'unica cosa tiepida quaggiù. */
   copper: material('#a4653a', '#e2a071', '#5c3319', '#2e180b', '#ffd7ae'),
 
-  // --- Roba dei gatti che non è un manto.
-  //
-  // I manti e le iridi stanno in `PELT` e `IRIS`, qui sotto: qui restano solo i
-  // due materiali che servono anche ad altro. `soot` è il colore della sagoma
-  // di un gatto ancora chiuso (game/render/cat-portrait.ts), e non è un manto —
-  // è l'assenza di un manto.
+  // --- Manti e occhi dei gatti sbloccabili (vedi game/cats.ts).
   /** Nero fuliggine: mai davvero nero, altrimenti sparisce sul fondo scuro. */
   soot: material('#2f3038', '#5c5f6b', '#17171c', '#0b0b0e', '#9aa0ad'),
+  /** Rosso soriano. */
+  ginger: material('#c47a3c', '#f0b071', '#84491b', '#4a2609', '#ffd9a8'),
+  /** Crema chiarissimo del siamese. */
+  mist: material('#e6dbc6', '#fffaf0', '#b0a08a', '#6f6455', '#ffffff'),
+  /** Punte scure del siamese: muso, orecchie, zampe, coda. */
+  sable: material('#5a4436', '#876951', '#33251c', '#1a120d', '#a98a6c'),
+  /** Bianco del gatto spettro: quasi ghiaccio, quasi niente. */
+  spectre: material('#d8e6ef', '#ffffff', '#93a8ba', '#5b6c7d', '#ffffff'),
+  /** Iride ambra. */
+  amber: material('#c98b1f', '#f5c85e', '#7a4d08', '#3c2603', '#fff2c8'),
+  /** Iride blu ghiaccio. */
+  sapphire: material('#3d7fc4', '#8dc4f2', '#1a3f70', '#0b1e39', '#e8f6ff'),
   /** Iride del gatto spettro: rosa acceso, l'unica cosa viva che gli resta. */
   ghostEye: material('#d63f7d', '#ff8fb8', '#7c1741', '#3d0a21', '#ffe0ec'),
+
+  // --- Manti delle imprese (vedi game/feats.ts): i gatti che non si comprano
+  //     coi gomitoli, ma facendo la cosa strana giusta.
+  /** Ombra: quasi nero, con un riflesso viola. Non è nero pieno: sparirebbe. */
+  shadow: material('#27232f', '#4b4359', '#151119', '#09070d', '#9079b2'),
+  /** Verde acido da laboratorio: l'unico manto che sembra illuminarsi da solo. */
+  neon: material('#7ee04a', '#caff9c', '#3e7b23', '#1c3e0f', '#ebffd1'),
+  /** Grigio cenere del gatto sobrio: lana, non pelliccia da esposizione. */
+  ash: material('#7c8794', '#b6c2cf', '#454d57', '#232830', '#dbe4ee'),
+  /** Iride di brace: il rosso caldo di chi è stato dall'altra parte. */
+  ember: material('#e0503a', '#ff9d7c', '#7d1f13', '#3d0d07', '#ffd9cc'),
 } as const satisfies Record<string, Material>;
 
 export type MaterialName = keyof typeof MATERIAL;

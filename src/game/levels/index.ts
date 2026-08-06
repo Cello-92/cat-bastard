@@ -15,6 +15,11 @@ import { WORLD_2_2 } from './world-2-2';
 import { WORLD_2_3 } from './world-2-3';
 import { WORLD_2_4 } from './world-2-4';
 import { WORLD_2_5 } from './world-2-5';
+import { WORLD_2_6 } from './world-2-6';
+import { WORLD_2_7 } from './world-2-7';
+import { WORLD_2_8 } from './world-2-8';
+import { WORLD_2_9 } from './world-2-9';
+import { WORLD_2_10 } from './world-2-10';
 
 /**
  * Registro dei livelli, in ordine di gioco.
@@ -37,6 +42,11 @@ export const LEVELS: readonly LevelDef[] = [
   WORLD_2_3,
   WORLD_2_4,
   WORLD_2_5,
+  WORLD_2_6,
+  WORLD_2_7,
+  WORLD_2_8,
+  WORLD_2_9,
+  WORLD_2_10,
 ];
 
 /**

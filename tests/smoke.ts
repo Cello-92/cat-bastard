@@ -236,6 +236,41 @@ for (const level of LEVELS) {
   );
 }
 
+// ---------------------------------------------------------------- gomitoli
+//
+// Un gomitolo murato in una stanza dove non si entra non rompe niente: il
+// livello si finisce lo stesso, i test passano, e l'unico effetto è un gatto
+// che non si sblocca mai — cioè l'unica ricompensa del gioco che sparisce
+// senza un messaggio d'errore. È esattamente il tipo di bug che questa
+// cartella esiste per prendere.
+//
+// Si riusa il risolutore, con due accorgimenti. Primo: il gomitolo diventa
+// l'arrivo, perché il risolutore sa cercare solo `W`. Secondo: il livello si
+// taglia subito dopo di lui, perché la ricerca espande sempre la colonna più
+// avanzata e col livello intero se ne andrebbe in fondo a consumare il budget
+// invece di infilarsi nella stanza. Un percorso trovato nel livello tagliato è
+// un percorso che esiste anche in quello vero: la mappa a sinistra è la stessa.
+console.log('\nI gomitoli si possono prendere');
+for (const level of LEVELS) {
+  const column = level.rows.reduce(
+    (found, row) => (row.indexOf(TILE.YARN) >= 0 ? row.indexOf(TILE.YARN) : found),
+    -1,
+  );
+  if (column < 0) continue;
+
+  const rows = level.rows.map((row) =>
+    row.slice(0, column + 3).split(TILE.GOAL).join(TILE.EMPTY).split(TILE.YARN).join(TILE.GOAL),
+  );
+  const result = solve({ ...level, rows });
+  check(
+    result.solved,
+    result.solved
+      ? `${level.name}: al gomitolo della colonna ${column} ci si arriva`
+      : `${level.name}: GOMITOLO IRRAGGIUNGIBILE alla colonna ${column} — ` +
+        `la ricerca si ferma alla colonna ${result.furthestColumn}`,
+  );
+}
+
 // ---------------------------------------------------------------- simulazione
 console.log('\nSimulazione (600 tick per livello, con rendering)');
 const audio = new Audio();
@@ -834,6 +869,40 @@ console.log('\nGatti');
     CATS.every((cat) => cat.yarn <= SECRET_COUNT),
     `nessun gatto chiede più gomitoli di quanti ne esistano (${SECRET_COUNT})`,
   );
+
+  // Un gatto per gomitolo, e nessuna soglia saltata.
+  //
+  // Non è pignoleria: un gomitolo sta in una stanza murata che non serve a
+  // finire il livello, quindi l'unico motivo per andarci è quello che dà. Se
+  // due gomitoli diversi dessero la stessa identica cosa — cioè niente —
+  // cercare il secondo sarebbe una perdita di tempo *dimostrabile*, e la
+  // collezione smetterebbe di essere una collezione. Chi aggiunge un livello
+  // col suo `*` deve aggiungere anche il manto, e lo scopre qui.
+  //
+  // I gatti delle imprese restano fuori dal conto, e devono restarci: hanno
+  // tutti `yarn: 0` perché la loro strada è un'altra, quindi contarli qui
+  // direbbe che a quota 0 ci sono sei manti e che le quote sono piene quando
+  // non lo sono. La scala dei gomitoli si misura solo sui gatti dei gomitoli.
+  const byYarn = CATS.filter((cat) => !cat.feats?.length);
+  const thresholds = new Set(byYarn.map((cat) => cat.yarn));
+  const orphans: number[] = [];
+  for (let n = 0; n <= SECRET_COUNT; n++) if (!thresholds.has(n)) orphans.push(n);
+  check(
+    orphans.length === 0,
+    `ogni gomitolo sblocca un gatto${orphans.length ? ` — nessun manto a quota ${orphans.join(', ')}` : ` (${byYarn.length} manti per ${SECRET_COUNT} gomitoli, più ${CATS.length - byYarn.length} imprese)`}`,
+  );
+  check(
+    thresholds.size === byYarn.length,
+    'due gatti non chiedono lo stesso numero di gomitoli: il secondo sarebbe gratis',
+  );
+
+  // Le sagome dei gatti chiusi si disegnano come i gatti aperti: la galleria
+  // mostra la forma di quello che manca, e una forma che esplode è un menu che
+  // esplode. Il disegno vero sopra ha già coperto ogni manto; qui si controlla
+  // che ogni motivo del manto sia davvero disegnato da qualcuno, perché un
+  // `pattern` senza gatti che lo usano è codice che nessun test tocca.
+  const patterns = new Set(CATS.map((cat) => cat.pattern));
+  check(patterns.size >= 4, `i manti usano ${patterns.size} motivi diversi, non uno solo`);
 }
 
 // ---------------------------------------------------------------- lo scontro col Padrone

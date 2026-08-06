@@ -325,7 +325,8 @@ export class Player implements Body {
     // Il manto decide solo *quali* materiali usare: la logica di luce, gli
     // strati e le proporzioni restano identiche per tutti i gatti.
     const leg = this.skin.pattern === 'points' ? this.skin.marks : this.skin.fur;
-    const paw = this.skin.pattern === 'tux' ? this.skin.marks : leg;
+    const paw =
+      this.skin.pattern === 'tux' || this.skin.pattern === 'patched' ? this.skin.marks : leg;
 
     this.drawTail(r, cx, bodyY, face, tick, running);
     // Zampe posteriori: più scure, stanno dietro al corpo.
@@ -525,6 +526,63 @@ export class Player implements Body {
         { at: 0, color: alpha(marks.base, 0.8) },
         { at: 1, color: alpha(marks.base, 0) },
       ]);
+      r.pop();
+      return;
+    }
+
+    if (this.skin.pattern === 'patched') {
+      // Due chiazze irregolari, una sulla groppa e una sul fianco. Le forme
+      // sono scritte a mano e non generate: un gatto pezzato che cambia
+      // chiazze a ogni frame non è un gatto, è rumore.
+      r.push();
+      r.setAlpha(0.92);
+      r.blob(
+        [
+          cx - face * halfW * 0.85, y + h * 0.1,
+          cx - face * halfW * 0.15, y + h * 0.02,
+          cx + face * halfW * 0.1, y + h * 0.42,
+          cx - face * halfW * 0.5, y + h * 0.52,
+          cx - face * halfW * 0.95, y + h * 0.34,
+        ],
+        marks.base,
+      );
+      r.blob(
+        [
+          cx + face * halfW * 0.3, y + h * 0.6,
+          cx + face * halfW * 0.72, y + h * 0.72,
+          cx + face * halfW * 0.5, y + h * 0.99,
+          cx + face * halfW * 0.05, y + h * 0.88,
+        ],
+        marks.base,
+      );
+      // La luce cade sulle chiazze come su tutto il resto: viene da sopra a
+      // sinistra, quindi il bordo alto è più chiaro.
+      r.setAlpha(0.4);
+      r.line(
+        [
+          cx - face * halfW * 0.85, y + h * 0.1,
+          cx - face * halfW * 0.15, y + h * 0.02,
+          cx + face * halfW * 0.1, y + h * 0.42,
+        ],
+        1.2,
+        marks.light,
+      );
+      r.pop();
+      return;
+    }
+
+    if (this.skin.pattern === 'spotted') {
+      // Rosette sparse, in tre file. Le posizioni derivano dall'indice, non da
+      // un caso: lo stesso gatto ha sempre le stesse macchie.
+      r.push();
+      r.setAlpha(0.6);
+      for (let i = 0; i < 7; i++) {
+        const row = i % 3;
+        const sx = cx + face * halfW * (0.72 - ((i * 5) % 9) * 0.19);
+        const sy = y + h * (0.16 + row * 0.27) + ((i % 2) * h) / 22;
+        r.ellipse(sx, sy, 2.1, 1.5, marks.base);
+        r.ellipse(sx - face * 0.5, sy - 0.5, 1.1, 0.8, marks.dark);
+      }
       r.pop();
     }
   }

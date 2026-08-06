@@ -18,6 +18,15 @@ import { MATERIAL, type Material } from './theme';
  * resta sempre l'indovinello nella riga del gatto chiuso, perché qui dentro
  * niente è inspiegabile, è solo spiegato dopo.
  *
+ * Sulla strada dei gomitoli vale una regola in più: **ce n'è esattamente uno
+ * per gomitolo**, senza buchi. Un gomitolo sta in una stanza murata che non
+ * serve a finire il livello, quindi l'unico motivo per andarci è quello che dà;
+ * se il sesto e il settimo dessero la stessa identica cosa (cioè niente),
+ * cercare il settimo sarebbe una perdita di tempo *dimostrabile* e la
+ * collezione diventerebbe un contatore. Chi aggiunge un livello col suo `*`
+ * aggiunge anche il manto, e `tests/smoke.ts` non fa passare il contrario.
+ * Le imprese non hanno questo vincolo: quelle si contano da sole.
+ *
  * Il manto è descritto con i materiali di `theme.ts`, mai con colori scritti a
  * mano, e il disegno del giocatore applica sempre la stessa logica di luce:
  * cambiare gatto non cambia una riga del codice di rendering.
@@ -32,7 +41,11 @@ export type CatPattern =
   /** Punte scure: muso, orecchie, zampe, coda. */
   | 'points'
   /** Pettorina e zampe bianche. */
-  | 'tux';
+  | 'tux'
+  /** Chiazze irregolari, groppa e fianco, più i calzini. */
+  | 'patched'
+  /** Rosette sparse in tre file. */
+  | 'spotted';
 
 export interface CatSkin {
   id: string;
@@ -71,6 +84,16 @@ export interface CatSkin {
   pattern: CatPattern;
 }
 
+/**
+ * Prima i gatti dei gomitoli, in ordine di soglia; poi quelli delle imprese.
+ *
+ * **Le soglie che ci sono già non si toccano.** Quando i gomitoli erano cinque,
+ * i primi cinque manti stavano a 0, 1, 2, 4 e 5, e sono rimasti lì anche dopo
+ * che i gomitoli sono diventati undici: i progressi salvano gomitoli, non gatti
+ * (vedi CLAUDE.md), quindi alzare una soglia per far tornare i conti
+ * richiuderebbe in faccia a qualcuno una porta che aveva già aperto. I manti
+ * nuovi riempiono il buco a 3 e la coda da 6 in su.
+ */
 export const CATS: readonly CatSkin[] = [
   {
     id: 'bastardo',
@@ -106,6 +129,17 @@ export const CATS: readonly CatSkin[] = [
     pattern: 'tabby',
   },
   {
+    id: 'pezzato',
+    name: 'PEZZATO',
+    blurb: 'Le chiazze sono sempre nelle stesse identiche posizioni, come tutto qui',
+    yarn: 3,
+    fur: MATERIAL.fur,
+    marks: MATERIAL.soot,
+    eye: MATERIAL.eye,
+    nose: MATERIAL.skin,
+    pattern: 'patched',
+  },
+  {
     id: 'siamese',
     name: 'SIAMESE',
     blurb: 'Occhi blu, punte scure, zero pazienza',
@@ -127,6 +161,73 @@ export const CATS: readonly CatSkin[] = [
     eye: MATERIAL.ghostEye,
     nose: MATERIAL.ice,
     pattern: 'plain',
+  },
+  {
+    id: 'rame',
+    name: 'RAME',
+    blurb: 'Il colore delle tubature della fabbrica, che è l\'unica cosa tiepida là dentro',
+    yarn: 6,
+    fur: MATERIAL.copper,
+    marks: MATERIAL.soot,
+    eye: MATERIAL.amber,
+    nose: MATERIAL.skin,
+    pattern: 'tabby',
+  },
+  {
+    id: 'bengala',
+    name: 'BENGALA',
+    blurb: 'Rosette da bestia selvatica addosso a uno che muore su una molla',
+    yarn: 7,
+    fur: MATERIAL.ginger,
+    marks: MATERIAL.soot,
+    eye: MATERIAL.amber,
+    nose: MATERIAL.skin,
+    pattern: 'spotted',
+  },
+  {
+    id: 'ruggine',
+    name: 'RUGGINE',
+    blurb: 'Chiazzato come una lamiera lasciata fuori. Quella fabbrica è chiusa da un pezzo',
+    yarn: 8,
+    fur: MATERIAL.brick,
+    marks: MATERIAL.iron,
+    eye: MATERIAL.ember,
+    nose: MATERIAL.skin,
+    pattern: 'patched',
+  },
+  {
+    id: 'catrame',
+    name: 'CATRAME',
+    blurb: 'Nero gomma da nastro trasportatore, con gli occhi di qualcosa che è rimasto acceso',
+    yarn: 9,
+    fur: MATERIAL.rubber,
+    marks: MATERIAL.copper,
+    eye: MATERIAL.neon,
+    nose: MATERIAL.sable,
+    pattern: 'spotted',
+  },
+  {
+    id: 'acciaio',
+    name: 'ACCIAIO',
+    blurb: 'Lucidato a specchio. Si vede benissimo da lontano, il che qui è un difetto',
+    yarn: 10,
+    fur: MATERIAL.steel,
+    marks: MATERIAL.iron,
+    eye: MATERIAL.sapphire,
+    nose: MATERIAL.iron,
+    pattern: 'points',
+  },
+  {
+    id: 'trofeo',
+    name: 'TROFEO',
+    blurb: 'Tutti i gomitoli e tutti i livelli. Non sei più un gatto, sei un soprammobile',
+    yarn: 11,
+    needsEveryLevel: true,
+    fur: MATERIAL.membrane,
+    marks: MATERIAL.gold,
+    eye: MATERIAL.amber,
+    nose: MATERIAL.membrane,
+    pattern: 'points',
   },
 
   // ------------------------------------------------------------- le imprese

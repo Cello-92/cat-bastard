@@ -212,7 +212,7 @@ in una pagina è `game.ts`, che è il composition root.
 Tre cose da sapere prima di toccarlo:
 
 - **La gerarchia è a due livelli, non piatta.** Radice → mondi → livelli. Con
-  sedici livelli una lista sola non è una lista, è uno scorrimento; e i mondi
+  ventuno livelli una lista sola non è una lista, è uno scorrimento; e i mondi
   esistono già nel gioco (cambiano cielo, tileset e regole del pavimento).
   `WORLDS` in `levels/index.ts` si ricava dagli id (`w2-3` → mondo 2): un mondo
   nuovo nasce da solo il giorno in cui compare un `w3-1`.
@@ -239,11 +239,39 @@ sono un punteggio, non una valuta.
 | `:` | parete d'acciaio | non è solida: ci si passa attraverso. Dopo, resta marcata |
 | `*` | un gomitolo | l'unica cosa del gioco che non uccide: sblocca i gatti |
 
-Ogni livello del mondo 2 ne nasconde uno. I manti stanno in `game/cats.ts` e sono
+**Non tutti i livelli ne hanno uno, ed è il punto.** Da 2-1 a 2-6 ce n'era uno
+ovunque, e cercarlo aveva smesso di essere cercare: era diventato raccogliere. 2-7
+e 2-9 non ne hanno nessuno, quindi da lì in poi una parete che sembra finta a volte
+è solo una parete, e l'unico modo di saperlo è perderci tempo. Chi aggiunge un
+livello non è tenuto a metterci un gomitolo: `SECRET_COUNT` si conta dalle mappe.
+
+**Ma chi ce lo mette deve mettere anche il gatto.** Sulla strada dei gomitoli
+c'è un manto per ogni quota, senza buchi — undici gomitoli, dodici manti
+contando quello che c'è da sempre — e `tests/smoke.ts` rifiuta un buco nella
+scala. Non è pignoleria: un gomitolo sta in una stanza murata che non serve a
+finire il livello, quindi l'unica ragione per andarci è quello che dà. Se il
+sesto e il settimo dessero la stessa identica cosa (cioè niente), cercare il
+settimo sarebbe una perdita di tempo *dimostrabile*. I gatti delle imprese
+(qui sotto) non entrano in questo conto: hanno tutti `yarn: 0` perché la loro
+strada è un'altra, e il test li esclude apposta.
+
+**Le soglie che ci sono già non si toccano mai.** I progressi salvano gomitoli,
+non gatti: alzare la soglia di un manto per far tornare i conti richiude in
+faccia a qualcuno una porta che aveva già aperto. I manti nuovi riempiono i
+buchi e la coda.
+
+I manti stanno in `game/cats.ts` e sono
 **solo estetici**, per due motivi: un gatto che salta più in alto romperebbe ogni
 mappa già tarata su `config.ts`, e una collezione che dà vantaggi smette di essere
 una ricompensa e diventa una scorciatoia. I gomitoli trovati stanno nei progressi
 (`core/storage.ts`) e non si perdono più.
+
+I colori dei manti non stanno lì: stanno in `MATERIAL` (`game/theme.ts`), come
+tutti gli altri colori del gioco. `cats.ts` decide *quale* manto ha un gatto e
+come si sblocca; `theme.ts` di che pasta è fatto. L'unica cosa che richiede di
+toccare il disegno è il **motivo** del manto (`CatPattern`: tinta unita,
+soriano, punte, pettorina, chiazze, rosette) — sta in `drawMarkings`
+(`entities/player.ts`), che il ritratto del menu riusa tale e quale.
 
 ### Le imprese: i gatti che non si trovano, si fanno
 
@@ -356,7 +384,7 @@ npm test        # struttura, risolutore, smoke test, regressioni
 npm run build   # typecheck + build
 ```
 
-`tests/` contiene otto cose diverse:
+`tests/` contiene nove cose diverse:
 
 - **lo smoke test**, che esegue il gioco headless contro un `NullRenderer` capace di
   intercettare coordinate NaN e `push`/`pop` sbilanciati. Non dice se il gioco è bello,
@@ -383,6 +411,11 @@ npm run build   # typecheck + build
   rompe niente, restituisce un record peggiore di quello che il giocatore aveva.
   Si prova headless perché `net/payload.ts` è puro apposta — la rete non c'entra
   e non deve entrarci;
+- **la raggiungibilità dei gomitoli**, che è un caso a parte perché è l'unico che
+  non rompe niente: una stanza segreta murata sul serio lascia il livello finibile,
+  i test verdi e un gatto che non si sbloccherà mai. Si riusa il risolutore col
+  gomitolo al posto dell'arrivo, sul livello tagliato subito dopo di lui — intero,
+  la ricerca se ne andrebbe in fondo invece di infilarsi nella stanza;
 - **le imprese** (`game/feats.ts`), che nessuno andrebbe a controllare giocando:
   chi non sa che ci sono non si accorge se smettono di funzionare. Si verifica
   che la condizione giusta faccia scattare la marca e che quella quasi giusta no
@@ -511,7 +544,8 @@ e allegare uno zip offline: non servono a ospitare la pagina.
 3. ~~Deploy automatico su Pages~~ ✅
 4. ~~Schermata di selezione livelli con record e morti~~ ✅ (dentro il menu)
 5. ~~Più trappole e più nemici~~ ✅
-6. ~~Secondo mondo con un tileset davvero diverso~~ ✅ — gelo e fabbrica, cinque livelli,
+6. ~~Secondo mondo con un tileset davvero diverso~~ ✅ — gelo e fabbrica, dieci livelli
+   (da 2-6 in poi si dà per scontato tutto quello che i primi cinque spiegano),
    superfici che cambiano la fisica, tre nemici nuovi, gomitoli nascosti e gatti sbloccabili
 7. ~~Un boss finale che ovviamente bara~~ ✅ — 1-11, il Padrone: si guida invece di
    inseguirlo, si colpisce col suo stesso soffitto, e scansa mentre cammina

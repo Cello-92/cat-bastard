@@ -323,7 +323,7 @@ in una pagina è `game.ts`, che è il composition root.
 Tre cose da sapere prima di toccarlo:
 
 - **La gerarchia è a due livelli, non piatta.** Radice → mondi → livelli. Con
-  ventinove livelli una lista sola non è una lista, è uno scorrimento; e i mondi
+  trentuno livelli una lista sola non è una lista, è uno scorrimento; e i mondi
   esistono già nel gioco (cambiano cielo, tileset e regole del pavimento).
   `WORLDS` in `levels/index.ts` si ricava dagli id (`w2-3` → mondo 2): un mondo
   nuovo nasce da solo il giorno in cui compare un `w3-1`.
@@ -359,12 +359,12 @@ sono — e i tile che si saldano fra loro stanno in `MASONRY`, come `METAL`.
 
 **Non tutti i livelli ne hanno uno, ed è il punto.** Da 2-1 a 2-6 ce n'era uno
 ovunque, e cercarlo aveva smesso di essere cercare: era diventato raccogliere. 2-7,
-2-9, 3-1, 3-4, 3-6 e 3-7 non ne hanno nessuno, quindi da lì in poi una parete che sembra
+2-9, 3-1, 3-4, 3-6, 3-7 e 3-10 non ne hanno nessuno, quindi da lì in poi una parete che sembra
 finta a volte è solo una parete, e l'unico modo di saperlo è perderci tempo. Chi aggiunge un
 livello non è tenuto a metterci un gomitolo: `SECRET_COUNT` si conta dalle mappe.
 
 **Ma chi ce lo mette deve mettere anche il gatto.** Sulla strada dei gomitoli
-c'è un manto per ogni quota, senza buchi — quindici gomitoli, sedici manti
+c'è un manto per ogni quota, senza buchi — sedici gomitoli, diciassette manti
 contando quello che c'è da sempre — e `tests/smoke.ts` rifiuta un buco nella
 scala. Non è pignoleria: un gomitolo sta in una stanza murata che non serve a
 finire il livello, quindi l'unica ragione per andarci è quello che dà. Se il
@@ -704,12 +704,12 @@ e allegare uno zip offline: non servono a ospitare la pagina.
    E 2-11, Gothic Lucio: sta appeso alla volta, si attira invece di guidarlo, e
    si spegne facendolo cadere sui suoi stessi ceri
 8. ~~Account (nickname e password, niente email) e classifica dei tempi~~ ✅ — Supabase
-9. **Terzo mondo: il deserto e il tempio** — in corso. Ci sono da 3-1 a 3-8, e
+9. **Terzo mondo: il deserto e il tempio** — in corso. Ci sono da 3-1 a 3-10, e
    con loro la regola nuova: dopo il pavimento del mondo 2, qui cambia l'**aria**
    (correnti, risucchi, sabbie mobili), compare il primo congegno a distanza
    (la piastra a pressione) e il primo nemico che serve a *leggere* il livello
    invece che a chiuderlo (lo scarabeo, che il vento porta come porta te).
-   Da 3-5 in poi non si spiega più niente, come nel mondo 2 da 2-6.
-   Mancano i livelli da 3-9 in poi e il boss di 3-11,
+   Da 3-5 in poi non si spiega più niente, come nel mondo 2 da 2-6, e 3-10 è
+   l'esame come lo erano 1-10 e 2-10. Manca **solo il boss di 3-11**,
    che per non somigliare agli altri due dovrà essere un problema di *spazio*:
    il Padrone si guida, Lucio si attira, il terzo dovrebbe togliere il terreno.

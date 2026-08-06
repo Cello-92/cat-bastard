@@ -280,6 +280,18 @@ export const CATS: readonly CatSkin[] = [
     pattern: 'patched',
   },
 
+  {
+    id: 'duna',
+    name: 'DUNA',
+    blurb: 'Sabbia sopra e ombra sotto, come una duna vista di taglio. Sedici gomitoli per un gatto che si mimetizza col pavimento che lo uccide',
+    yarn: 16,
+    fur: MATERIAL.sand,
+    marks: MATERIAL.soil,
+    eye: MATERIAL.ember,
+    nose: MATERIAL.skin,
+    pattern: 'tabby',
+  },
+
   // ------------------------------------------------------------- le imprese
   // Da qui in giù i gomitoli non c'entrano niente: sono i gatti che si prendono
   // facendo qualcosa che nessuno ha chiesto. Restano estetici come gli altri —

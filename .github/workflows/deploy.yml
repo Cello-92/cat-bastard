@@ -156,22 +156,55 @@ jobs:
           # arriva da questo workflow. Nessuna audience: è quello che fa
           # `core.getIDToken()` senza argomenti, cioè quello che faceva
           # l'action.
-          oidc_token=$(curl -sS \
-            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r '.value')
-          if [ -z "$oidc_token" ] || [ "$oidc_token" = "null" ]; then
-            echo "::error::Token OIDC non ottenuto (serve id-token: write)."
-            exit 1
-          fi
+          #
+          # Si chiede **subito prima di ogni POST**, mai una volta sola in cima:
+          # la firma dura pochi minuti, mentre fra un tentativo e l'altro qui ci
+          # sono fino a venticinque minuti di coda più novanta secondi di pausa.
+          # Un token preso all'inizio arriva al secondo tentativo già scaduto, e
+          # la chiamata muore con `Invalid actions OIDC token due to Signature
+          # has expired` (HTTP 400): il sito non esce e il guasto sembra di
+          # Pages, mentre è nostro.
+          get_oidc() {
+            oidc_token=$(curl -sS \
+              -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+              "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r '.value')
+            if [ -z "$oidc_token" ] || [ "$oidc_token" = "null" ]; then
+              echo "::error::Token OIDC non ottenuto (serve id-token: write)."
+              exit 1
+            fi
+          }
+
+          # Crea la deployment. Se `gh` risponde proprio che la firma è
+          # scaduta — capita se il token muore fra la richiesta e il POST — si
+          # rigenera e si riprova **una** volta sola: è un ritentativo diverso
+          # da quelli del ciclo, che valgono per gli stati di errore di Pages.
+          create_deployment() {
+            local out rc
+            get_oidc
+            out=$(gh api --method POST "$api/pages/deployments" \
+              -F artifact_id="$artifact_id" \
+              -f pages_build_version="$GITHUB_SHA" \
+              -f oidc_token="$oidc_token" 2>&1) && rc=0 || rc=$?
+            if [ "$rc" -ne 0 ] && grep -qi 'Signature has expired' <<<"$out"; then
+              echo "::warning::Token OIDC scaduto fra la richiesta e il POST: lo rifaccio."
+              get_oidc
+              out=$(gh api --method POST "$api/pages/deployments" \
+                -F artifact_id="$artifact_id" \
+                -f pages_build_version="$GITHUB_SHA" \
+                -f oidc_token="$oidc_token" 2>&1) && rc=0 || rc=$?
+            fi
+            if [ "$rc" -ne 0 ]; then
+              echo "::error::Creazione della deployment fallita: $out"
+              return 1
+            fi
+            printf '%s' "$out"
+          }
 
           attempt=1
           while [ "$attempt" -le "$ATTEMPTS" ]; do
             echo "::group::Tentativo $attempt di $ATTEMPTS"
 
-            created=$(gh api --method POST "$api/pages/deployments" \
-              -F artifact_id="$artifact_id" \
-              -f pages_build_version="$GITHUB_SHA" \
-              -f oidc_token="$oidc_token")
+            created=$(create_deployment)
 
             # L'id lo dà la risposta; se non c'è, sta in fondo a status_url, e
             # in ultima istanza è lo SHA. Stessa scaletta dell'action.

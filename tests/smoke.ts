@@ -235,6 +235,41 @@ for (const level of LEVELS) {
   );
 }
 
+// ---------------------------------------------------------------- gomitoli
+//
+// Un gomitolo murato in una stanza dove non si entra non rompe niente: il
+// livello si finisce lo stesso, i test passano, e l'unico effetto è un gatto
+// che non si sblocca mai — cioè l'unica ricompensa del gioco che sparisce
+// senza un messaggio d'errore. È esattamente il tipo di bug che questa
+// cartella esiste per prendere.
+//
+// Si riusa il risolutore, con due accorgimenti. Primo: il gomitolo diventa
+// l'arrivo, perché il risolutore sa cercare solo `W`. Secondo: il livello si
+// taglia subito dopo di lui, perché la ricerca espande sempre la colonna più
+// avanzata e col livello intero se ne andrebbe in fondo a consumare il budget
+// invece di infilarsi nella stanza. Un percorso trovato nel livello tagliato è
+// un percorso che esiste anche in quello vero: la mappa a sinistra è la stessa.
+console.log('\nI gomitoli si possono prendere');
+for (const level of LEVELS) {
+  const column = level.rows.reduce(
+    (found, row) => (row.indexOf(TILE.YARN) >= 0 ? row.indexOf(TILE.YARN) : found),
+    -1,
+  );
+  if (column < 0) continue;
+
+  const rows = level.rows.map((row) =>
+    row.slice(0, column + 3).split(TILE.GOAL).join(TILE.EMPTY).split(TILE.YARN).join(TILE.GOAL),
+  );
+  const result = solve({ ...level, rows });
+  check(
+    result.solved,
+    result.solved
+      ? `${level.name}: al gomitolo della colonna ${column} ci si arriva`
+      : `${level.name}: GOMITOLO IRRAGGIUNGIBILE alla colonna ${column} — ` +
+        `la ricerca si ferma alla colonna ${result.furthestColumn}`,
+  );
+}
+
 // ---------------------------------------------------------------- simulazione
 console.log('\nSimulazione (600 tick per livello, con rendering)');
 const audio = new Audio();

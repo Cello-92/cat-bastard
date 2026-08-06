@@ -10,9 +10,11 @@ import { defineLevel, segment } from './level';
  * mentre il pavimento si crepa, e in fondo la solita bandiera che non è la
  * bandiera.
  *
- * È anche il livello che chiude il mondo, quindi il gomitolo è quello che
- * serve per l'ultimo gatto — ed è nascosto nel punto più stupido possibile:
- * dietro il muro che tutti superano saltando.
+ * Per un po' è stato il livello che chiudeva il mondo, e si vede: è costruito
+ * come un riepilogo. Adesso è la metà, e quello che viene dopo (da 2-6 a 2-10)
+ * dà per scontato tutto quello che qui viene ancora spiegato. Il gomitolo è
+ * nascosto nel punto più stupido possibile: dietro il muro che tutti superano
+ * saltando.
  */
 
 const CEILING = '='.repeat(SEGMENT_COLS);
@@ -143,7 +145,7 @@ export const WORLD_2_5 = defineLevel({
 
     // 9 — la bandiera. Quella vera è dietro; questa è piantata in mezzo alla
     // strada e ha sempre fatto la stessa identica cosa. Si scavalca — di poco,
-    // e solo saltando pieno. Fine del mondo, e non è un modo di dire.
+    // e solo saltando pieno.
     segment({
       rows: {
         0: CEILING,

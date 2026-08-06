@@ -350,8 +350,15 @@ export interface SolveResult {
  * perché il risolutore si fermasse *per esaurimento* e dichiarasse impossibile
  * un livello che si attraversa benissimo. Un referto sbagliato è peggio di un
  * referto lento: qui si paga qualche secondo in CI per averlo giusto.
+ *
+ * I livelli verticali del mondo 3 hanno alzato l'asticella: 3-7, che si
+ * attraversa dentro le colonne d'aria, chiede 1.075.000 stati per *trovare* la
+ * strada — cioè stava a un ritocco di distanza dal vecchio tetto. Il margine
+ * costa poco davvero: un livello risolvibile smette di cercare appena trova, e
+ * il budget pieno lo paga solo un livello rotto, che è esattamente il caso in
+ * cui si vuole essere sicuri prima di gridare.
  */
-export function solve(level: LevelDef, budget = 1_500_000): SolveResult {
+export function solve(level: LevelDef, budget = 2_500_000): SolveResult {
   const map = new TileMap(level.rows, TILE_SIZE);
   const start: SearchState = {
     x: level.spawn.c * TILE_SIZE + 5,

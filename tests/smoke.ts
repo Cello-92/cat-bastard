@@ -8,7 +8,7 @@ import { TILE_SIZE } from '@game/config';
 import { LEVELS, SECRET_COUNT } from '@game/levels';
 import { CATS, catRequirement, isCatUnlocked, type UnlockState } from '@game/cats';
 import { AMBUSH_FEATS, FEAT, KONAMI } from '@game/feats';
-import { BOSS, LUCIO, SEGMENT_COLS, LEVEL_ROWS, RULES } from '@game/config';
+import { BOSS, LUCIO, SPHINX, SEGMENT_COLS, LEVEL_ROWS, RULES } from '@game/config';
 import { defineLevel, segment } from '@game/levels/level';
 import { TILE, isSolid } from '@game/tiles';
 import { World } from '@game/world';
@@ -207,6 +207,50 @@ for (const level of LEVELS) {
     problems.length === 0,
     `${level.name}: niente appeso al nulla${problems.length ? ` — ${problems.slice(0, 4).join('; ')}` : ''}`,
   );
+
+  // Buche sotto un risucchio che arriva fino a terra.
+  //
+  // È l'unico caso in cui la regola dei cinque salti mente, e l'ha trovato un
+  // giocatore vero in 3-6 dopo che tutti i test erano verdi. Dentro una colonna
+  // che scende l'accelerazione verso il basso è `gravity + downdraftPull`,
+  // quindi il salto pieno passa da 122px a 48 e da sei colonne a due e mezzo:
+  // una pozza larga quattro con il risucchio piantato sopra fino al pavimento
+  // non si scavalca, e basta.
+  //
+  // Il risolutore non se ne accorge perché la sabbia sa nuotarla — attraversava
+  // quella pozza affondando, in una manciata di tick di margine, cioè per una
+  // via che nessuno troverebbe giocando. Quindi la regola va scritta qui: sotto
+  // un risucchio che scende fino in fondo, il vuoto vale al massimo due colonne.
+  {
+    const DEEP = LEVEL_ROWS - 4;
+    let run = 0;
+    let worst = 0;
+    let start = -1;
+    for (let c = 0; c < cols; c++) {
+      let solid = false;
+      let deepDraft = false;
+      for (let r = 0; r < LEVEL_ROWS; r++) {
+        const tile = at(c, r);
+        if (tile === TILE.DOWNDRAFT && r >= DEEP) deepDraft = true;
+        const vanishes =
+          tile === TILE.FAKE_GROUND ||
+          tile === TILE.GHOST ||
+          tile === TILE.COLLAPSE ||
+          tile === TILE.BRITTLE_ICE;
+        if (!vanishes && isSolid(tile)) solid = true;
+      }
+      run = !solid && deepDraft ? run + 1 : 0;
+      if (run > worst) {
+        worst = run;
+        start = c - run + 1;
+      }
+    }
+    check(
+      worst <= 2,
+      `${level.name}: nessun vuoto più largo di 2 colonne sotto un risucchio che arriva a terra` +
+        `${worst > 2 ? ` (${worst} alla colonna ${start}: lì il salto pieno copre due colonne e mezzo)` : ''}`,
+    );
+  }
 
   // L'arrivo sta in fondo, e il checkpoint da qualche parte nel mezzo: un
   // checkpoint nelle prime colonne non salva niente, uno dopo l'arrivo è
@@ -1660,6 +1704,277 @@ console.log('\nGothic Lucio');
       }
 
       check(won, `lo scontro con Lucio si può vincere davvero (${ticks} tick, ${world.deaths} morti)`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------- la Sfinge
+//
+// Il terzo boss non ha niente in comune coi primi due, e quindi niente di
+// quello che è stato provato là sopra dice qualcosa su di lui.
+//
+// Il punto delicato è nuovo. Nel Padrone l'arma sta nella mappa da prima
+// (i mattoni), in Lucio pure (i ceri): un test può guardare se c'è. Qui
+// **l'arma non esiste finché la Sfinge non la fabbrica**, e la fabbrica
+// rompendo il pavimento su cui si combatte. Quindi ci sono due modi nuovi di
+// rompere lo scontro in silenzio: un'eruzione che non sbriciola più niente
+// (e allora non c'è nessun colpo possibile, per sempre), e un pavimento che si
+// ricompatta troppo in fretta (e allora la sabbia non fa in tempo a servire).
+// Nessuno dei due lancia un'eccezione: rendono la Sfinge immortale e basta.
+console.log('\nLa Sfinge');
+{
+  const sphinxAudio = new Audio();
+  const idle = { isDown: () => false, justPressed: () => false, endTick: () => {} } as unknown as Input;
+  const SAND_HALL = '-'.repeat(SEGMENT_COLS);
+
+  /** Sala minima: volta, pavimento d'arenaria e lei sepolta sotto. */
+  const hall = (rows: Record<number, string>): World => {
+    const level = defineLevel({
+      id: 'sphinx-test',
+      name: 'TEST',
+      title: 'sfinge',
+      sky: 'tomb',
+      boss: true,
+      spawn: { c: 1, r: 12 },
+      // I default vanno PRIMA dello spread, o una riga passata da chi chiama
+      // (per esempio un pavimento già sbriciolato) verrebbe sovrascritta dal
+      // pavimento sano — e la prova misurerebbe l'esatto contrario di quello
+      // che voleva misurare.
+      segments: [segment({ rows: { 0: SAND_HALL, 13: SAND_HALL, 14: SAND_HALL, ...rows } })],
+    });
+    return new World(level, sphinxAudio, { onTaunt: () => {}, onWin: () => {} });
+  };
+
+  /**
+   * Fa eruttare la Sfinge in un punto scelto, col gatto al sicuro dall'altra
+   * parte della sala.
+   *
+   * La colonna va **inchiodata** a ogni tick, non solo all'inizio: lei scava
+   * verso il gatto, e se la si lascia arrivare gli erutta sotto e lo ammazza —
+   * a quel punto il livello si ricostruisce, `world.sphinx` diventa un altro
+   * oggetto, e la prova sta misurando un boss che non è quello che stava
+   * esaminando. È lo stesso inciampo della nicchia nel test di Lucio.
+   */
+  const eruptAt = (world: World, column: number, limit = 900): void => {
+    const boss = world.sphinx;
+    if (!boss) return;
+    for (let tick = 0; tick < limit && boss.state !== 'crest' && boss.state !== 'sink'; tick++) {
+      boss.x = column * TILE_SIZE;
+      world.player.reset(18 * TILE_SIZE, 12 * TILE_SIZE);
+      world.update(idle);
+    }
+  };
+
+  // Sepolta non tocca nessuno: metà scontro le si cammina sopra.
+  {
+    const world = hall({ 12: '      0' });
+    const sphinx = world.sphinx;
+    check(sphinx !== null, "la sala carica la Sfinge");
+    if (sphinx) {
+      world.player.x = sphinx.centerX - world.player.w / 2;
+      world.player.y = 12 * TILE_SIZE;
+      for (let tick = 0; tick < 3; tick++) world.update(idle);
+      check(world.state === 'playing', 'sepolta non uccide chi le sta sopra');
+      check(sphinx.isBuried, 'e resta sepolta finché non decide lei');
+    }
+  }
+
+  // L'eruzione sbriciola il pavimento sotto di lei: è l'unico modo in cui
+  // l'arma dello scontro viene al mondo. Se un giorno smettesse di sbriciolare,
+  // la Sfinge diventerebbe imbattibile senza che niente si rompa.
+  {
+    const world = hall({ 12: '      0' });
+    const sphinx = world.sphinx;
+    if (sphinx) {
+      const row = sphinx.floorRow;
+      const sandCount = (): number =>
+        [...Array(SEGMENT_COLS).keys()].filter((c) => world.map.get(c, row) === TILE.QUICKSAND).length;
+
+      eruptAt(world, 5);
+      const ruined = sandCount();
+      check(ruined >= 3, `l'eruzione sbriciola il pavimento (${ruined} celle)`);
+
+      // E il vento lo ricompatta: senza, dopo otto eruzioni la sala non
+      // avrebbe più un pezzo di pavimento su cui stare in piedi.
+      for (let tick = 0; tick < SPHINX.floorHealTicks + 200; tick++) {
+        sphinx.x = 5 * TILE_SIZE;
+        world.player.reset(18 * TILE_SIZE, 12 * TILE_SIZE);
+        world.update(idle);
+      }
+      check(sandCount() < ruined, `il pavimento si ricompatta da solo (${ruined} -> ${sandCount()} celle)`);
+    }
+  }
+
+  // Erutta dentro la propria sabbia: non trova presa, resta conficcata, e
+  // quello è il colpo. È il contratto centrale di tutto lo scontro.
+  {
+    const world = hall({ 12: '      0', 13: '----ssss------------' });
+    const sphinx = world.sphinx;
+    if (sphinx) {
+      // La si porta sopra la sabbia a mano: qui si prova la regola, non la
+      // strategia — quella la prova il giocatore finto più sotto.
+      eruptAt(world, 5);
+      check(sphinx.hits > 0, 'eruttando nella propria sabbia resta conficcata e incassa');
+      check(sphinx.state === 'sink' || sphinx.state === 'hurt', 'e resta lì dentro invece di uscire');
+    }
+  }
+
+  // Toccarla mentre è fuori uccide, e schiacciarla pure: è una statua.
+  {
+    const world = hall({ 12: '      0' });
+    const sphinx = world.sphinx;
+    if (sphinx) {
+      sphinx.state = 'crest';
+      sphinx.y = sphinx.floorY - 80;
+      world.player.x = sphinx.centerX - world.player.w / 2;
+      world.player.y = sphinx.y + 10;
+      world.update(idle);
+      check(world.state === 'dying', 'toccarla mentre è fuori uccide');
+    }
+    {
+      const stompWorld = hall({ 12: '      0' });
+      const boss = stompWorld.sphinx;
+      if (boss) {
+        boss.state = 'crest';
+        boss.y = boss.floorY - 80;
+        check(!boss.onStomp(stompWorld), 'schiacciarla non funziona: è arenaria');
+        check(stompWorld.state === 'dying', 'e ci si muore');
+      }
+    }
+  }
+
+  // Colpirla quando non è conficcata non conta: la finestra è quella lì.
+  {
+    const world = hall({ 12: '      0' });
+    const sphinx = world.sphinx;
+    if (sphinx) {
+      for (const state of ['burrow', 'rumble', 'erupt', 'crest', 'dive'] as const) {
+        sphinx.state = state;
+        check(!sphinx.takeHit(world), `in stato "${state}" non si fa niente`);
+      }
+    }
+  }
+
+  // Quattro colpi, due fasi, e il portone della sala vera che si apre in fondo.
+  {
+    const arenaLevel = LEVELS.find((level) => level.rows.some((row) => row.includes(TILE.SPHINX)));
+    check(arenaLevel !== undefined, "3-11 esiste ed è l'arena della Sfinge");
+    if (arenaLevel) {
+      const world = new World(arenaLevel, sphinxAudio, { onTaunt: () => {}, onWin: () => {} });
+      const sphinx = world.sphinx;
+      const gate = findTile(arenaLevel.rows, TILE.BOSS_GATE);
+      if (sphinx && gate) {
+        check(world.map.get(gate.c, gate.r) === TILE.BOSS_GATE, 'il portone parte chiuso');
+
+        for (let hit = 1; hit <= SPHINX.hitsPerPhase * 2; hit++) {
+          sphinx.state = 'sink';
+          world.player.reset(2 * TILE_SIZE, 12 * TILE_SIZE);
+          sphinx.takeHit(world);
+          if (hit === SPHINX.hitsPerPhase) {
+            for (let guard = 0; guard < 400 && sphinx.phase === 1; guard++) {
+              world.player.reset(2 * TILE_SIZE, 12 * TILE_SIZE);
+              world.update(idle);
+            }
+            check(sphinx.phase === 2, 'due colpi e la Sfinge cambia fase');
+          }
+        }
+        check(sphinx.isDead, 'quattro colpi la seppelliscono');
+
+        for (let tick = 0; tick < 20; tick++) {
+          world.player.reset(2 * TILE_SIZE, 12 * TILE_SIZE);
+          world.update(idle);
+        }
+        check(world.map.get(gate.c, gate.r) === TILE.EMPTY, 'il portone si apre quando cade');
+      }
+    }
+  }
+
+  // In seconda fase sbriciola più largo: è il suo modo di barare, ed è anche
+  // il modo in cui si condanna — più stanza rompe, più posti ci sono in cui
+  // può restare conficcata, e meno ce ne sono in cui puoi stare tu.
+  {
+    const ruinedBy = (phase: 1 | 2): number => {
+      const world = hall({ 12: '      0' });
+      const sphinx = world.sphinx;
+      if (!sphinx) return 0;
+      sphinx.phase = phase;
+      const row = sphinx.floorRow;
+      eruptAt(world, 8);
+      return [...Array(SEGMENT_COLS).keys()].filter((c) => world.map.get(c, row) === TILE.QUICKSAND)
+        .length;
+    };
+    const first = ruinedBy(1);
+    const second = ruinedBy(2);
+    check(second > first, `in seconda fase l'eruzione rompe più stanza (${first} -> ${second} celle)`);
+  }
+
+  // ------------------------------------------------------------------------
+  // E la domanda che nessuno dei controlli qui sopra pone: **si vince?**
+  //
+  // Vale qui esattamente la lezione di Lucio, e vale doppio, perché questo
+  // scontro ha una parte in più che può rompersi da sola: l'arma se la deve
+  // costruire il giocatore, sbagliando. Se i tempi non tornassero — la sabbia
+  // che si ricompatta prima che lei ci ripassi, il corpo troppo stretto per
+  // toccare una cella guasta, il rimbombo troppo corto per scappare — tutti i
+  // contratti resterebbero verdi e la sala sarebbe una stanza in cui si gira a
+  // vuoto finché non ci si stanca.
+  //
+  // Quindi un giocatore finto gioca la strategia dichiarata dal livello: si
+  // piazza sul bordo delle macerie, aspetta il rimbombo, scappa. E deve vincere.
+  {
+    const arenaLevel = LEVELS.find((level) => level.rows.some((row) => row.includes(TILE.SPHINX)));
+    if (arenaLevel) {
+      const world = new World(arenaLevel, sphinxAudio, { onTaunt: () => {}, onWin: () => {} });
+      let held: string | null = null;
+      const bot = {
+        isDown: (action: string) => action === held,
+        justPressed: () => false,
+        endTick: () => {},
+      } as unknown as Input;
+
+      let won = false;
+      let ticks = 0;
+      for (; ticks < 20000; ticks++) {
+        const boss = world.sphinx;
+        if (!boss) break;
+        if (boss.isDead) {
+          won = true;
+          break;
+        }
+
+        const px = world.player.centerX;
+        const row = boss.floorRow;
+
+        if (boss.state === 'rumble' || !boss.isBuried) {
+          // Sta per uscire, o è già fuori: togliersi, e restare lontani.
+          held = px < boss.centerX ? 'left' : 'right';
+          // Contro il muro si scappa dall'altra parte, altrimenti si resta lì
+          // a farsi prendere addosso al bordo della sala.
+          if (px < 2.5 * TILE_SIZE) held = 'right';
+          else if (px > world.map.widthPx - 2.5 * TILE_SIZE) held = 'left';
+        } else {
+          // Si cerca il bordo della sabbia più vicina e ci si mette accanto:
+          // accanto, non sopra, o si affonda mentre si aspetta.
+          let bait: number | null = null;
+          for (let c = 1; c < world.map.cols - 1; c++) {
+            if (world.map.get(c, row) !== TILE.QUICKSAND) continue;
+            for (const side of [-1, 1] as const) {
+              const near = c + side;
+              if (world.map.get(near, row) !== TILE.SANDSTONE) continue;
+              const x = near * TILE_SIZE + TILE_SIZE / 2;
+              if (bait === null || Math.abs(x - px) < Math.abs(bait - px)) bait = x;
+            }
+          }
+          // Nessuna macerie ancora: ci si mette in mezzo alla sala e la si
+          // lascia arrivare. La prima eruzione è quella che crea l'arma.
+          const target = bait ?? world.map.widthPx / 2;
+          held = Math.abs(target - px) < 5 ? null : target > px ? 'right' : 'left';
+        }
+
+        world.update(bot);
+      }
+
+      check(won, `lo scontro con la Sfinge si può vincere davvero (${ticks} tick, ${world.deaths} morti)`);
     }
   }
 }

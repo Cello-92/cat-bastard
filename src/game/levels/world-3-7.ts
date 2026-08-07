@@ -90,16 +90,21 @@ export const WORLD_3_7 = defineLevel({
     // 4 — la discesa obbligata: il cornicione finisce in mezzo al niente, e
     // sotto c'è la sabbia col risucchio piantato sopra. Non c'è modo di
     // scendere piano: si sceglie solo da che parte del buco si cade.
+    //
+    // Il risucchio si ferma tre tile sopra la sabbia, e la pozza ha il fondo.
+    // La prima versione aveva la colonna fino a terra e la sabbia senza fondo,
+    // che messe insieme fanno una buca insaltabile — dentro un risucchio il
+    // salto pieno copre due colonne e mezzo — cioè una morte obbligatoria
+    // travestita da passaggio. Adesso si può passare bassi, e chi ci finisce
+    // dentro paga in tempo.
     segment({
       rows: {
         5: '------',
-        8: '       vvvv',
-        9: '       vvvv',
-        10: '       vvvv',
-        11: '       vvvv',
-        12: '       vvvv',
+        8: '       vvv',
+        9: '       vvv',
+        10: '       vvv',
         13: '......ssss..........',
-        14: '......ssss..........',
+        14: FLOOR,
       },
     }),
 

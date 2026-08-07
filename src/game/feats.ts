@@ -30,6 +30,8 @@ export const FEAT = {
   ownRock: 'contrappasso',
   /** Spegnere Gothic Lucio: quattro tuffi finiti sul cero sbagliato. */
   gothic: 'requiem',
+  /** Seppellire la Sfinge nella sabbia che ha fatto lei. */
+  sphinx: 'sabbia-sua',
   /**
    * Restare in aria quattro secondi filati, portati dalle correnti del terzo
    * mondo. È l'unica impresa che si scopre giocando bene invece che facendo

@@ -93,7 +93,7 @@ src/
               world.ts (orchestratore), game.ts (composition root)
     entities/ player, walker, shroom, falling-spike, diver,
               sentry, drone, snowball, scarab, boss + rubble (solo 1-11),
-              gothic-boss (solo 2-11)
+              gothic-boss (solo 2-11), sphinx (solo 3-11)
     levels/   level.ts (helper) + un file per livello + index.ts (registro)
     render/   background.ts (parallasse), tiles.ts (disegno dei tile)
   net/        supabase.ts (fetch e basta), account.ts (sessione e sincronia),
@@ -242,16 +242,23 @@ simula vento, risucchio e sabbia con lo stesso codice e lo stesso ordine di
 operazioni di `Player.update`. La corrente morta `w` non compare nel
 risolutore, e non deve: nel gioco non spinge, quindi lì non esiste proprio.
 
-### I due boss: le arene di 1-11 e 2-11
+### I tre boss: le arene di 1-11, 2-11 e 3-11
 
-Il gioco ha due scontri e sono costruiti per **non somigliarsi**. Il Padrone è
+Il gioco ha tre scontri e sono costruiti per **non somigliarsi**. Il Padrone è
 un problema orizzontale: cammina verso di te, e tu scegli sotto quale mattone
 farlo arrivare. Gothic Lucio è verticale: vive appeso alla volta e si tuffa, e
-tu scegli sopra quale cero farti trovare. In tutti e due i casi il boss non si
-tocca mai e l'arma è un pezzo di mappa — di sopra la muratura, di sotto la
-fiamma — ma la mano che la usa cambia: là si *guida* lui, qui si *attira*.
+tu scegli sopra quale cero farti trovare. La Sfinge è un problema di spazio:
+vive sotto il pavimento, e ogni volta che sbaglia colpo rompe un pezzo di sala
+— finché non le si fa sbagliare il colpo *sopra i pezzi rotti prima*.
 
-Vale per entrambi: niente checkpoint (un boss si impara, non si consuma), si
+In tutti e tre il boss non si tocca mai e l'arma è un pezzo di mappa — la
+muratura, la fiamma, il pavimento — ma la mano che la usa cambia: il Padrone si
+*guida*, Lucio si *attira*, la Sfinge si *aspetta nel posto giusto*. E c'è una
+differenza in più che vale la pena tenere a mente per il quarto: nelle prime due
+arene l'arma sta nella mappa da prima che entri, nella terza **non esiste**
+finché non è lei a fabbricarla.
+
+Vale per tutti e tre: niente checkpoint (un boss si impara, non si consuma), si
 rinasce dentro l'arena, e il portone `|` si apre quando il boss cade.
 
 #### Il Padrone: l'arena di 1-11
@@ -312,6 +319,52 @@ verdi.** L'ha trovata il giocatore finto di `tests/smoke.ts`, che gioca lo
 scontro e pretende di vincerlo — è il risolutore applicato a un boss, e c'è per
 questo.
 
+#### La Sfinge: la sala di 3-11
+
+Nella sala grande in fondo al tempio non c'è niente. È la prima cosa da capire:
+la tana del Padrone aveva un soffitto di mattoni, la cappella di Lucio aveva i
+ceri, e qui il pavimento è pietra sana da parete a parete. **Non c'è nessuna
+arma.**
+
+| Tile | Cosa sembra | Cosa fa |
+|---|---|---|
+| `0` | niente, sparisce al caricamento | marcatore: qui nasce la Sfinge, **sepolta** — va messo sul pavimento, come quello del Padrone |
+| `\|` | portone chiuso | lo stesso di sempre: una serratura è una serratura |
+
+**L'arma la fabbrica lei, ed è la novità dello scontro.** La Sfinge vive sotto
+il pavimento e ci scava dentro verso di te — più lenta di te, sempre, come gli
+altri due, quindi è ancora il gatto a scegliere dove si combatte. Quando ti
+arriva sotto si ferma, il pavimento rimbomba (`rumbleTicks`, e da lì il punto è
+congelato: vale la regola del ruggito e della mira), e poi erutta. Uscendo
+**sbriciola la pietra in sabbie mobili**: la sala si consuma, e al giro dopo
+quella sabbia è lì. Se il suo corpo — largo due celle — ne tocca anche una
+sola, non trova presa: viene su a metà e resta conficcata. Quello è il colpo.
+
+Quindi il combattimento non è schivare (il Padrone) e non è farsi esca (Lucio):
+è **scegliere il terreno**. Ci si mette sul bordo delle proprie macerie — sul
+bordo, non sopra, o si affonda mentre si aspetta — e ci si toglie prima che
+esca. È l'unico dei tre in cui l'arena a fine scontro non somiglia più a quella
+dell'inizio.
+
+**Perché la cella non deve essere esatta.** `sphinxSurfaces` guarda tutte le
+celle sotto il corpo e sbaglia presa se **una** è guasta. Se pretendesse quella
+sotto il centro, il giocatore dovrebbe piazzarsi *dentro* le sabbie mobili per
+chiamarla, cioè affondare mentre aspetta: non sarebbe difficile, sarebbe una
+barzelletta.
+
+**Il pavimento si ricompatta** (`floorHealTicks`) per la stessa ragione per cui
+i mattoni del Padrone tornano e i ceri di Lucio si riaccendono, più una che qui
+è vitale: senza, dopo otto eruzioni non ci sarebbe più un pezzo di sala su cui
+stare in piedi. In fase 2 il raggio dell'eruzione raddoppia, ed è insieme il
+suo modo di barare e il modo in cui si condanna — più stanza rompe, più posti
+ci sono in cui può restare conficcata, e meno posti ci sono per te.
+
+Il combattimento sta in `world.ts` (`sphinxSurfaces`, `ruinFloor`,
+`handleRuinedFloor`, `onSphinxRage`) e non nell'entità, per la regola di
+sempre: qui serve sapere insieme dov'è lei e **com'è il pavimento**, e quel
+posto è uno solo. L'entità chiede al mondo di uscire e il mondo le risponde
+chiamando `erupt()` o `sink()`.
+
 ### Il menu
 
 Il menu è un menu da console che vive nel DOM: frecce, Invio, Esc — e le stesse
@@ -323,7 +376,7 @@ in una pagina è `game.ts`, che è il composition root.
 Tre cose da sapere prima di toccarlo:
 
 - **La gerarchia è a due livelli, non piatta.** Radice → mondi → livelli. Con
-  trentuno livelli una lista sola non è una lista, è uno scorrimento; e i mondi
+  trentadue livelli una lista sola non è una lista, è uno scorrimento; e i mondi
   esistono già nel gioco (cambiano cielo, tileset e regole del pavimento).
   `WORLDS` in `levels/index.ts` si ricava dagli id (`w2-3` → mondo 2): un mondo
   nuovo nasce da solo il giorno in cui compare un `w3-1`.
@@ -407,6 +460,7 @@ diventerebbe la strada giusta per giocare.
 | MONACO | finire un livello senza morire e senza raccogliere una moneta | `World.win` |
 | PADRONE | ammazzare il Padrone con un masso che ha staccato lui | `World.handleBossFight` (`Rubble.slam`) |
 | ALISEO | restare in aria `RULES.aloftTicks` (quattro secondi) senza toccare niente | `World.handleAloft` |
+| SFINGE | seppellire la Sfinge nella sabbia che ha fatto lei | `World.sphinxSurfaces` |
 
 Le regole che le tengono dentro al patto sono tre, e non sono negoziabili:
 
@@ -524,7 +578,16 @@ npm run build   # typecheck + build
   disegnata a mezz'aria, spuntoni invisibili sospesi sul vuoto, un nastro murato
   sotto un solido, una piastra murata o senza un solo mattone da sganciare, un
   carattere sconosciuto (che è aria, quindi la trappola che credevi di aver
-  messo non c'è), un checkpoint dopo l'arrivo;
+  messo non c'è), un checkpoint dopo l'arrivo. E una regola che non c'era e che
+  è costata due livelli ingiocabili: **sotto un risucchio che arriva fino a
+  terra, il vuoto vale al massimo due colonne**. Dentro una colonna che scende
+  l'accelerazione verso il basso è `gravity + downdraftPull`, quindi il salto
+  pieno passa da 122px a 48 e da sei colonne a due e mezzo — una pozza larga
+  quattro col risucchio piantato sopra non si scavalca, e la regola dei cinque
+  salti dice di sì. Il risolutore non se ne accorgeva perché la sabbia sa
+  nuotarla: attraversava quelle pozze affondando, con pochi tick di margine,
+  cioè per una via che nessuno troverebbe giocando. L'hanno trovato in 3-6 e in
+  3-7 giocandoci, che è l'unico posto in cui certe cose si trovano;
 - **le correnti del mondo 3**, che sono la modifica alla fisica più invasiva del
   gioco e quindi hanno il contratto più stretto: che il vento sposti chi è in
   aria e non chi tocca terra, che non tocchi mai la velocità del gatto, che la
@@ -559,7 +622,13 @@ npm run build   # typecheck + build
   vale il contrappasso — e soprattutto che tutte e sette le trappole dell'album
   esistano ancora in una mappa vera, altrimenti c'è un gatto irraggiungibile e
   non lo dice nessuno;
-- **lo scontro con Lucio**, che è l'unico posto in cui un test *gioca* un boss.
+- **lo scontro con la Sfinge**, che ha una parte in più che può rompersi da
+  sola: l'arma non sta nella mappa da prima, se la costruisce il giocatore
+  sbagliando. Un'eruzione che smette di sbriciolare, o un pavimento che si
+  ricompatta troppo in fretta, non lanciano niente — rendono la Sfinge
+  immortale in silenzio. Anche qui, alla fine, un giocatore finto combatte e
+  deve vincere;
+- **lo scontro con Lucio**, che è stato il primo posto in cui un test *gioca* un boss.
   I controlli sul contratto dicono che i pezzi funzionano, non che lo scontro si
   possa vincere: la prima versione della fase 2 era invincibile con tutti i
   controlli verdi. Quindi un giocatore finto combatte davvero — si piazza sul
@@ -704,12 +773,18 @@ e allegare uno zip offline: non servono a ospitare la pagina.
    E 2-11, Gothic Lucio: sta appeso alla volta, si attira invece di guidarlo, e
    si spegne facendolo cadere sui suoi stessi ceri
 8. ~~Account (nickname e password, niente email) e classifica dei tempi~~ ✅ — Supabase
-9. **Terzo mondo: il deserto e il tempio** — in corso. Ci sono da 3-1 a 3-10, e
-   con loro la regola nuova: dopo il pavimento del mondo 2, qui cambia l'**aria**
-   (correnti, risucchi, sabbie mobili), compare il primo congegno a distanza
-   (la piastra a pressione) e il primo nemico che serve a *leggere* il livello
-   invece che a chiuderlo (lo scarabeo, che il vento porta come porta te).
-   Da 3-5 in poi non si spiega più niente, come nel mondo 2 da 2-6, e 3-10 è
-   l'esame come lo erano 1-10 e 2-10. Manca **solo il boss di 3-11**,
-   che per non somigliare agli altri due dovrà essere un problema di *spazio*:
-   il Padrone si guida, Lucio si attira, il terzo dovrebbe togliere il terreno.
+9. ~~Terzo mondo: il deserto e il tempio~~ ✅ — undici livelli, e la regola
+   nuova: dopo il pavimento del mondo 2, qui cambia l'**aria** (correnti,
+   risucchi, sabbie mobili). Più il primo congegno a distanza (la piastra a
+   pressione), il primo nemico che serve a *leggere* il livello invece che a
+   chiuderlo (lo scarabeo, che il vento porta come porta te), e quattro
+   segreti che stanno ognuno dalla parte sbagliata di una superficie: dietro
+   una parete, sotto una pozza, sopra il soffitto, e dietro una parete in
+   fondo a una pozza. In fondo la Sfinge, che è il problema di *spazio*
+   promesso: il Padrone si guida, Lucio si attira, lei si combatte dentro
+   una stanza che sta rompendo.
+10. **Il quarto mondo, o quello che verrà** — niente di deciso. L'unica cosa
+   che il progetto sa già è quale domanda farsi: il mondo 2 ha cambiato il
+   pavimento, il mondo 3 ha cambiato l'aria, e un mondo nuovo che non cambi
+   *una regola sola e leggibile* sarebbe una raccolta di livelli invece che
+   un mondo.

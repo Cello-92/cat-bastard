@@ -381,6 +381,94 @@ export const LUCIO = {
   snuffRadius: 170,
 } as const;
 
+/**
+ * La Sfinge, il boss di 3-11.
+ *
+ * Gli altri due si combattono contro: il Padrone cammina verso di te e lo si
+ * porta sotto un mattone, Lucio si tuffa e lo si attira sopra un cero. La
+ * Sfinge non si combatte contro — si combatte **dentro**: non c'è niente da
+ * farle cadere addosso e niente su cui farla atterrare, perché l'unica cosa
+ * che le fa male è il pavimento che ha rotto lei.
+ *
+ * Il ciclo è: scava sotto la sabbia verso di te (più lenta di te, sempre, come
+ * gli altri due: sei tu a scegliere dove si combatte), si ferma quando ti
+ * arriva sotto, rimbomba — e quello è tutto il preavviso — poi erutta. Se sotto
+ * il suo corpo il pavimento è sano, l'eruzione lo **sbriciola in sabbia**: la
+ * stanza si consuma, e ogni colpo che sbagli te ne toglie un pezzo. Se invece
+ * lì sotto c'è già sabbia sua, non trova presa: viene su a metà e resta
+ * conficcata. Quello è il colpo.
+ *
+ * Quindi il combattimento è un problema di **spazio** e non di tempo: la si
+ * chiama vicino alle proprie macerie stando sul bordo, non sopra — il suo corpo
+ * è largo due celle e le basta toccarne una guasta — e ci si toglie prima che
+ * esca. Il pavimento si ricompatta da solo (`floorHealTicks`) per la stessa
+ * ragione per cui i mattoni del Padrone tornano e i ceri di Lucio si
+ * riaccendono: un'arena senza soluzione non è una partita persa, è una partita
+ * finita. Ma qui la ragione è doppia — senza, dopo otto eruzioni non ci sarebbe
+ * più pavimento su cui stare in piedi.
+ */
+export const SPHINX = {
+  width: 62,
+  height: 46,
+  /** Colpi da incassare in ciascuna delle due fasi. */
+  hitsPerPhase: 2,
+  /**
+   * Velocità di scavo. Più lenta del gatto, sempre: se un giorno superasse
+   * `PHYSICS.maxSpeed` smetterebbe di farsi portare e comincerebbe a inseguire,
+   * che è il combattimento di qualcun altro (vedi `BOSS.stalkSpeed`).
+   */
+  burrowSpeed: 2.2,
+  burrowSpeedFurious: 2.9,
+  /**
+   * Tick sotto terra **al massimo**. Come per Lucio è una valvola: normalmente
+   * emerge quando ti arriva sotto, e quello è ciò che si può provocare; il
+   * tetto serve solo perché scava più piano di quanto tu corra.
+   */
+  burrowTicks: 190,
+  burrowTicksFurious: 140,
+  /** Quanto vicino alla colonna del gatto deve arrivare per fermarsi. */
+  alignRange: 16,
+  /**
+   * Il rimbombo: il pavimento trema e da qui in poi il punto è **congelato**.
+   * Stessa idea del ruggito del Padrone e della mira di Lucio — un preavviso
+   * che continua a inseguirti non è un preavviso.
+   */
+  rumbleTicks: 32,
+  rumbleTicksFurious: 24,
+  /** Uscita: veloce e dritta. Chi è ancora lì sopra non ha sbagliato i tempi
+   *  di un pelo, ha sbagliato posto. */
+  eruptSpeed: 10,
+  /** Quanto esce dal pavimento, in pixel. */
+  eruptHeight: 132,
+  /** Tick in cui resta fuori a guardarsi intorno prima di rituffarsi. */
+  crestTicks: 44,
+  crestTicksFurious: 32,
+  /** Rientro sotto la sabbia. */
+  diveSpeed: 6.5,
+  /**
+   * Tick conficcata quando erutta dentro la propria sabbia: è la finestra, ed è
+   * lunga apposta. Non serve a colpirla — colpirla non si può — ma a far vedere
+   * che il colpo è arrivato e a dare il tempo di rimettersi al sicuro.
+   */
+  sinkTicks: 96,
+  sinkTicksFurious: 74,
+  /**
+   * Quante celle di pavimento sbriciola per lato a ogni eruzione a vuoto.
+   *
+   * In fase 2 il raggio raddoppia, ed è insieme il suo modo di barare e il modo
+   * in cui si suicida: più stanza distrugge, più posti ci sono in cui può
+   * restare conficcata — e meno posti ci sono in cui puoi stare tu.
+   */
+  ruinRadius: 1,
+  ruinRadiusFurious: 2,
+  /** Tick prima che il vento ricompatti una cella sbriciolata. */
+  floorHealTicks: 340,
+  /** Rinculo dopo un colpo incassato. */
+  hurtTicks: 54,
+  /** Cambio di fase: esce tutta, urla, e si riprende la stanza. */
+  rageTicks: 72,
+} as const;
+
 export const FEEL = {
   screenShakeOnDeath: 9,
   screenShakeOnStomp: 3,

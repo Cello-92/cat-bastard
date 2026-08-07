@@ -54,16 +54,27 @@ export const WORLD_3_6 = defineLevel({
 
     // 2 — la pozza sotto il risucchio, con i mattoni sopra: tre cose che
     // spingono nella stessa direzione, e la direzione è il fondo.
+    //
+    // **Il risucchio si ferma a mezz'aria, e non è un dettaglio.** Dentro una
+    // colonna che scende l'accelerazione verso il basso è 0.55 + 0.85 per
+    // tick, quindi il salto pieno arriva a 48px invece di 122 e copre due
+    // colonne e mezzo: un risucchio che arrivasse fino al pavimento renderebbe
+    // la pozza matematicamente insaltabile, e il livello si passerebbe solo
+    // nuotandoci dentro mentre piovono stalattiti. Era così, e non andava
+    // bene: "difficile" e "impossibile" non sono sinonimi nemmeno qui.
+    //
+    // Adesso sotto la colonna resta il passaggio basso, che è la stessa
+    // risposta di 3-1 e di 3-8 — si salta *meno*, non di più — e la pozza ha
+    // un fondo: chi ci finisce dentro perde tempo e prende una stalattite in
+    // testa, non muore per forza.
     segment({
       rows: {
         0: CEILING,
         6: '     TTTTTT',
-        9: '       vvvv',
-        10: '       vvvv',
-        11: '       vvvv',
-        12: '       vvvv',
-        13: '-------ssss---------',
-        14: '-------ssss---------',
+        9: '       vvv',
+        10: '       vvv',
+        13: '-------sss----------',
+        14: FLOOR,
       },
     }),
 

@@ -200,16 +200,18 @@ export class Rovescio extends Entity {
    * invece che una rincorsa.
    */
   private decide(world: World): void {
-    const danger = world.rovescioDanger(this);
-    if (danger === 0) {
+    const escape = world.rovescioEscape(this);
+    if (escape === 0) {
       this.wind(world);
       return;
     }
 
-    this.shuffleDir = danger;
+    this.shuffleDir = Math.sign(escape);
+    // Si sposta esattamente di quanto gli serve, non di quanto potrebbe: il
+    // conto lo ha già fatto il mondo, qui si traduce in tick.
     world.audio.play('bump');
     world.effects.floatingText(this.centerX, this.y - 10, 'no', PALETTE.paper, 12);
-    this.enter('shuffle', ROVESCIO.shuffleTicks);
+    this.enter('shuffle', Math.ceil(Math.abs(escape) / ROVESCIO.shuffleSpeed));
   }
 
   private wind(world: World): void {
@@ -372,9 +374,13 @@ export class Rovescio extends Entity {
       r.ellipse(bx - 0.4, bodyY - 2, 0.8, 0.7, iron.light);
     }
 
-    // I quattro anelli: i colpi che gli restano. Si spengono da davanti.
-    for (let i = 0; i < ROVESCIO.hitsPerPhase * 2; i++) {
-      const rx = cx - this.w * 0.28 + i * (this.w * 0.19);
+    // Gli anelli: i colpi che gli restano. Si spengono da davanti, e sono
+    // tanti quanti ne servono — la spaziatura si ricava dal numero, così
+    // cambiare `hitsPerPhase` non li fa uscire dalla schiena.
+    const rings = ROVESCIO.hitsPerPhase * 2;
+    const gap = (this.w * 0.56) / Math.max(1, rings - 1);
+    for (let i = 0; i < rings; i++) {
+      const rx = cx - this.w * 0.28 + i * gap;
       const lit = i >= this.hits;
       r.ellipse(rx, bodyY + bodyH * 0.45, 4, 4, iron.deep);
       r.ellipse(rx, bodyY + bodyH * 0.45, 2.8, 2.8, lit ? PALETTE.field : iron.dark);

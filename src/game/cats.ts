@@ -479,6 +479,23 @@ export const CATS: readonly CatSkin[] = [
     pattern: 'tabby',
   },
   {
+    id: 'contrappeso',
+    name: 'CONTRAPPESO',
+    blurb: 'Ferro e piombo, con gli anelli spenti lungo la schiena. Ne aveva quattro, e li hai spenti stando fermo nel posto giusto',
+    yarn: 0,
+    feats: [FEAT.rovescio],
+    // Come per Lucio e per la Sfinge non e un easter egg: sta in fondo
+    // all'ultimo livello e ci arriva chiunque giochi fino in fondo.
+    // L'indovinello quindi non nasconde cosa fare, dice **come** — e come, qui,
+    // e l'unica cosa che non viene in mente da sola.
+    riddle: 'In fondo alla torre c\'e chi ribalta la stanza. Non provare a colpirlo: togligli i posti in cui scansarsi, e lascia che sia lui a farsi cadere addosso il pavimento',
+    fur: MATERIAL.iron,
+    marks: MATERIAL.lead,
+    eye: MATERIAL.violet,
+    nose: MATERIAL.iron,
+    pattern: 'tabby',
+  },
+  {
     id: 'gothic',
     name: 'GOTHIC',
     blurb: 'Le righe sembrano un costato e non è un caso. Lucio le portava meglio',

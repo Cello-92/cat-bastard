@@ -68,7 +68,13 @@ export class Ballast extends Entity {
     applyGravity(this, PHYSICS.gravity, TERMINAL, down);
     moveY(this, world.map, isSolid);
     updateGrounded(this, world.map, isSolid, down);
-    this.falling = !this.onGround;
+    // "Sta cadendo" non vuol dire "non poggia": vuol dire che si è mossa
+    // abbastanza da avere addosso l'energia di una tonnellata. La differenza
+    // conta perché una zavorra nasce sempre qualche pixel sopra il suo
+    // appoggio — la cella del marcatore è alta 32 e lei ne occupa 26 — e senza
+    // questa soglia quei due tick di assestamento sarebbero un colpo pieno:
+    // nell'arena di 4-11 il Rovescio si sarebbe ucciso da solo al primo tick.
+    this.falling = !this.onGround && Math.abs(this.vy) >= 2;
 
     // Il tonfo: si sente e si vede, perché è il momento in cui la zavorra
     // dichiara da che parte tira il campo in cui è dentro.
@@ -88,12 +94,21 @@ export class Ballast extends Entity {
   }
 
   /**
-   * Schiacciata dal Rovescio: si spacca, e con lei finisce il colpo.
+   * Ha appena preso in pieno il Rovescio.
+   *
    * La chiama `World.handleRovescioFight`, che è l'unico a sapere insieme dove
-   * sta lei e dove sta lui.
+   * sta lei e dove sta lui. Fa scintille e rumore, e **non si consuma**: la
+   * zavorra prosegue e si riappoggia dall'altra parte.
+   *
+   * È la stessa regola dei mattoni del Padrone che si ricompongono e dei ceri
+   * di Lucio che si riaccendono, e qui è ancora più vitale. La prima versione
+   * la faceva sparire, e il risultato era che dopo due colpi il Rovescio aveva
+   * **due buchi** nella fascia fitta — buchi fatti da lui, esattamente dove
+   * gli servivano — e ci si piazzava dentro all'infinito. Nessun errore,
+   * nessuna eccezione: un boss immortale, e con tutti i controlli sul
+   * contratto verdi.
    */
   crush(world: World): void {
-    this.expired = true;
     world.audio.play('crumble');
     world.camera.shake(FEEL.screenShakeOnTrap);
     world.effects.burst(this.x + this.w / 2, this.y + this.h / 2, MATERIAL.lead.base, {

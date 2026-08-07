@@ -8,7 +8,7 @@ import { TILE_SIZE } from '@game/config';
 import { LEVELS, SECRET_COUNT } from '@game/levels';
 import { CATS, catRequirement, isCatUnlocked, type UnlockState } from '@game/cats';
 import { AMBUSH_FEATS, FEAT, KONAMI } from '@game/feats';
-import { BOSS, LUCIO, SPHINX, SEGMENT_COLS, LEVEL_ROWS, RULES } from '@game/config';
+import { BOSS, LUCIO, ROVESCIO, SPHINX, SEGMENT_COLS, LEVEL_ROWS, RULES } from '@game/config';
 import { defineLevel, segment } from '@game/levels/level';
 import { TILE, isSolid } from '@game/tiles';
 import { World } from '@game/world';
@@ -2239,6 +2239,204 @@ console.log('\nLa Sfinge');
       }
 
       check(won, `lo scontro con la Sfinge si può vincere davvero (${ticks} tick, ${world.deaths} morti)`);
+    }
+  }
+}
+
+// ------------------------------------------------- lo scontro col Rovescio
+//
+// Il quarto boss ha la stessa parte fragile della Sfinge, e in più una sua: la
+// sua arma non è un pezzo di mappa che sta lì fermo (il soffitto del Padrone, i
+// ceri di Lucio) ma **una conseguenza della sua stessa mossa**. Ribalta la
+// stanza, e ribaltando la stanza fa cadere le zavorre — comprese quelle ferme
+// dove sta lui. Se un giorno una zavorra smettesse di obbedire al campo, o se
+// il suo scarto diventasse abbastanza lungo da uscire sempre dalla fascia, non
+// si romperebbe niente: il Rovescio diventerebbe immortale in silenzio, che è
+// esattamente il modo in cui la fase 2 di Lucio è stata invincibile per un po'.
+//
+// Quindi qui si verifica il contratto, e poi un giocatore finto combatte
+// davvero e deve vincere.
+console.log('\nLo scontro col Rovescio');
+{
+  const arenaAudio = new Audio();
+  const STONE = 'b'.repeat(SEGMENT_COLS);
+
+  // Il gatto sta dietro un pilastro, e non è pigrizia: il Rovescio cammina
+  // verso di lui e toccarlo uccide, quindi senza muro ogni prova finirebbe con
+  // la morte del gatto, la ricostruzione del livello e un boss nuovo di zecca —
+  // cioè misurando un'altra cosa.
+  const WALL = { 9: '    b', 10: '    b', 11: '    b', 12: '    b' };
+
+  const arena = (rows: Record<number, string>, spawn = { c: 2, r: 12 }) => {
+    const level = defineLevel({
+      id: 'rovescio-test',
+      name: 'TEST',
+      title: 'il Rovescio',
+      sky: 'reverse',
+      boss: true,
+      spawn,
+      segments: [segment({ rows })],
+    });
+    return new World(level, arenaAudio, { onTaunt: () => {}, onWin: () => {} });
+  };
+
+  const idle = {
+    isDown: () => false,
+    justPressed: () => false,
+    endTick: () => {},
+  } as unknown as Input;
+
+  /** Sala minima: lui a destra, una zavorra esattamente sotto di lui. */
+  const withBoss = (bossRow = '          z1        ') =>
+    arena({ 0: STONE, 1: STONE, ...WALL, 12: bossRow, 13: STONE, 14: STONE });
+
+  // Toccarlo uccide, da qualunque parte. È di ferro e pesa quanto la stanza.
+  {
+    const world = withBoss();
+    const boss = world.rovescio!;
+    world.player.x = boss.x + 4;
+    world.player.y = boss.y + 8;
+    world.update(idle);
+    check(world.state === 'dying', 'toccare il Rovescio uccide');
+  }
+
+  // E schiacciarlo pure: ha una piastra d'acciaio sulla schiena, e ce l'ha da
+  // tutte e due le parti perché per metà scontro la schiena è di sotto.
+  {
+    const world = withBoss();
+    const boss = world.rovescio!;
+    world.player.x = boss.centerX - world.player.w / 2;
+    world.player.y = boss.y - world.player.h + 4;
+    world.player.vy = 6;
+    world.update(idle);
+    check(world.state === 'dying', 'saltargli in testa uccide come toccarlo');
+  }
+
+  // Una zavorra ferma addosso a lui non gli fa niente: quello che schiaccia è
+  // il peso che cade. Senza questa regola morirebbe da solo al primo tick.
+  {
+    const world = withBoss();
+    const boss = world.rovescio!;
+    for (let tick = 0; tick < 40; tick++) world.update(idle);
+    check(boss.hits === 0, 'una zavorra appoggiata addosso a lui non è un colpo');
+  }
+
+  // Ribaltata la stanza, la stessa zavorra parte e lo prende. È l'unico modo
+  // di fargli male che esista, e non lo esegue il giocatore: lo esegue lui.
+  {
+    const world = withBoss();
+    const boss = world.rovescio!;
+    // Lontano, così non lo sveglia e non si muove da dove sta la zavorra.
+    world.player.x = 1 * TILE_SIZE;
+    world.flipRoom();
+    for (let tick = 0; tick < 12; tick++) world.update(idle);
+    check(boss.hits === 1, `ribaltare la stanza gli fa cadere addosso il suo peso (colpi: ${boss.hits})`);
+  }
+
+  // Il rimbombo prima del ribaltamento esiste ed è l'unico preavviso: un boss
+  // che capovolgesse la stanza senza annunciarlo non sarebbe difficile,
+  // sarebbe un dado (CLAUDE.md, punto 1).
+  {
+    const world = withBoss();
+    const boss = world.rovescio!;
+    let sawWind = false;
+    let flips = 0;
+    let wasFlipped = world.gravityFlipped;
+    for (let tick = 0; tick < 900; tick++) {
+      world.update(idle);
+      if (boss.isWinding) sawWind = true;
+      if (world.gravityFlipped !== wasFlipped) {
+        wasFlipped = world.gravityFlipped;
+        flips++;
+        check(sawWind, 'il ribaltamento arriva sempre dopo un rimbombo');
+        break;
+      }
+    }
+    check(flips > 0, 'prima o poi ribalta la stanza da solo');
+  }
+
+  // I colpi previsti aprono il portone. Se non lo aprissero, la sala sarebbe
+  // una stanza vinta da cui non si esce.
+  {
+    const world = arena({
+      0: STONE,
+      1: STONE,
+      ...WALL,
+      11: '            ||      ',
+      12: '       z1   ||     W',
+      13: STONE,
+      14: STONE,
+    });
+    const boss = world.rovescio!;
+    world.player.x = 1 * TILE_SIZE;
+    for (let hit = 0; hit < ROVESCIO.hitsPerPhase * 2; hit++) {
+      boss.takeHit(world);
+      // Il rinculo lo rende invulnerabile: va lasciato scorrere, o il secondo
+      // colpo non conta e il test misurerebbe un'altra cosa.
+      for (let tick = 0; tick < ROVESCIO.rageTicks + ROVESCIO.hurtTicks + 4; tick++) {
+        world.update(idle);
+      }
+    }
+    check(boss.isDead, `${ROVESCIO.hitsPerPhase * 2} colpi lo spengono`);
+    check(
+      world.map.get(12, 11) === TILE.EMPTY && world.map.get(13, 12) === TILE.EMPTY,
+      'quando cade, il portone si apre',
+    );
+  }
+
+  // E adesso la cosa che conta: un giocatore finto combatte davvero.
+  //
+  // I controlli qui sopra dicono che i pezzi funzionano, non che lo scontro si
+  // possa vincere — ed è esattamente la distinzione che in 2-11 aveva lasciato
+  // passare una fase 2 matematicamente invincibile con tutti i controlli verdi.
+  // La strategia è quella dichiarata nel commento del livello: entrare nella
+  // fascia fitta, piazzarsi su una colonna dispari (dove i pesi non passano) e
+  // **non fare più niente**. Lui arriva, non trova dove scansarsi, e si ribalta
+  // la stanza addosso da solo.
+  {
+    const level = LEVELS.find((l) => l.id === 'w4-11');
+    check(level !== undefined, 'il livello del Rovescio esiste');
+
+    if (level) {
+      const world = new World(level, arenaAudio, { onTaunt: () => {}, onWin: () => {} });
+      // Colonna 29: dispari (quindi fuori dalla traiettoria delle zavorre,
+      // che stanno sulle pari), senza spuntoni né sul pavimento né sul
+      // soffitto, e abbastanza dentro la fascia fitta perché nemmeno uno
+      // scarto intero porti il Rovescio fuori. È il posto che il livello
+      // descrive a parole, e un giocatore vero lo trova morendo.
+      const target = 29 * TILE_SIZE + TILE_SIZE / 2;
+      // Il gatto viene messo direttamente sulla colonna giusta, e non è una
+      // scorciatoia: che l'arena si attraversi lo dimostra già il risolutore,
+      // qui si vuole provare **lo scontro**. La strategia è quella scritta nel
+      // livello — piazzarsi sulla colonna dispari senza spuntoni, restarci, e
+      // non fare più niente. Lui arriva, non trova dove scansarsi, e si
+      // ribalta la stanza addosso da solo.
+      world.player.x = target - world.player.w / 2;
+      const fighter = {
+        isDown: (action: string) =>
+          (action === 'right' && world.player.centerX < target - 2) ||
+          (action === 'left' && world.player.centerX > target + 2),
+        justPressed: () => false,
+        endTick: () => {},
+      } as unknown as Input;
+
+      let ticks = 0;
+      while (ticks < 6000 && !(world.rovescio?.isDead ?? false)) {
+        world.update(fighter);
+        ticks++;
+      }
+
+      const boss = world.rovescio;
+      check(
+        boss?.isDead === true,
+        boss?.isDead
+          ? `un giocatore finto lo batte in ${ticks} tick stando fermo nel posto giusto`
+          : `IL ROVESCIO NON SI BATTE: ${boss?.hits ?? 0} colpi su ${ROVESCIO.hitsPerPhase * 2} in 6000 tick`,
+      );
+      check(
+        world.deaths === 0,
+        `sulla colonna giusta non si muore mai, nemmeno quando la stanza si ribalta (morti: ${world.deaths})`,
+      );
     }
   }
 }

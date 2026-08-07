@@ -501,16 +501,31 @@ export const SPHINX = {
 export const ROVESCIO = {
   width: 60,
   height: 50,
-  /** Colpi da incassare in ciascuna delle due fasi. */
-  hitsPerPhase: 2,
+  /**
+   * Colpi da incassare in ciascuna delle due fasi: tre, uno più degli altri
+   * tre boss. Non è gonfiare la barra — è che qui ogni colpo costa un ciclo
+   * intero speso a farsi raggiungere nel posto giusto, e due cicli sarebbero
+   * un boss che si vince prima di aver capito come si vince.
+   */
+  hitsPerPhase: 3,
   /** Passeggiata verso il gatto, sulla superficie che in questo momento è il basso. */
   stalkSpeed: 2.1,
   stalkSpeedFurious: 2.7,
   /** Tick di cammino tra un ribaltamento e l'altro: la valvola di sicurezza. */
   stalkTicks: 130,
   stalkTicksFurious: 95,
-  /** Quanto vicino alla colonna del gatto deve arrivare per fermarsi. */
-  alignRange: 20,
+  /**
+   * Quanto vicino alla colonna del gatto deve arrivare per fermarsi.
+   *
+   * È più largo di quello degli altri tre boss, e per una ragione che non è
+   * generosità: qui il gatto deve poter **stare fermo ad aspettarlo**, perché
+   * la strategia dello scontro è farsi raggiungere in mezzo alle zavorre. Se
+   * si fermasse a venti pixel, il suo corpo largo due celle sarebbe già
+   * addosso al gatto e toccarlo uccide: non ci sarebbe nessun posto in cui
+   * aspettare, e lo scontro diventerebbe una rincorsa — cioè un altro
+   * combattimento.
+   */
+  alignRange: 56,
   /**
    * Lo scarto prima di ribaltare.
    *
@@ -521,8 +536,14 @@ export const ROVESCIO = {
    */
   shuffleSpeed: 3.6,
   shuffleTicks: 34,
-  /** Quanto larga considera "sopra di me" una zavorra. */
-  dangerRange: 40,
+  /**
+   * Quanto larga considera "addosso a me" una zavorra.
+   *
+   * Deve stare **appena sopra** la somma delle due semilarghezze (30 + 13 =
+   * 43), o esisterebbero posizioni in cui il peso lo tocca e lui non se ne
+   * accorge: sarebbe un boss che a volte si suicida senza motivo, cioè un dado.
+   */
+  dangerRange: 48,
   /**
    * Il rimbombo prima del ribaltamento: l'unico preavviso, e da lì in poi il
    * punto è congelato. Vale la regola del ruggito del Padrone e della mira di

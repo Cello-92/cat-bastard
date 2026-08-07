@@ -1638,25 +1638,32 @@ export class World {
    * lui è più alto e arriva prima al soffitto — la zavorra lo raggiunge lì, e
    * quello è il colpo. Non serve nessuna geometria in più.
    */
-  rovescioDanger(boss: Rovescio): number {
-    let nearest = 0;
-    let best = Infinity;
+  rovescioEscape(boss: Rovescio): number {
+    const threatened = (centerX: number): boolean => {
+      for (const entity of this.entities) {
+        if (!(entity instanceof Ballast) || entity.expired) continue;
+        if (Math.abs(entity.x + entity.w / 2 - centerX) <= ROVESCIO.dangerRange) return true;
+      }
+      return false;
+    };
 
-    for (const entity of this.entities) {
-      if (!(entity instanceof Ballast) || entity.expired) continue;
-      const dx = entity.x + entity.w / 2 - boss.centerX;
-      if (Math.abs(dx) > ROVESCIO.dangerRange) continue;
-      if (Math.abs(dx) < best) {
-        best = Math.abs(dx);
-        nearest = dx;
+    if (!threatened(boss.centerX)) return 0;
+
+    // Cerca il posto libero più vicino, alternando i due lati e a passi di
+    // otto pixel: si sposta **il minimo indispensabile**, e non si sposta
+    // affatto se non gli serve. È quello che rende leggibile lo scarto — un
+    // boss che si muovesse comunque sembrerebbe indeciso invece che furbo.
+    const reach = ROVESCIO.shuffleSpeed * ROVESCIO.shuffleTicks;
+    for (let step = 8; step <= reach; step += 8) {
+      for (const dir of [-1, 1] as const) {
+        if (!threatened(boss.centerX + dir * step)) return dir * step;
       }
     }
 
-    if (best === Infinity) return 0;
-    // Si sposta dalla parte opposta. Con la zavorra esattamente sul muso
-    // sceglie indietro, che è quello che farebbe chiunque e soprattutto è
-    // quello che si vede meglio.
-    return nearest >= 0 ? -1 : 1;
+    // Nessun posto libero a portata: ribalta dove sta, e paga. È l'unico modo
+    // di vincere lo scontro, e succede solo dove le zavorre sono così fitte
+    // che uno scarto intero non basta a uscirne.
+    return 0;
   }
 
   /**

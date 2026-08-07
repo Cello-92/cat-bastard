@@ -6,7 +6,7 @@ Un **rage game** platform 2D nello stile di *Super Mario Bros.* / *Syobon Action
 sembra un platform classico e onesto, ma ogni elemento familiare è una trappola. Si gioca nel
 browser aprendo un link pubblico — niente installazione, niente account.
 
-Il gioco è strutturato **a livelli** su tre mondi, con un menu di avvio navigabile (gioca,
+Il gioco è strutturato **a livelli** su quattro mondi, con un menu di avvio navigabile (gioca,
 mondi e livelli con i record, la collezione dei gatti, classifica, account, opzioni) e la pausa
 su `ESC`. Il protagonista è un gatto — anzi, cinque, ma cambia solo il manto. Il tono è
 ironico e cattivo: il gioco ti prende in giro mentre muori. I testi in-game sono **in italiano**.
@@ -92,8 +92,9 @@ src/
               effects (particelle/juice),
               world.ts (orchestratore), game.ts (composition root)
     entities/ player, walker, shroom, falling-spike, diver,
-              sentry, drone, snowball, scarab, boss + rubble (solo 1-11),
-              gothic-boss (solo 2-11), sphinx (solo 3-11)
+              sentry, drone, snowball, scarab, spider, ballast, pendulum,
+              boss + rubble (solo 1-11), gothic-boss (solo 2-11),
+              sphinx (solo 3-11), rovescio (solo 4-11)
     levels/   level.ts (helper) + un file per livello + index.ts (registro)
     render/   background.ts (parallasse), tiles.ts (disegno dei tile)
   net/        supabase.ts (fetch e basta), account.ts (sessione e sincronia),
@@ -161,6 +162,7 @@ ingiocabile.
 | `!` | niente. Proprio niente | spuntoni invisibili. Dopo la prima morte restano visibili per tutto il tentativo |
 | `,` | un getto di vapore identico a `^` | non spinge. Ci si butta dentro contando su una spinta che non arriva |
 | `w` `q` | una corrente d'aria identica a `)` e `(` | non spinge. Due caratteri perché il *verso disegnato* è la bugia: `w` fa saltare corti, `q` fa saltare lunghi |
+| `n` | un campo rovescio identico a `u` | non capovolge niente. È la peggiore delle otto, perché nel mondo 4 si trova **in mezzo alla strada che stai già percorrendo**: la pietra sopra la testa continua, il luccichio continua, e a metà passo il soffitto smette di tenerti |
 
 **`w` non entra nell'album di CAVIA, e non è una dimenticanza.** Le imprese
 richieste da un gatto non si toccano più: chi aveva già chiuso l'album se lo
@@ -242,24 +244,94 @@ simula vento, risucchio e sabbia con lo stesso codice e lo stesso ordine di
 operazioni di `Player.update`. La corrente morta `w` non compare nel
 risolutore, e non deve: nel gioco non spinge, quindi lì non esiste proprio.
 
-### I tre boss: le arene di 1-11, 2-11 e 3-11
+### Il quarto mondo: il basso, non il pavimento e non l'aria
 
-Il gioco ha tre scontri e sono costruiti per **non somigliarsi**. Il Padrone è
+Il mondo 2 ha cambiato **come risponde il pavimento**, il mondo 3 ha cambiato
+**cosa fa l'aria**. Il mondo 4 (la torre + il Rovescio) cambia la cosa che
+c'era sotto tutte e due: **da che parte si cade**. È la modifica più radicale
+che la fisica del gioco abbia subito, ed è anche la più semplice da enunciare —
+dentro un campo rovescio la gravità punta in su, il gatto atterra sul soffitto,
+ci cammina e ci salta all'ingiù.
+
+| Tile | Cosa fa |
+|---|---|
+| `o` | vetro temprato: il pavimento onesto della torre, come `#`, `+` e `.`. È l'unica superficie del gioco attraverso cui si vede, e serve: qui sapere cosa c'è dall'altra parte di una lastra è informazione di gioco |
+| `b` | basalto: la pietra del Rovescio, solida e onesta |
+| `u` | campo rovescio: finché il gatto lo tocca, il basso è in su |
+| `_` | parete di basalto finta: il muro segreto del mondo 4 (vedi `isFakeWall`) |
+| `a` | ragno di vetro: cammina sulle superfici, soffitti compresi |
+| `z` | zavorra: un peso di piombo che obbedisce **al campo**, non a te |
+| `t` | pendolo: oscilla sempre uguale, nel verso del campo sotto il perno |
+
+Il patto regge per gli stessi tre motivi di sempre: il campo si vede prima di
+entrarci, fa sempre la stessa cosa, e **i comandi non cambiano di una virgola**
+— destra resta destra, il salto va sempre via dal pavimento, coyote time e jump
+buffer sono quelli di 1-1. Cambia solo dove si atterra.
+
+Cinque cose da sapere prima di toccare qualcosa qui:
+
+- **Il segno del peso è un parametro, non una proprietà dei corpi.**
+  `engine/physics.ts` esporta `Down` e lo accettano `applyGravity`,
+  `isGrounded`, `updateGrounded` e `groundTiles`, con default `1`. Chi non lo
+  passa continua a cadere in giù: tutte le entità che avevano già il loro peso
+  non sanno e non devono sapere niente di tutto questo.
+- **`World.gravityAt` è l'unico posto che decide**, e compone per **XOR**: un
+  campo rovescio inverte, la mossa del Rovescio (`gravityFlipped`, solo in
+  4-11) inverte, e due inversioni si annullano. Non è "l'ultimo vince", perché
+  una regola che dipende dall'ordine in cui si leggono le celle è un dado.
+- **Schiacciare è la stessa regola di sempre, misurata rispetto al proprio
+  peso** (`World.handleEntities`). A testa in giù si schiaccia arrivando da
+  sotto, e non è una concessione: è come il ragno sul soffitto smette di essere
+  una cosa che uccide e diventa una cosa che si toglie di mezzo.
+- **Il campo deve arrivare fino al solido su cui deve depositarti.** Il gatto è
+  alto 28 pixel su celle da 32: appoggiato occupa una riga sola. Se la colonna
+  di campo si ferma una cella prima del soffitto, il gatto sale, esce dal campo
+  proprio nell'istante in cui ci arriva, ricade, rientra — e resta lì a
+  rimbalzare per sempre. Geometria ineccepibile, risolutore contento, livello
+  rotto. C'è un controllo d'igiene apposta.
+- **La zavorra e il pendolo sono cartelli, ed è il loro mestiere.** Il campo
+  spento è indistinguibile da quello vero, quindi il mondo ha bisogno di un
+  modo *onesto* di dire la verità: il ferro obbedisce alla gravità vera e non a
+  quella che speri. Una zavorra appoggiata al soffitto dice "questo campo è
+  vero", una rimasta a terra sotto una colonna che luccica dice "è spento", un
+  pendolo che oscilla in su dice la stessa cosa dall'altra parte. Chi li guarda
+  prima di saltare non muore. Se un giorno smettessero di obbedire non
+  lancerebbero niente: renderebbero il mondo bugiardo in silenzio.
+
+Zavorra e pendolo campionano il campo su una **sagoma allargata**, per la
+stessa ragione dello scarabeo del mondo 3: il marcatore viene tolto dalla
+griglia al caricamento, quindi con la sagoma esatta nascerebbero dentro un buco
+di campo spento largo quanto loro — e direbbero la bugia che esistono apposta
+per non dire.
+
+Il risolutore (`tests/solver.ts`) simula il campo con lo stesso codice e lo
+stesso ordine di operazioni del gioco, e non gli costa **nessuno stato in più**:
+il campo è una funzione della posizione. Quello che è costato è il budget — il
+gatto dentro un campo è in aria per interi segmenti, e uno stato in aria si
+dirama sei volte a tick mentre uno a terra ne butta via quasi tutti.
+
+### I quattro boss: le arene di 1-11, 2-11, 3-11 e 4-11
+
+Il gioco ha quattro scontri e sono costruiti per **non somigliarsi**. Il Padrone è
 un problema orizzontale: cammina verso di te, e tu scegli sotto quale mattone
 farlo arrivare. Gothic Lucio è verticale: vive appeso alla volta e si tuffa, e
 tu scegli sopra quale cero farti trovare. La Sfinge è un problema di spazio:
 vive sotto il pavimento, e ogni volta che sbaglia colpo rompe un pezzo di sala
-— finché non le si fa sbagliare il colpo *sopra i pezzi rotti prima*.
+— finché non le si fa sbagliare il colpo *sopra i pezzi rotti prima*. Il
+Rovescio è un problema di **spazio negato**: l'arma è già carica e la spara lui,
+sempre, e l'unico modo di vincere è metterlo dove non ha più un posto in cui
+scansarsi.
 
-In tutti e tre il boss non si tocca mai e l'arma è un pezzo di mappa — la
-muratura, la fiamma, il pavimento — ma la mano che la usa cambia: il Padrone si
-*guida*, Lucio si *attira*, la Sfinge si *aspetta nel posto giusto*. E c'è una
-differenza in più che vale la pena tenere a mente per il quarto: nelle prime due
-arene l'arma sta nella mappa da prima che entri, nella terza **non esiste**
-finché non è lei a fabbricarla.
+In tutti e quattro il boss non si tocca mai e l'arma è un pezzo di mappa — la
+muratura, la fiamma, il pavimento, il piombo — ma la mano che la usa cambia: il
+Padrone si *guida*, Lucio si *attira*, la Sfinge si *aspetta nel posto giusto*,
+il Rovescio si *chiude in un angolo*. E la differenza che li ordina è di chi sia
+l'arma: nelle prime due arene sta nella mappa da prima che entri, nella terza
+non esiste finché non è lei a fabbricarla, nella quarta c'è da sempre ed è
+**sua** — è lui a farla partire, ogni volta, senza che nessuno glielo chieda.
 
-Vale per tutti e tre: niente checkpoint (un boss si impara, non si consuma), si
-rinasce dentro l'arena, e il portone `|` si apre quando il boss cade.
+Vale per tutti e quattro: niente checkpoint (un boss si impara, non si consuma),
+si rinasce dentro l'arena, e il portone `|` si apre quando il boss cade.
 
 #### Il Padrone: l'arena di 1-11
 
@@ -365,6 +437,56 @@ sempre: qui serve sapere insieme dov'è lei e **com'è il pavimento**, e quel
 posto è uno solo. L'entità chiede al mondo di uscire e il mondo le risponde
 chiamando `erupt()` o `sink()`.
 
+#### Il Rovescio: la sala di 4-11
+
+In fondo al vuoto sotto la torre c'è una sala con un pavimento, un soffitto e
+diciassette blocchi di piombo appoggiati per terra. Quei pesi sono l'unica cosa
+che possa fargli male, e **non li tira nessuno**: cadono da soli, tutti insieme,
+ogni volta che lui ribalta la stanza. Cioè ogni volta che fa l'unica cosa che sa
+fare.
+
+| Tile | Cosa sembra | Cosa fa |
+|---|---|---|
+| `1` | niente, sparisce al caricamento | marcatore: qui nasce il Rovescio, **sul pavimento**, come il Padrone e la Sfinge |
+| `z` | una zavorra come tutte le altre | è l'arma: cade quando lui ribalta, e chi si trova sotto è schiacciato — lui compreso |
+| `\|` | portone chiuso | lo stesso di sempre |
+
+**Il ciclo.** Cammina verso il gatto (più lento di lui, come tutti e quattro),
+si ferma quando gli arriva accanto — `alignRange` è largo 56 pixel apposta,
+perché il suo corpo è largo due celle e toccarlo uccide: senza quel margine non
+esisterebbe nessun posto in cui aspettarlo, e lo scontro diventerebbe una
+rincorsa. Poi **decide**: chiede al mondo (`World.rovescioEscape`) il posto
+libero più vicino, e se esiste ci si sposta — il minimo indispensabile, una
+volta sola per ciclo, tre metri e mezzo al massimo. Poi rimbomba (`windTicks`,
+e da lì il punto è congelato: vale la regola del ruggito e della mira) e
+ribalta.
+
+**Come si vince.** Non portandolo da nessuna parte: **togliendogli le uscite**.
+La sala è divisa in tre — a sinistra non c'è un peso, in mezzo stanno ogni due
+colonne, a destra sono radi — e in mezzo non esiste né un punto libero né uno
+scarto abbastanza lungo per uscirne. Siccome cammina verso il gatto, quel posto
+lo sceglie il gatto: e sceglierlo vuol dire mettersi in mezzo ai pesi, che è
+anche il posto in cui i pesi passano. Le colonne libere sono le dispari, larghe
+una cella — e **non sono le stesse nei due versi**, perché gli spuntoni del
+pavimento e quelli del soffitto stanno su colonne diverse. Appena la stanza si
+ribalta, il posto in cui stavi in piedi diventa un posto in cui si muore.
+
+**Due cose che il giocatore finto di `tests/smoke.ts` ha trovato, e che non
+avrebbero lanciato niente.** La prima: la zavorra spariva dopo aver colpito, e
+dopo due colpi il Rovescio aveva due buchi nella fascia fitta — buchi fatti da
+lui, esattamente dove gli servivano. Boss immortale, tutti i controlli sul
+contratto verdi. Adesso il peso prosegue e si riappoggia dall'altra parte, per
+la stessa ragione per cui i mattoni del Padrone si ricompongono e i ceri di
+Lucio si riaccendono. La seconda: una zavorra nasce qualche pixel sopra il suo
+appoggio (la cella è alta 32, lei ne occupa 26), e quei due tick di assestamento
+contavano come una caduta — si uccideva da solo al primo tick. "Sta cadendo"
+adesso vuol dire che si è mossa abbastanza da avere addosso l'energia di una
+tonnellata.
+
+Il combattimento sta in `world.ts` (`flipRoom`, `rovescioEscape`,
+`handleRovescioFight`) e non nell'entità, per la regola di sempre: serve sapere
+insieme dov'è lui e dove sono i pesi, e quel posto è uno solo.
+
 ### Il menu
 
 Il menu è un menu da console che vive nel DOM: frecce, Invio, Esc — e le stesse
@@ -402,6 +524,7 @@ sono un punteggio, non una valuta.
 |---|---|---|
 | `:` | parete d'acciaio | non è solida: ci si passa attraverso. Dopo, resta marcata |
 | `/` | parete d'arenaria | la stessa cosa, in pietra: è il muro finto del tempio |
+| `_` | parete di basalto | la stessa cosa, sotto la torre: metà delle stanze del mondo 4 si attraversano capovolte, e una parete che si nota si nota anche a testa in giù |
 | `*` | un gomitolo | l'unica cosa del gioco che non uccide: sblocca i gatti |
 
 `/` esiste perché una lamiera d'acciaio in mezzo ai conci del mondo 3 sarebbe
@@ -410,6 +533,14 @@ fatto della stessa roba di tutti gli altri muri della stanza. Le due si
 comportano identiche (`isFakeWall` in `tiles.ts`), cambia solo di che materiale
 sono — e i tile che si saldano fra loro stanno in `MASONRY`, come `METAL`.
 
+**I segreti del mondo 4 non stanno tutti dietro un muro.** Uno sta in fondo a
+una colonna che sembra un vicolo cieco (4-5), uno su una mensola sospesa nel
+vuoto che si prende staccandosi dal soffitto *prima* del punto giusto (4-8), e
+due dentro una cassa in fondo a un buco (4-7 e 4-10) — dove in quel mondo un
+buco ha sempre voluto dire il vuoto. È la stessa idea del muro finto, spostata:
+il segreto non è un posto che non si vede, è un posto in cui non verrebbe in
+mente di andare.
+
 **Non tutti i livelli ne hanno uno, ed è il punto.** Da 2-1 a 2-6 ce n'era uno
 ovunque, e cercarlo aveva smesso di essere cercare: era diventato raccogliere. 2-7,
 2-9, 3-1, 3-4, 3-6, 3-7 e 3-10 non ne hanno nessuno, quindi da lì in poi una parete che sembra
@@ -417,7 +548,7 @@ finta a volte è solo una parete, e l'unico modo di saperlo è perderci tempo. C
 livello non è tenuto a metterci un gomitolo: `SECRET_COUNT` si conta dalle mappe.
 
 **Ma chi ce lo mette deve mettere anche il gatto.** Sulla strada dei gomitoli
-c'è un manto per ogni quota, senza buchi — sedici gomitoli, diciassette manti
+c'è un manto per ogni quota, senza buchi — ventidue gomitoli, ventitré manti
 contando quello che c'è da sempre — e `tests/smoke.ts` rifiuta un buco nella
 scala. Non è pignoleria: un gomitolo sta in una stanza murata che non serve a
 finire il livello, quindi l'unica ragione per andarci è quello che dà. Se il
@@ -461,6 +592,7 @@ diventerebbe la strada giusta per giocare.
 | PADRONE | ammazzare il Padrone con un masso che ha staccato lui | `World.handleBossFight` (`Rubble.slam`) |
 | ALISEO | restare in aria `RULES.aloftTicks` (quattro secondi) senza toccare niente | `World.handleAloft` |
 | SFINGE | seppellire la Sfinge nella sabbia che ha fatto lei | `World.sphinxSurfaces` |
+| CONTRAPPESO | spegnere il Rovescio con le zavorre che ha fatto cadere lui | `World.handleRovescioFight` |
 
 Le regole che le tengono dentro al patto sono tre, e non sono negoziabili:
 
@@ -565,7 +697,7 @@ npm test        # struttura, risolutore, smoke test, regressioni
 npm run build   # typecheck + build
 ```
 
-`tests/` contiene undici cose diverse:
+`tests/` contiene dodici cose diverse:
 
 - **lo smoke test**, che esegue il gioco headless contro un `NullRenderer` capace di
   intercettare coordinate NaN e `push`/`pop` sbilanciati. Non dice se il gioco è bello,
@@ -588,8 +720,15 @@ npm run build   # typecheck + build
   nuotarla: attraversava quelle pozze affondando, con pochi tick di margine,
   cioè per una via che nessuno troverebbe giocando. L'hanno trovato in 3-6 e in
   3-7 giocandoci, che è l'unico posto in cui certe cose si trovano;
-- **le correnti del mondo 3**, che sono la modifica alla fisica più invasiva del
-  gioco e quindi hanno il contratto più stretto: che il vento sposti chi è in
+- **il campo rovescio del mondo 4**, che è la modifica alla fisica più radicale
+  del gioco e quindi ha il contratto più stretto di tutti: che dentro un campo
+  si cada in su, che quello spento sia identico e inerte, che i comandi restino
+  esattamente gli stessi (destra è destra anche a testa in giù, e il salto va
+  sempre via dal pavimento), che due inversioni si annullino, che si possa
+  morire anche verso l'alto, che il checkpoint si ricordi come eri messo, che
+  la zavorra dica la verità e che il ragno si schiacci da capovolti;
+- **le correnti del mondo 3**, che sono la modifica alla fisica più invasiva
+  prima di quella e hanno lo stesso genere di contratto: che il vento sposti chi è in
   aria e non chi tocca terra, che non tocchi mai la velocità del gatto, che la
   corrente morta sia identica e non sposti un pixel, che il risucchio schiacci
   il salto, che nella sabbia si affondi molto più piano che nel vuoto e — la
@@ -628,6 +767,14 @@ npm run build   # typecheck + build
   ricompatta troppo in fretta, non lanciano niente — rendono la Sfinge
   immortale in silenzio. Anche qui, alla fine, un giocatore finto combatte e
   deve vincere;
+- **lo scontro col Rovescio**, che ha la parte fragile della Sfinge più una
+  sua: l'arma non sta nella mappa da prima *e* non la fabbrica il giocatore —
+  la fa partire lui, ogni volta che ribalta. Se una zavorra smettesse di
+  obbedire al campo, o se il suo scarto diventasse abbastanza lungo da uscire
+  sempre dalla fascia fitta, non si romperebbe niente: diventerebbe immortale
+  in silenzio. Anche qui un giocatore finto si piazza sulla colonna giusta,
+  non fa nient'altro, e deve vincere — ed è così che sono venuti fuori i due
+  bug scritti sopra;
 - **lo scontro con Lucio**, che è stato il primo posto in cui un test *gioca* un boss.
   I controlli sul contratto dicono che i pezzi funzionano, non che lo scontro si
   possa vincere: la prima versione della fase 2 era invincibile con tutti i
@@ -783,8 +930,19 @@ e allegare uno zip offline: non servono a ospitare la pagina.
    fondo a una pozza. In fondo la Sfinge, che è il problema di *spazio*
    promesso: il Padrone si guida, Lucio si attira, lei si combatte dentro
    una stanza che sta rompendo.
-10. **Il quarto mondo, o quello che verrà** — niente di deciso. L'unica cosa
-   che il progetto sa già è quale domanda farsi: il mondo 2 ha cambiato il
-   pavimento, il mondo 3 ha cambiato l'aria, e un mondo nuovo che non cambi
-   *una regola sola e leggibile* sarebbe una raccolta di livelli invece che
-   un mondo.
+10. ~~Il quarto mondo: la torre e il Rovescio~~ ✅ — undici livelli, e la
+   regola nuova era l'ultima rimasta: dopo il pavimento del mondo 2 e l'aria
+   del mondo 3, qui cambia **da che parte si cade**. Il campo rovescio, il suo
+   gemello spento (la trappola peggiore del gioco, perché sta in mezzo alla
+   strada che stai già percorrendo), tre bestie nuove — il ragno che cammina
+   sui soffitti, la zavorra che obbedisce al campo e non a te, il pendolo che
+   pende nel verso sbagliato — e sei segreti che stanno in posti in cui non
+   verrebbe in mente di andare. In fondo il Rovescio, che è l'unico dei quattro
+   boss a cui non si tira niente: si spara addosso l'arena da solo, e si vince
+   togliendogli i posti in cui scansarsi.
+11. **Il quinto mondo, o quello che verrà** — niente di deciso, e questa volta
+   nemmeno la domanda. Pavimento, aria e gravità sono spesi: quello che resta
+   non è una quarta dimensione fisica ma un'altra categoria — il tempo, la
+   vista, o il fatto che il livello sappia cosa hai fatto l'ultima volta. La
+   regola resta quella: se non si riassume in una riga, è una raccolta di
+   livelli e non un mondo.

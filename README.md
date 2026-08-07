@@ -34,7 +34,8 @@ esattamente cosa ti ha fregato.
 
 ## Cosa ti aspetta
 
-Due mondi, nove livelli, cinque gatti e un numero imbarazzante di modi per morire.
+Quattro mondi, quarantaquattro livelli, trentatré gatti e un numero imbarazzante
+di modi per morire.
 
 **Mondo 1 — la collina.** Sembra un platform normale. Non lo è.
 
@@ -63,13 +64,37 @@ Due mondi, nove livelli, cinque gatti e un numero imbarazzante di modi per morir
 | 🛸 **Il drone** | passa e ripassa sempre uguale. È l'unico che si schiaccia |
 | ⚪ **La palla di ghiaccio** | rotola verso di te, ed è più veloce di te |
 
+**Mondo 3 — il deserto e il tempio.** Qui non cambia il pavimento: cambia l'aria.
+
+| | |
+|---|---|
+| 🌬️ **La corrente** | ti sposta mentre sei a mezz'aria, cioè quando non puoi più fare niente |
+| 🌪️ **Il risucchio** | il salto pieno arriva a metà altezza. Sempre alla stessa metà |
+| 🏜️ **Le sabbie mobili** | non uccidono: ti tengono. Si nuota, se lo capisci in fretta |
+| 🪨 **La piastra** | l'unica trappola che succede da un'altra parte |
+| 🪲 **Lo scarabeo** | non ti cerca: va dove va il vento. Guardarlo dice dove finirà il tuo salto |
+| 🦁 **La Sfinge** | vive sotto il pavimento e ogni colpo sbagliato ne rompe un pezzo. Si vince aspettandola sulle sue stesse macerie |
+
+**Mondo 4 — la torre e il Rovescio.** Non cambia il pavimento e non cambia l'aria:
+cambia **da che parte è il basso**.
+
+| | |
+|---|---|
+| 🔮 **Il campo rovescio** | dentro ci si cade **verso il soffitto**, ci si cammina e si salta all'ingiù |
+| 💤 **Il campo spento** | identico in tutto. Non capovolge niente, e te ne accorgi in aria |
+| 🕷️ **Il ragno di vetro** | cammina sui soffitti e non sa niente della gravità. Si schiaccia solo se sei capovolto come lui |
+| ⚓ **La zavorra** | obbedisce al campo, non a te. È l'unica cosa quaggiù che non mente mai |
+| 🕰️ **Il pendolo** | non ti sta cercando: passa di lì, sempre uguale, per sempre |
+| ⚖️ **Il Rovescio** | non gli si tira niente addosso: ribalta la stanza da solo, e con la stanza i suoi pesi |
+
 Chi arriva in fondo ha imparato dove si muore. Non è la stessa cosa di essere bravo.
 
 ## I gomitoli
 
-Ogni livello del secondo mondo nasconde **un gomitolo** dietro qualcosa che sembra
-un muro. Trovarli sblocca altri gatti: nero, soriano, siamese, e uno che si ottiene
-solo dopo aver finito tutto.
+Ventidue livelli nascondono **un gomitolo** dietro qualcosa che sembra un muro
+— o in fondo a un buco che finora aveva sempre voluto dire il vuoto. Trovarli
+sblocca altri gatti, e altri dieci si prendono facendo cose che nessuno ti
+chiede di fare.
 
 Non danno nessun vantaggio — nemmeno mezzo pixel di salto in più. Cambiano solo la
 faccia di chi muore, ed è l'unica promessa che questo gioco mantiene per intero.

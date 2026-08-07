@@ -304,6 +304,18 @@ export const CATS: readonly CatSkin[] = [
     pattern: 'plain',
   },
 
+  {
+    id: 'ottone',
+    name: 'OTTONE',
+    blurb: 'Il colore dei congegni della torre: perni, catene, contrappesi. Roba che si muove sempre uguale, come te',
+    yarn: 18,
+    fur: MATERIAL.brass,
+    marks: MATERIAL.iron,
+    eye: MATERIAL.amber,
+    nose: MATERIAL.skin,
+    pattern: 'tabby',
+  },
+
   // ------------------------------------------------------------- le imprese
   // Da qui in giù i gomitoli non c'entrano niente: sono i gatti che si prendono
   // facendo qualcosa che nessuno ha chiesto. Restano estetici come gli altri —

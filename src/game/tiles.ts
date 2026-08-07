@@ -179,6 +179,46 @@ export const TILE = {
    */
   PLATE: 'p',
 
+  // --- Mondo 4: la torre e il Rovescio. Il mondo 2 ha cambiato il pavimento,
+  //     il mondo 3 ha cambiato l'aria, e qui cambia **il basso**. È la cosa più
+  //     radicale che il gioco faccia alla fisica e insieme la più semplice da
+  //     dire: dentro un campo rovescio la gravità punta in su, e il gatto
+  //     cammina sul soffitto. I comandi non cambiano di una virgola — destra
+  //     resta destra, il salto resta il salto — cambia solo da che parte si
+  //     cade, e si vede prima di entrarci.
+  /**
+   * Vetro temprato: il pavimento onesto della torre.
+   *
+   * Si comporta esattamente come `#`, `+` e `.`: solido e basta. Cambia solo
+   * che è trasparente, e questo è deliberato — in un mondo dove si cammina
+   * anche a testa in giù, un pavimento attraverso cui si vede quello che c'è
+   * dall'altra parte è l'unico modo di far capire dove si finirà.
+   */
+  GLASS: 'o',
+  /** Basalto: la pietra nera del Rovescio. Solida e onesta come il vetro. */
+  BASALT: 'b',
+  /**
+   * Campo rovescio: finché lo tocchi, il basso è in su.
+   *
+   * Non è una spinta e non è un getto: è la gravità che cambia segno. Dentro,
+   * il gatto cade verso il soffitto, ci atterra, ci cammina e ci salta —
+   * all'ingiù. Fuori torna tutto come prima, e passare da dentro a fuori è
+   * l'unica cosa che il quarto mondo chiede di imparare.
+   *
+   * Regola di composizione: il campo **inverte**, non impone. Se la stanza è
+   * già capovolta (l'arena di 4-11), un campo rovescio la rimette diritta.
+   */
+  REVERSE: 'u',
+  /**
+   * Lo stesso campo, spento.
+   *
+   * Stesso luccichio, stesso ronzio, stessa polvere che sale: non inverte
+   * niente. È il getto spento del mondo 2 e la corrente morta del mondo 3
+   * portati alla loro conclusione — qui non ti manca una spinta, ti manca il
+   * pavimento su cui contavi di atterrare, che era il soffitto.
+   */
+  DEAD_REVERSE: 'n',
+
   // --- Segreti: non uccidono, si nascondono.
   /** Parete d'acciaio attraversabile: dietro c'è sempre qualcosa. */
   FAKE_WALL: ':',
@@ -190,6 +230,15 @@ export const TILE = {
    * fatto della stessa roba di tutti gli altri muri della stanza.
    */
   FAKE_STONE: '/',
+  /**
+   * E la stessa cosa in basalto: la parete finta del Rovescio.
+   *
+   * Vale la ragione di sempre — un muro finto funziona solo se è fatto della
+   * stessa roba di tutti gli altri muri della stanza. Qui però c'è un motivo in
+   * più: metà delle stanze del quarto mondo si attraversano a testa in giù, e
+   * una parete che si nota è una parete che si nota anche capovolta.
+   */
+  FAKE_BASALT: '_',
   /** Gomitolo: uno per livello, ben nascosto. Sblocca i gatti. */
   YARN: '*',
 
@@ -266,6 +315,47 @@ export const TILE = {
    * torna sempre — quello che romperà, e quello in cui resterà conficcata.
    */
   SPHINX: '0',
+  /**
+   * Il ragno di vetro: cammina sulle superfici, tutte quante.
+   *
+   * È il nemico del quarto mondo perché è l'unico che non si accorge di come
+   * sia messa la gravità: sta attaccato con le zampe e basta. Nasce sulla
+   * superficie che ha vicino — pavimento o soffitto — e la percorre avanti e
+   * indietro, girandosi ai muri e sui bordi. Si schiaccia, ma per schiacciarlo
+   * bisogna arrivarci **dalla sua parte**, e sul soffitto quello vuol dire
+   * essere capovolti.
+   */
+  SPIDER: 'a',
+  /**
+   * La zavorra: un peso di ferro che obbedisce al campo, non a te.
+   *
+   * È il campo rovescio reso visibile, ed è il suo mestiere — come lo
+   * scarabeo era il vento. Cade nel verso in cui il campo la manda e si ferma
+   * dove arriva, quindi una zavorra appoggiata al soffitto dice "questo campo è
+   * vero" e una zavorra rimasta a terra sotto un campo che luccica dice
+   * "questo campo è spento". Chi le guarda prima di saltare non muore.
+   * Toccarla uccide, schiacciarla no: pesa una tonnellata.
+   */
+  BALLAST: 'z',
+  /**
+   * Il pendolo: l'unico congegno del gioco che si muove da solo.
+   *
+   * Sta appeso al perno in cui è disegnato e oscilla sempre uguale, con lo
+   * stesso periodo e la stessa ampiezza, ripartendo dallo stesso punto a ogni
+   * rinascita: si impara a memoria come tutto il resto. Il verso in cui pende
+   * è quello del campo sotto il perno — dentro un campo rovescio oscilla
+   * **verso l'alto**, ed è la cosa che convince il giocatore che qui il basso
+   * è davvero un'altra cosa.
+   */
+  PENDULUM: 't',
+  /**
+   * Il Rovescio: il boss di 4-11.
+   *
+   * Il marcatore va messo **sul pavimento**, come quello del Padrone e della
+   * Sfinge: lui ci cammina sopra. Quello che fa non è muoversi — è ribaltare
+   * la stanza, e con la stanza tutto quello che c'è dentro.
+   */
+  ROVESCIO: '1',
 } as const;
 
 export type TileChar = (typeof TILE)[keyof typeof TILE];
@@ -293,6 +383,8 @@ const SOLID = new Set<string>([
   TILE.SAND,
   TILE.SANDSTONE,
   TILE.PLATE,
+  TILE.GLASS,
+  TILE.BASALT,
   TILE.BOSS_BRICK,
   TILE.BOSS_GATE,
 ]);
@@ -316,9 +408,13 @@ const SPAWNERS = new Set<string>([
   TILE.DRONE,
   TILE.SNOWBALL,
   TILE.SCARAB,
+  TILE.SPIDER,
+  TILE.BALLAST,
+  TILE.PENDULUM,
   TILE.BOSS,
   TILE.GOTHIC_BOSS,
   TILE.SPHINX,
+  TILE.ROVESCIO,
 ]);
 
 /**
@@ -356,6 +452,12 @@ const METAL = new Set<string>([
  */
 const MASONRY = new Set<string>([TILE.SANDSTONE, TILE.FAKE_STONE, TILE.PLATE]);
 
+/**
+ * Basalto del Rovescio. Ci sta dentro la parete finta, per la stessa ragione
+ * per cui ci sta nella lamiera e nella muratura: deve saldarsi alle vere.
+ */
+const VOLCANIC = new Set<string>([TILE.BASALT, TILE.FAKE_BASALT]);
+
 export const isSolid = (tile: string): boolean => SOLID.has(tile);
 export const isDeadly = (tile: string): boolean => DEADLY.has(tile);
 export const isSpawner = (tile: string): boolean => SPAWNERS.has(tile);
@@ -363,9 +465,10 @@ export const isEarth = (tile: string): boolean => EARTH.has(tile);
 export const isIcy = (tile: string): boolean => ICY.has(tile);
 export const isMetal = (tile: string): boolean => METAL.has(tile);
 export const isMasonry = (tile: string): boolean => MASONRY.has(tile);
-/** Una parete che non è una parete: acciaio finto o arenaria finta. */
+export const isVolcanic = (tile: string): boolean => VOLCANIC.has(tile);
+/** Una parete che non è una parete: acciaio, arenaria o basalto finti. */
 export const isFakeWall = (tile: string): boolean =>
-  tile === TILE.FAKE_WALL || tile === TILE.FAKE_STONE;
+  tile === TILE.FAKE_WALL || tile === TILE.FAKE_STONE || tile === TILE.FAKE_BASALT;
 
 /**
  * Due celle si "saldano" (niente bordo, niente ombra tra loro)?
@@ -380,7 +483,9 @@ export const joins = (tile: string, other: string): boolean => {
   if (isIcy(tile)) return isIcy(other);
   if (isMetal(tile)) return isMetal(other);
   if (isMasonry(tile)) return isMasonry(other);
+  if (isVolcanic(tile)) return isVolcanic(other);
   if (tile === TILE.SAND) return other === TILE.SAND;
+  if (tile === TILE.GLASS) return other === TILE.GLASS;
   return isSolid(other);
 };
 
@@ -399,3 +504,13 @@ export const beltDirection = (tile: string): number =>
  */
 export const windDirection = (tile: string): number =>
   tile === TILE.WIND_RIGHT ? 1 : tile === TILE.WIND_LEFT ? -1 : 0;
+
+/**
+ * Questa cella capovolge la gravità?
+ *
+ * Il campo spento non compare qui, e non è una svista: è tutta la trappola.
+ * Si disegna identico, ronza identico, e vale zero — esattamente come la
+ * corrente morta non compare in `windDirection` e il getto spento non compare
+ * in `Player.sampleSurface`.
+ */
+export const isReverseField = (tile: string): boolean => tile === TILE.REVERSE;

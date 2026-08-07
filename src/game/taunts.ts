@@ -55,6 +55,18 @@ export const DEATH_CAUSE = {
   quicksand: 'quicksand',
   scarab: 'scarab',
   plate: 'plate',
+  // --- il Rovescio (4-11)
+  rovescio: 'rovescio',
+  rovescioCrush: 'rovescioCrush',
+  rovescioStomp: 'rovescioStomp',
+  // --- mondo 4
+  /** Caduti **in su**: sopra il bordo del mondo non c'è soffitto. */
+  sky: 'sky',
+  /** Il campo che doveva capovolgerti e non ha capovolto niente. */
+  deadField: 'deadField',
+  spider: 'spider',
+  ballast: 'ballast',
+  pendulum: 'pendulum',
   generic: 'generic',
 } as const;
 
@@ -237,6 +249,46 @@ const BY_CAUSE: Record<Exclude<DeathCause, 'generic'>, readonly string[]> = {
     'hai pestato una lastra e il soffitto se l\'è ricordato',
     'quella piastra non faceva niente lì. faceva tutto più avanti',
     'clack. e trenta metri dopo, tutto il resto',
+  ],
+  sky: [
+    'sei caduto in su. non è un modo di dire',
+    'il cielo non ha fondo, e nemmeno un soffitto',
+    'giù era di là. adesso lo sai',
+  ],
+  deadField: [
+    'quel campo era spento. luccicava, ma era spento',
+    'aspettavi di atterrare sul soffitto. il soffitto non ti aspettava',
+    'ti sei fidato di un ronzio',
+  ],
+  spider: [
+    'camminava sul soffitto da prima che tu guardassi in alto',
+    'per schiacciare un ragno bisogna arrivarci dalla sua parte',
+    'sei zampe attaccate al vetro. tu ne hai quattro e nessuna colla',
+  ],
+  ballast: [
+    'una tonnellata di ferro non si schiaccia. si evita',
+    'la zavorra era appoggiata lì perché il campo la teneva lì',
+    'guarda dove si appoggiano loro e saprai da che parte cadi tu',
+  ],
+  pendulum: [
+    'oscillava sempre uguale. sempre. proprio sempre',
+    'era un pendolo: non ti stava cercando, passava di lì',
+    'mezzo secondo prima o mezzo secondo dopo, e niente'
+  ],
+  rovescio: [
+    'gli sei andato addosso. pesa quanto la stanza',
+    'toccarlo non era previsto in nessuna delle due direzioni',
+    'è di ferro. tutto di ferro',
+  ],
+  rovescioCrush: [
+    'quella zavorra è caduta perché ha ribaltato lui. su di te',
+    'stavi sotto un peso. poi sotto è diventato sopra',
+    'la sua arma funziona in tutte e due le direzioni, sì',
+  ],
+  rovescioStomp: [
+    'saltargli in testa. il quarto boss di fila. rifletti',
+    'ha una piastra d\'acciaio sulla schiena, e la schiena era in alto',
+    'a testa in giù la sua testa è sotto. quella però era ancora la schiena',
   ],
 };
 

@@ -5,7 +5,18 @@ import { groundTiles } from '@engine/physics';
 import type { Renderer } from '@engine/render/renderer';
 import { TileMap } from '@engine/tilemap';
 import { overlaps } from '@engine/types';
-import { BOSS, LUCIO, SPHINX, FEEL, PHYSICS, RULES, TILE_SIZE, VIEW_HEIGHT, VIEW_WIDTH } from './config';
+import {
+  BOSS,
+  LUCIO,
+  ROVESCIO,
+  SPHINX,
+  FEEL,
+  PHYSICS,
+  RULES,
+  TILE_SIZE,
+  VIEW_HEIGHT,
+  VIEW_WIDTH,
+} from './config';
 import { Effects } from './effects';
 import { Entity } from './entities/entity';
 import { Boss } from './entities/boss';
@@ -27,7 +38,22 @@ import { drawBackground } from './render/background';
 import { drawTile, type OpenSides } from './render/tiles';
 import { MATERIAL, PALETTE, SKIES, alpha } from './theme';
 import { DEATH_CAUSE, tauntFor, type DeathCause } from './taunts';
-import { TILE, beltDirection, isDeadly, isFakeWall, isSolid, isSpawner, joins } from './tiles';
+import {
+  TILE,
+  beltDirection,
+  isDeadly,
+  isFakeWall,
+  isReverseField,
+  isSolid,
+  isSpawner,
+  joins,
+} from './tiles';
+import type { Box } from '@engine/types';
+import type { Down } from '@engine/physics';
+import { Ballast } from './entities/ballast';
+import { Pendulum } from './entities/pendulum';
+import { Rovescio } from './entities/rovescio';
+import { Spider } from './entities/spider';
 
 /**
  * Il mondo di gioco: mappa, entità, regole, camera.
@@ -168,6 +194,20 @@ export class World {
   }
 
   private entities: Entity[] = [];
+
+  /**
+   * Le entità vive, in sola lettura.
+   *
+   * Esiste per la stessa ragione per cui `boss`, `lucio`, `sphinx` e
+   * `rovescio` sono pubblici: certe cose sono troppo importanti perché il
+   * controllo si fermi a "non esplode". Qui la cosa importante è la zavorra —
+   * è il campo rovescio reso visibile, cioè lo strumento con cui il quarto
+   * mondo si spiega da solo, e se smettesse di obbedire al campo non
+   * lancerebbe niente: renderebbe il mondo bugiardo in silenzio.
+   */
+  get creatures(): readonly Entity[] {
+    return this.entities;
+  }
   private trapBricks: TrapBrick[] = [];
   /** Le piastre a pressione del terzo mondo, raccolte al caricamento. */
   private plates: Plate[] = [];
@@ -198,7 +238,15 @@ export class World {
    * muori senza capire, dalla seconda è colpa tua.
    */
   private discovered = new Set<string>();
-  private checkpoint: { c: number; r: number } | null = null;
+  /**
+   * Il checkpoint si ricorda anche **da che parte era il basso**.
+   *
+   * Nel quarto mondo una lanterna può stare sul soffitto di una stanza
+   * capovolta, e rinascere lì con la gravità azzerata vorrebbe dire cadere
+   * nel vuoto ogni volta che si muore — cioè un checkpoint che uccide, che è
+   * già una trappola del gioco (`N`) e non deve diventare un bug.
+   */
+  private checkpoint: { c: number; r: number; gravity: Down } | null = null;
   private deathTimer = 0;
   /**
    * Tick in cui il gatto ha toccato l'ultimo getto spento.
@@ -219,6 +267,26 @@ export class World {
    */
   private lastDeadWind = -1000;
   private lastSand = -1000;
+  /**
+   * Tick dell'ultimo campo rovescio **spento** attraversato.
+   *
+   * Stessa ragione delle tre righe qui sopra, e nel quarto mondo è la più
+   * importante di tutte: chi entra in un campo convinto di atterrare sul
+   * soffitto e invece continua a cadere non è "caduto nel vuoto", è caduto per
+   * quella bugia lì, e il gioco glielo deve dire (CLAUDE.md, punto 7).
+   */
+  private lastDeadField = -1000;
+
+  /**
+   * La stanza intera è capovolta?
+   *
+   * Vale solo nell'arena di 4-11: è la mossa del Rovescio, e non esiste
+   * nessun tile che la produca. Si compone col campo rovescio per XOR — dentro
+   * una stanza capovolta un campo rovescio rimette diritti — perché "inverte"
+   * è l'unica regola che si possa comporre senza dover spiegare l'ordine in
+   * cui si applicano le cose.
+   */
+  gravityFlipped = false;
   /**
    * Tick consecutivi senza toccare terra (vedi `FEAT.aloft`).
    *
@@ -310,6 +378,15 @@ export class World {
    * persa — sarebbe una partita che non si può giocare.
    */
   private ruinedFloor = new Map<string, { tile: string; ticks: number }>();
+  /**
+   * Il Rovescio, se questo livello è la sala capovolta (4-11).
+   *
+   * Pubblico come gli altri tre, e per la ragione di sempre: il suo colpo non
+   * è un incontro fra due entità ma una zavorra che gli finisce addosso
+   * *perché è stato lui a ribaltare la stanza*, e chi sa insieme dove sta lui
+   * e dove stanno le zavorre è uno solo.
+   */
+  rovescio: Rovescio | null = null;
   /** Le celle dei ceri, nell'ordine in cui stanno nella mappa. */
   private candles: { c: number; r: number }[] = [];
   /** Ceri spenti che si stanno riaccendendo: chiave -> tick rimasti. */
@@ -412,6 +489,10 @@ export class World {
     this.candleRelight.clear();
     this.sphinx = null;
     this.ruinedFloor.clear();
+    this.rovescio = null;
+    // La stanza torna diritta: la mossa del Rovescio muore con lui e col
+    // tentativo. Il checkpoint invece si ricorda la sua, ed è un'altra cosa.
+    this.gravityFlipped = false;
 
     // Il gomitolo già preso non torna: la mappa è appena stata ricostruita
     // dalle righe del livello, e lì lui c'è ancora.
@@ -446,12 +527,40 @@ export class World {
 
     const spawn = this.checkpoint ?? this.level.spawn;
     this.player.reset(spawn.c * TILE_SIZE + 5, spawn.r * TILE_SIZE);
+    // Si rinasce con lo stesso peso che si aveva quando si è preso il
+    // checkpoint: su un soffitto ci si rinasce attaccati.
+    this.player.gravity = this.checkpoint?.gravity ?? 1;
     this.camera.snapTo(this.player.centerX, this.map.widthPx);
     this.lastDeadVent = -1000;
     this.lastDeadWind = -1000;
     this.lastSand = -1000;
+    this.lastDeadField = -1000;
     this.aloftTicks = 0;
     this.lastVanish = null;
+  }
+
+  /**
+   * Da che parte è il basso, per un corpo che sta lì.
+   *
+   * È **la** regola del quarto mondo, e sta qui per la ragione di sempre: solo
+   * il mondo sa insieme com'è fatta la mappa e in che stato è la stanza. Un
+   * campo rovescio inverte, la mossa del Rovescio inverte, e due inversioni si
+   * annullano: è uno XOR, e non un "l'ultimo vince", perché una regola che
+   * dipende dall'ordine in cui si leggono le celle non è una regola, è un
+   * dado.
+   *
+   * Il campo **spento** (`n`) non compare qui, e non è una dimenticanza: è
+   * tutta la trappola. Vedi `isReverseField` in `tiles.ts`.
+   */
+  gravityAt(box: Box): Down {
+    let field = false;
+    for (const { tile } of this.map.touching(box)) {
+      if (isReverseField(tile)) {
+        field = true;
+        break;
+      }
+    }
+    return field !== this.gravityFlipped ? -1 : 1;
   }
 
   /**
@@ -474,6 +583,26 @@ export class World {
         return new Snowball(c * TILE_SIZE + 1, r * TILE_SIZE + 2);
       case TILE.SCARAB:
         return new Scarab(c * TILE_SIZE + 5, r * TILE_SIZE + 8);
+      case TILE.SPIDER:
+        // Il ragno vuole la **cella**, non i pixel: deve guardarsi intorno per
+        // capire a quale superficie è attaccato, e la cella è l'unica cosa che
+        // glielo dice senza doverla ricavare all'indietro dai pixel.
+        return new Spider(c, r, this.map);
+      case TILE.BALLAST:
+        return new Ballast(c * TILE_SIZE + 3, r * TILE_SIZE + 4);
+      case TILE.PENDULUM:
+        // Il perno è la cella in cui è disegnato: il pendolo ci sta appeso, e
+        // la sagoma nasce già in fondo alla corda per non fare uno scatto al
+        // primo tick.
+        return new Pendulum(c * TILE_SIZE + TILE_SIZE / 2, r * TILE_SIZE + TILE_SIZE / 2);
+      case TILE.ROVESCIO: {
+        // Come il Padrone: il marcatore sta nella cella sopra il pavimento.
+        this.rovescio = new Rovescio(
+          c * TILE_SIZE + (TILE_SIZE - ROVESCIO.width) / 2,
+          (r + 1) * TILE_SIZE - ROVESCIO.height,
+        );
+        return this.rovescio;
+      }
       case TILE.GOTHIC_BOSS: {
         // Il marcatore sta sotto la volta e Lucio ci nasce appeso: la cella è
         // il suo soffitto, non il suo pavimento.
@@ -541,6 +670,15 @@ export class World {
       return;
     }
 
+    // E dal quarto mondo in poi si può cadere anche **in su**: sopra il bordo
+    // della mappa non c'è soffitto, c'è il cielo, e il cielo non ti riporta
+    // indietro. Ha una battuta sua perché è una morte diversa, non la stessa
+    // al contrario.
+    if (this.player.y + this.player.h < -RULES.fallDeathMargin) {
+      this.kill(DEATH_CAUSE.sky);
+      return;
+    }
+
     this.handleTileContacts();
     if (this.state !== 'playing') return;
 
@@ -562,6 +700,9 @@ export class World {
 
     this.handleRuinedFloor();
     this.handleSphinxFight();
+    if (this.state !== 'playing') return;
+
+    this.handleRovescioFight();
     if (this.state !== 'playing') return;
 
     this.effects.update();
@@ -619,6 +760,10 @@ export class World {
         this.lastDeadWind = this.ticks;
       } else if (tile === TILE.QUICKSAND) {
         this.lastSand = this.ticks;
+      } else if (tile === TILE.DEAD_REVERSE) {
+        // Non capovolge niente. Anche qui l'unica traccia che lascia è di chi
+        // sarà la colpa quando il gatto arriva in fondo.
+        this.lastDeadField = this.ticks;
       } else if (tile === TILE.CHECKPOINT) {
         this.activateCheckpoint(c, r);
       } else if (tile === TILE.GOAL) {
@@ -702,7 +847,7 @@ export class World {
 
   private activateCheckpoint(c: number, r: number): void {
     if (this.checkpoint?.c === c && this.checkpoint.r === r) return;
-    this.checkpoint = { c, r };
+    this.checkpoint = { c, r, gravity: this.player.gravity };
     this.audio.play('coin');
     this.effects.ring(c * TILE_SIZE + TILE_SIZE / 2, r * TILE_SIZE + TILE_SIZE / 2, PALETTE.hot, 3.6, 14);
     this.effects.floatingText(c * TILE_SIZE + TILE_SIZE / 2, r * TILE_SIZE - 4, 'CHECKPOINT', PALETTE.hot, 11);
@@ -718,7 +863,7 @@ export class World {
   private handleStandingTiles(): void {
     if (!this.player.onGround) return;
 
-    for (const { c, r, tile } of groundTiles(this.player, this.map)) {
+    for (const { c, r, tile } of groundTiles(this.player, this.map, this.player.gravity)) {
       if (beltDirection(tile) !== 0) {
         this.beltGrace = RULES.beltBlameTicks;
       } else if (tile === TILE.INVISIBLE) {
@@ -839,9 +984,12 @@ export class World {
    * c'è sopra.
    */
   private launch(c: number, r: number): void {
-    if (this.player.vy < 0) return;
+    // "Sta già salendo" si misura rispetto al proprio peso: una molla sul
+    // soffitto di una stanza capovolta lancia verso il basso, ed è giusto così.
+    const down = this.player.gravity;
+    if (this.player.vy * down < 0) return;
 
-    this.player.vy = -PHYSICS.springImpulse;
+    this.player.vy = -down * PHYSICS.springImpulse;
     this.player.onGround = false;
     this.extensions.set(TileMap.key(c, r), 1);
     this.audio.play('jump');
@@ -1454,6 +1602,104 @@ export class World {
     this.callbacks.onTaunt('si è ricompattata il pavimento. ricominciamo da capo');
   }
 
+  // ------------------------------------------------- il Rovescio (4-11)
+  /**
+   * Il ribaltamento della stanza: l'unica mossa che il Rovescio abbia.
+   *
+   * Non è una trappola nuova, è **la regola del mondo usata da lui**. Cade
+   * tutto dall'altra parte: il gatto, le zavorre, e lui per primo — perché una
+   * stanza che si ribalta e risparmia chi l'ha ribaltata non è un boss, è un
+   * interruttore.
+   */
+  flipRoom(): void {
+    this.gravityFlipped = !this.gravityFlipped;
+    this.audio.play('trap');
+    this.camera.shake(8);
+    this.effects.flash(0.3, PALETTE.paper);
+    this.effects.floatingText(
+      this.player.centerX,
+      this.player.centerY - 26,
+      this.gravityFlipped ? 'SOTTOSOPRA' : 'DIRITTO',
+      PALETTE.hot,
+      13,
+    );
+  }
+
+  /**
+   * C'è una zavorra dove il Rovescio sta per piantarsi?
+   *
+   * Restituisce 0 se il posto è libero, altrimenti da che parte deve
+   * scansarsi. Sta qui per la regola di sempre — dove sono le zavorre lo sa
+   * solo il mondo — ed è *il* numero dello scontro: finché lui trova un posto
+   * libero non gli succede niente, e il gatto vince quando gliene lascia zero.
+   *
+   * "Addosso" vuol dire semplicemente che le sagome si sovrappongono, e non è
+   * una semplificazione: quando la stanza si ribalta partono tutti insieme, ma
+   * lui è più alto e arriva prima al soffitto — la zavorra lo raggiunge lì, e
+   * quello è il colpo. Non serve nessuna geometria in più.
+   */
+  rovescioDanger(boss: Rovescio): number {
+    let nearest = 0;
+    let best = Infinity;
+
+    for (const entity of this.entities) {
+      if (!(entity instanceof Ballast) || entity.expired) continue;
+      const dx = entity.x + entity.w / 2 - boss.centerX;
+      if (Math.abs(dx) > ROVESCIO.dangerRange) continue;
+      if (Math.abs(dx) < best) {
+        best = Math.abs(dx);
+        nearest = dx;
+      }
+    }
+
+    if (best === Infinity) return 0;
+    // Si sposta dalla parte opposta. Con la zavorra esattamente sul muso
+    // sceglie indietro, che è quello che farebbe chiunque e soprattutto è
+    // quello che si vede meglio.
+    return nearest >= 0 ? -1 : 1;
+  }
+
+  /**
+   * Chi colpisce chi, nella sala capovolta.
+   *
+   * Sta qui e non nell'entità per la regola di sempre: serve sapere insieme
+   * dove sta lui e dove stanno le zavorre. La differenza con l'arena del
+   * Padrone è che lì il masso lo staccava il gatto e il boss lo schivava;
+   * qui le zavorre le fa cadere **lui**, tutte insieme, ogni volta che
+   * ribalta — e mentre ribalta non può schivare niente. Quindi il gioco non è
+   * portarlo sotto un peso: è **non lasciargli un posto libero dove piantarsi**
+   * (vedi `Rovescio.pickStand`).
+   */
+  private handleRovescioFight(): void {
+    const boss = this.rovescio;
+    if (!boss) return;
+
+    for (const entity of this.entities) {
+      if (!(entity instanceof Ballast) || entity.expired) continue;
+      // Una zavorra ferma non fa male a nessuno: quello che schiaccia è il
+      // peso che sta cadendo, ed è la stessa regola del masso del Padrone.
+      if (!entity.falling) continue;
+      if (!overlaps(entity, boss)) continue;
+
+      if (boss.takeHit(this)) {
+        entity.crush(this);
+        if (boss.isDead) {
+          // Il gatto del Rovescio si sblocca qui e da nessun'altra parte: è
+          // l'ultimo boss del gioco, e come per Lucio e la Sfinge non è un
+          // segreto — è la firma su quello che hai finito.
+          this.claim(FEAT.rovescio);
+        }
+      }
+    }
+
+    if (boss.isDead && !this.gateOpen) this.openGate();
+  }
+
+  /** Cambio di fase: si riprende la stanza e la rimette come vuole lui. */
+  onRovescioRage(): void {
+    this.callbacks.onTaunt('ha ribaltato la stanza due volte di fila. si può fare, a quanto pare');
+  }
+
   /** Il boss è caduto: il portone non ha più motivo di stare chiuso. */
   private openGate(): void {
     this.gateOpen = true;
@@ -1485,7 +1731,7 @@ export class World {
 
   /** Il gatto ha i piedi su quella cella precisa? Serve alle piastre. */
   private playerStandsOn(c: number, r: number): boolean {
-    for (const cell of groundTiles(this.player, this.map)) {
+    for (const cell of groundTiles(this.player, this.map, this.player.gravity)) {
       if (cell.c === c && cell.r === r) return true;
     }
     return false;
@@ -1516,11 +1762,18 @@ export class World {
 
       if (!overlaps(this.player, entity)) continue;
 
-      const stomped =
-        this.player.vy > 0 && this.player.y + this.player.h - entity.y < RULES.stompTolerance;
+      // Schiacciare vuol dire "arrivargli addosso dalla parte da cui cadi", e
+      // a testa in giù quella parte è di sotto. Non è una concessione: è la
+      // stessa identica regola, misurata rispetto al proprio peso. Nel quarto
+      // mondo è anche l'unico modo di togliersi dai piedi un ragno che
+      // cammina sul soffitto.
+      const down = this.player.gravity;
+      const feet = down > 0 ? this.player.y + this.player.h : this.player.y;
+      const cap = down > 0 ? entity.y : entity.y + entity.h;
+      const stomped = this.player.vy * down > 0 && (feet - cap) * down < RULES.stompTolerance;
 
       if (stomped) {
-        if (entity.onStomp(this)) this.player.vy = -PHYSICS.stompBounce;
+        if (entity.onStomp(this)) this.player.vy = -down * PHYSICS.stompBounce;
       } else {
         entity.onTouch(this);
       }
@@ -1537,8 +1790,16 @@ export class World {
     // Chi è appena stato dentro un getto che non spingeva non è caduto "nel
     // vuoto": è caduto per colpa di quello, e la battuta deve dirlo. Vale anche
     // per il pavimento che è appena svanito, e per la stessa ragione.
-    if (cause === DEATH_CAUSE.pit) {
-      if (this.ticks - this.lastDeadVent < RULES.deadVentBlameTicks) {
+    if (cause === DEATH_CAUSE.pit || cause === DEATH_CAUSE.sky) {
+      if (this.ticks - this.lastDeadField < RULES.deadFieldBlameTicks) {
+        // Il campo spento viene prima di tutti gli altri perché è l'unico che
+        // può uccidere in tutte e due le direzioni: ci si butta dentro
+        // aspettando di essere capovolti e non succede niente.
+        cause = DEATH_CAUSE.deadField;
+      } else if (cause === DEATH_CAUSE.sky) {
+        // Nessuna delle colpe qui sotto ha senso in su: il nastro, il getto e
+        // la sabbia stanno tutti dalla parte del pavimento.
+      } else if (this.ticks - this.lastDeadVent < RULES.deadVentBlameTicks) {
         cause = DEATH_CAUSE.deadVent;
       } else if (this.ticks - this.lastDeadWind < RULES.deadWindBlameTicks) {
         cause = DEATH_CAUSE.deadWind;

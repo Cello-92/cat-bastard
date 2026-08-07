@@ -116,6 +116,33 @@ export const MATERIAL = {
    */
   faience: material('#2e8f8a', '#7fd7cf', '#14504f', '#082a2a', '#dffffb'),
 
+  // --- Mondo 4: la torre e il Rovescio.
+  /**
+   * Vetro temprato: l'unico materiale del gioco che è quasi solo riflesso.
+   *
+   * La faccia in ombra è **più chiara** della base, non più scura, perché in
+   * un vetro l'ombra è quello che si vede attraverso: è la stessa idea del
+   * ghiaccio, portata fino in fondo. Serve a far leggere un pavimento che non
+   * nasconde cosa c'è dall'altra parte, che nel quarto mondo è un'informazione
+   * di gioco e non un effetto.
+   */
+  glass: material('#8fb6c4', '#e8fbff', '#a9cfdb', '#3f6472', '#ffffff'),
+  /** Basalto: la pietra del Rovescio. Nera, ruvida, senza un riflesso. */
+  basalt: material('#3a3742', '#645f70', '#201e26', '#100f14', '#8e879c'),
+  /** Ottone dei congegni della torre: caldo, lucido, un po' ossidato. */
+  brass: material('#b08b3c', '#f0d382', '#6a4f16', '#372809', '#fff3cd'),
+  /** Piombo delle zavorre: pesante da guardare, e non è un modo di dire. */
+  lead: material('#565a63', '#8b909b', '#2e3136', '#17181c', '#a8adb8'),
+  /**
+   * Etere: il colore del campo rovescio.
+   *
+   * È l'unico materiale del gioco che non è fatto di niente — è una regola
+   * resa visibile — quindi ha una base quasi trasparente e uno speculare che
+   * emette. Il campo spento usa esattamente lo stesso materiale, ed è tutta
+   * la trappola.
+   */
+  ether: material('#7f6fd6', '#cfc4ff', '#3b3080', '#1b1543', '#f2ecff'),
+
   // --- Manti e occhi dei gatti sbloccabili (vedi game/cats.ts).
   /** Nero fuliggine: mai davvero nero, altrimenti sparisce sul fondo scuro. */
   soot: material('#2f3038', '#5c5f6b', '#17171c', '#0b0b0e', '#9aa0ad'),
@@ -233,6 +260,10 @@ export const PALETTE = {
   yarn: '#e2607f',
   /** Sabbia sollevata: dai passi, dalle correnti, da quello che ti sta ingoiando. */
   sand: '#dcc08a',
+  /** Il luccichio del campo rovescio: la regola del quarto mondo, in un colore. */
+  field: '#b3a4ff',
+  /** Schegge di vetro e polvere di basalto della torre. */
+  shard: '#dff2f8',
 } as const;
 
 // ---------------------------------------------------------------- atmosfera
@@ -274,7 +305,7 @@ export interface SkyTheme {
    */
   landscape: boolean;
   /** Cosa disegnare al posto del paesaggio quando `landscape` è false. */
-  interior?: 'cave' | 'factory' | 'temple';
+  interior?: 'cave' | 'factory' | 'temple' | 'void';
   /** Nevica. La neve è deterministica come tutto il resto: non è rumore. */
   snow?: boolean;
   /**
@@ -670,6 +701,78 @@ export const SKIES = {
     rays: false,
     landscape: false,
     interior: 'temple',
+  },
+
+  // ---------------------------------------------------------------- mondo 4
+  /**
+   * In cima alla torre, sopra il livello delle nuvole.
+   *
+   * È il cielo più alto del gioco e l'unico in cui l'orizzonte è **sotto**: le
+   * creste lontane sono le stesse montagne di 1-1 viste da mille metri più su,
+   * e la foschia se le mangia quasi del tutto. Serve a una cosa sola, ed è la
+   * più importante del quarto mondo: far capire quanto è lunga la caduta prima
+   * ancora che cominci.
+   */
+  spire: {
+    stops: [
+      { at: 0, color: '#0a1030' },
+      { at: 0.26, color: '#1c3a72' },
+      { at: 0.52, color: '#4f7fb8' },
+      { at: 0.78, color: '#9fc0d8' },
+      { at: 1, color: '#dfe6ee' },
+    ],
+    sunX: 0.72,
+    sunY: 0.72,
+    sunRadius: 34,
+    sunCore: '#fffbef',
+    sunGlow: '#ffd39a',
+    fog: '#c6d6e4',
+    ridge: '#516a86',
+    canopy: '#3e556d',
+    cloudLight: '#ffffff',
+    cloudShade: '#8ba2bb',
+    sunTint: '#ffe4c0',
+    sunTintAmount: 0.12,
+    ambient: '#5d80ac',
+    haze: 0.66,
+    stars: true,
+    rays: true,
+    landscape: true,
+  },
+  /**
+   * Il Rovescio: quello che c'è sotto la torre, che è di nuovo cielo.
+   *
+   * Non è una grotta, non è una fabbrica e non è un tempio — è un **vuoto**, e
+   * dentro ci galleggia altra torre, capovolta. La profondità qui non la dà né
+   * la foschia né il buio ma il fatto che tutto quello che si intravede
+   * lontano pende dalla parte sbagliata: è l'unico fondale del gioco che dice
+   * una regola invece di raccontare un posto.
+   */
+  reverse: {
+    stops: [
+      { at: 0, color: '#241c3e' },
+      { at: 0.36, color: '#191434' },
+      { at: 0.7, color: '#100e26' },
+      { at: 1, color: '#080814' },
+    ],
+    sunX: 0.5,
+    sunY: 0.86,
+    sunRadius: 24,
+    sunCore: '#e6dcff',
+    sunGlow: '#8f6fe0',
+    fog: '#241d40',
+    ridge: '#2b2450',
+    canopy: '#1a1636',
+    cloudLight: '#4a3d76',
+    cloudShade: '#120f26',
+    sunTint: '#a68cf0',
+    sunTintAmount: 0.17,
+    ambient: '#2a2350',
+    haze: 0.48,
+    stars: true,
+    rays: false,
+    landscape: false,
+    interior: 'void',
   },
 } as const satisfies Record<string, SkyTheme>;
 

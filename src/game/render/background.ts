@@ -74,8 +74,12 @@ export function drawBackground(r: Renderer, camX: number, sky: SkyName, tick: nu
   drawSky(r, theme, W, H, horizon);
 
   if (!theme.landscape) {
+    // Nel vuoto le stelle stanno **dietro** al fondale e non sopra: sono la
+    // cosa più lontana che ci sia, e la torre capovolta deve poterle coprire.
+    if (theme.stars) drawStars(r, theme, camX, tick, W, H);
     if (theme.interior === 'factory') drawFactoryDepth(r, theme, camX, tick, W, H);
     else if (theme.interior === 'temple') drawTempleDepth(r, theme, camX, tick, W, H);
+    else if (theme.interior === 'void') drawVoidDepth(r, theme, camX, tick, W, H);
     else drawCaveDepth(r, theme, camX, tick, W, H);
     drawGroundHaze(r, theme, horizon, W, H);
     // Anche al chiuso il vento c'è: entra dai lucernari e porta dentro la
@@ -323,6 +327,86 @@ function drawTempleDepth(
       { at: 1, color: alpha(theme.sunGlow, 0) },
     ]);
   }
+  r.pop();
+}
+
+// ---------------------------------------------------------------- il vuoto
+/**
+ * Il Rovescio: quello che si vede sotto la torre, e che è ancora torre.
+ *
+ * Non è una grotta e non è una stanza: è un vuoto in cui galleggiano altri
+ * pezzi di torre, **appesi al contrario**. La profondità qui non la danno né
+ * la foschia né il buio ma una cosa sola — ogni quinta pende dalla parte
+ * sbagliata, e più è lontana più pende piano. È l'unico fondale del gioco che
+ * serve a dire una regola invece che a raccontare un posto: chi lo guarda
+ * capisce cosa sta per succedere al suo peso prima ancora di entrare in un
+ * campo.
+ */
+function drawVoidDepth(
+  r: Renderer,
+  theme: SkyTheme,
+  camX: number,
+  tick: number,
+  W: number,
+  H: number,
+): void {
+  const tiers = [
+    { speed: 0.06, depth: 0.74, spacing: 210, width: 62, seed: 3.7 },
+    { speed: 0.17, depth: 0.42, spacing: 156, width: 44, seed: 8.3 },
+  ];
+
+  for (const tier of tiers) {
+    const stone = mix(theme.ridge, '#000000', tier.depth * 0.68);
+    const lit = mix(stone, theme.sunGlow, 0.18 * (1 - tier.depth));
+    const offset = camX * tier.speed;
+    // La quota da cui pendono: più lontano, più in alto e più corto.
+    const hang = H * (0.02 + tier.depth * 0.06);
+
+    const first = Math.floor(offset / tier.spacing) - 1;
+    for (let i = first; i < first + Math.ceil(W / tier.spacing) + 3; i++) {
+      const x = i * tier.spacing - offset;
+      if (x < -tier.width * 2 || x > W + tier.width * 2) continue;
+
+      // Ogni torre ha la sua altezza, dal seme: non cambia mai, come tutto.
+      const len = H * (0.3 + hash(i * 1.9 + tier.seed) * 0.42) * (1 - tier.depth * 0.3);
+      const w = tier.width * (0.7 + hash(i * 4.1 + tier.seed) * 0.6);
+      const tip = hang + len;
+
+      // Il fusto si rastrema verso la **punta**, che qui sta in basso: è
+      // esattamente una torre normale, girata.
+      r.polygon([x - w * 0.5, hang, x + w * 0.5, hang, x + w * 0.16, tip, x - w * 0.16, tip], stone);
+      // Cornicione alla base (in alto) e lanterna in punta (in basso).
+      r.rect(x - w * 0.62, hang, w * 1.24, 7 - tier.depth * 3, mix(stone, lit, 0.3));
+      r.ellipse(x, tip, w * 0.2, w * 0.16, mix(stone, lit, 0.5));
+      // Lato in luce: la luce viene sempre da sinistra, anche qui sotto.
+      r.push();
+      r.setAlpha(0.32 * (1 - tier.depth));
+      r.line([x - w * 0.4, hang + 8, x - w * 0.14, tip - 4], 1.8, lit);
+      r.pop();
+
+      // Qualche finestra accesa, sempre le stesse: è l'unica cosa viva.
+      if (hash(i * 6.7 + tier.seed) > 0.42) {
+        r.push();
+        r.setBlend('add');
+        r.setAlpha(0.22 + Math.abs(Math.sin(tick / 140 + i)) * 0.1);
+        for (let k = 1; k <= 3; k++) {
+          const wy = hang + (len * k) / 4;
+          r.ellipse(x, wy, w * 0.09, 2.2, alpha(theme.sunGlow, 0.75));
+        }
+        r.pop();
+      }
+    }
+  }
+
+  // Il fondo del vuoto: non c'è. Una velatura viola che si schiarisce verso il
+  // basso e basta, così l'occhio non trova mai un pavimento su cui riposare.
+  r.push();
+  r.setBlend('add');
+  r.setAlpha(0.1);
+  r.gradientRect(0, H * 0.5, W, H * 0.5, [
+    { at: 0, color: alpha(theme.sunGlow, 0) },
+    { at: 1, color: alpha(theme.sunGlow, 0.5) },
+  ]);
   r.pop();
 }
 

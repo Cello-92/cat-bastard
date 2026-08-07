@@ -182,6 +182,26 @@ export function drawTile(r: Renderer, tile: string, x: number, y: number, ctx: T
     case TILE.PLATE:
       drawPlate(r, x, y, ctx);
       break;
+    case TILE.GLASS:
+      drawGlass(r, x, y, ctx);
+      break;
+    case TILE.BASALT:
+      drawBasalt(r, x, y, ctx);
+      break;
+    case TILE.FAKE_BASALT:
+      // Basalto identico a tutti gli altri. Nel quarto mondo metà delle stanze
+      // si attraversano capovolte: una parete che si nota si nota anche a
+      // testa in giù, e il segreto sarebbe regalato due volte.
+      drawBasalt(r, x, y, ctx);
+      if (ctx.revealed) drawOpenSeam(r, x, y, ctx);
+      break;
+    case TILE.REVERSE:
+    case TILE.DEAD_REVERSE:
+      // Stesso luccichio, stesso ronzio, stessa polvere che sale. Uno
+      // capovolge la gravità, l'altro no, e non c'è modo di distinguerli
+      // prima — esattamente come per il getto spento e la corrente morta.
+      drawReverseField(r, x, y, ctx);
+      break;
     case TILE.WIND_RIGHT:
       drawWind(r, x, y, ctx, 1);
       break;
@@ -1529,6 +1549,177 @@ function drawPlate(r: Renderer, x: number, y: number, ctx: TileDrawContext): voi
  * sale. Il giocatore deve poter decidere prima di saltarci dentro — dopo, in
  * aria, non c'è più niente da decidere.
  */
+// ---------------------------------------------------------------- mondo 4
+/**
+ * Vetro temprato: il pavimento onesto della torre.
+ *
+ * È l'unica superficie del gioco attraverso cui si vede, e non è un vezzo: nel
+ * quarto mondo si cammina anche sul soffitto, quindi sapere cosa c'è dall'altra
+ * parte di una lastra è un'informazione di gioco. Il corpo quindi è quasi
+ * trasparente e tutto il lavoro lo fanno gli spigoli — la luce che corre lungo
+ * i bordi molati e il riflesso obliquo — perché un vetro si legge dai bordi.
+ */
+function drawGlass(r: Renderer, x: number, y: number, ctx: TileDrawContext): void {
+  const m = MATERIAL.glass;
+
+  // Corpo: una velatura, non una tinta. Più fitta in basso, dove lo spessore
+  // del vetro accumula colore.
+  r.push();
+  r.setAlpha(0.5);
+  r.gradientRect(x, y, T, T, [
+    { at: 0, color: alpha(m.light, 0.75) },
+    { at: 0.45, color: alpha(m.base, 0.55) },
+    { at: 1, color: alpha(m.deep, 0.7) },
+  ]);
+  r.pop();
+
+  // Bolle e inclusioni dentro la massa: poche, sempre le stesse.
+  for (let i = 0; i < 2; i++) {
+    const bx = x + 6 + cellNoise(ctx.col, ctx.row, i + 900) * (T - 12);
+    const by = y + 7 + cellNoise(ctx.col, ctx.row, i + 910) * (T - 14);
+    const rad = 0.7 + cellNoise(ctx.col, ctx.row, i + 920) * 1.3;
+    r.ellipse(bx, by, rad, rad, alpha(m.deep, 0.3));
+    r.ellipse(bx - rad * 0.3, by - rad * 0.35, rad * 0.5, rad * 0.5, glare(0.55));
+  }
+
+  // Bordi molati: una lastra di vetro è tutta qui. Ogni faccia esposta prende
+  // una riga di luce piena, ed è quello che rende leggibile lo spigolo su cui
+  // il gatto poggia le zampe — o ci si aggrappa, se il basso è di sopra.
+  r.push();
+  r.setBlend('add');
+  r.setAlpha(0.55);
+  if (ctx.open.up) r.rect(x, y, T, 2, alpha(m.spec, 0.9));
+  if (ctx.open.down) r.rect(x, y + T - 2, T, 2, alpha(m.spec, 0.6));
+  if (ctx.open.left) r.rect(x, y, 2, T, alpha(m.spec, 0.7));
+  if (ctx.open.right) r.rect(x + T - 2, y, 2, T, alpha(m.spec, 0.45));
+  r.pop();
+
+  // Riflesso obliquo: sempre nello stesso punto della cella, come sul ghiaccio.
+  r.push();
+  r.setBlend('add');
+  r.setAlpha(0.22);
+  const sx = x + 4 + cellNoise(ctx.col, ctx.row, 930) * (T - 16);
+  r.polygon([sx, y + 3, sx + 7, y + 3, sx - 4, y + T - 3, sx - 11, y + T - 3], glare(0.8));
+  r.pop();
+
+  // Armatura interna: la rete metallica del vetro di sicurezza. Serve anche a
+  // dire che è solido, che è l'unica cosa che di un vetro non si dà per scontata.
+  r.push();
+  r.setAlpha(0.16);
+  for (let i = 1; i < 3; i++) {
+    r.line([x + (i * T) / 3, y, x + (i * T) / 3, y + T], 0.8, m.deep);
+    r.line([x, y + (i * T) / 3, x + T, y + (i * T) / 3], 0.8, m.deep);
+  }
+  r.pop();
+}
+
+/**
+ * Basalto: la pietra del Rovescio.
+ *
+ * Il contrario esatto del vetro — non riflette niente, non lascia passare
+ * niente, e la sua forma si legge solo dalle colonne prismatiche in cui si
+ * spacca. È la roccia più scura del gioco e serve a questo: sotto la torre,
+ * l'unica cosa che si distingue dal vuoto dev'essere il pavimento.
+ */
+function drawBasalt(r: Renderer, x: number, y: number, ctx: TileDrawContext): void {
+  const m = MATERIAL.basalt;
+
+  r.gradientRect(x, y, T, T, ctx.open.up
+    ? bodyStops(m)
+    : [
+        { at: 0, color: mix(m.base, m.dark, 0.4) },
+        { at: 1, color: mix(m.base, m.dark, 0.75) },
+      ]);
+
+  // Colonne prismatiche: il basalto si raffredda in prismi verticali, e sono
+  // l'unica cosa che dà una direzione a una pietra altrimenti nera.
+  const columns = 3;
+  for (let i = 0; i <= columns; i++) {
+    const cx = x + (i * T) / columns + cellNoise(ctx.col, ctx.row, i + 940) * 2 - 1;
+    r.line([cx, y, cx, y + T], 1.2, alpha(m.deep, 0.75));
+    r.line([cx + 1, y, cx + 1, y + T], 0.7, alpha(m.light, 0.22));
+  }
+
+  // Sfaldature orizzontali: due o tre, mai regolari.
+  r.push();
+  r.setAlpha(0.35);
+  for (let i = 0; i < 2; i++) {
+    const fy = y + 8 + cellNoise(ctx.col, ctx.row, i + 950) * (T - 16);
+    r.line([x, fy, x + T * 0.55, fy + 1.4, x + T, fy - 0.8], 1, m.deep);
+  }
+  r.pop();
+
+  speckle(r, x, y, ctx, 3, m, 4);
+  occlude(r, x, y, m, ctx.open);
+
+  // Vetrificazioni: schegge di ossidiana incastrate nella pietra. Sono l'unica
+  // cosa che restituisce luce quaggiù, e bastano tre per cella.
+  r.push();
+  r.setAlpha(0.4);
+  for (let i = 0; i < 3; i++) {
+    const gx = x + 4 + cellNoise(ctx.col, ctx.row, i + 960) * (T - 8);
+    const gy = y + 5 + cellNoise(ctx.col, ctx.row, i + 970) * (T - 10);
+    r.polygon([gx, gy - 1.6, gx + 1.4, gy, gx, gy + 1.6, gx - 1.4, gy], m.spec);
+  }
+  r.pop();
+}
+
+/**
+ * Il campo rovescio, e il campo rovescio spento.
+ *
+ * Sono lo stesso disegno, e devono esserlo: il secondo è una trappola solo
+ * finché è indistinguibile dal primo. Quello che si vede è una colonna d'aria
+ * che sale — polvere che va **in su**, una velatura viola, e le due frecce
+ * incise sulle guide laterali — perché la cosa da comunicare è una sola e non è
+ * "qui c'è qualcosa": è "qui il basso è di sopra".
+ */
+function drawReverseField(r: Renderer, x: number, y: number, ctx: TileDrawContext): void {
+  const m = MATERIAL.ether;
+
+  // Velatura di fondo: si accende e si spegne piano, sempre allo stesso ritmo.
+  r.push();
+  r.setBlend('add');
+  r.setAlpha(0.1 + wave(ctx.tick, 44) * 0.06);
+  r.gradientRect(x, y, T, T, [
+    { at: 0, color: alpha(m.light, 0.55) },
+    { at: 1, color: alpha(m.base, 0.1) },
+  ]);
+  r.pop();
+
+  // Guide laterali: due montanti incisi che tengono il campo. Sono l'unica
+  // parte solida di questa cella, e servono a farla leggere come un congegno
+  // costruito invece che come un effetto di luce.
+  r.push();
+  r.setAlpha(0.45);
+  r.rect(x + 1, y, 1.6, T, alpha(m.dark, 0.9));
+  r.rect(x + T - 2.6, y, 1.6, T, alpha(m.dark, 0.7));
+  r.pop();
+
+  // Polvere che sale: quattro grani per cella, a velocità diverse, che escono
+  // dal basso e vengono risucchiati in alto. È l'informazione, il resto è
+  // contorno — chi guarda questa cella deve capire da che parte si cadrà.
+  r.push();
+  r.setBlend('add');
+  for (let i = 0; i < 4; i++) {
+    const lane = 5 + i * 7 + cellNoise(ctx.col, ctx.row, i + 980) * 3;
+    const speed = 26 + cellNoise(ctx.col, ctx.row, i + 990) * 22;
+    const phase = (ctx.tick / speed + cellNoise(ctx.col, ctx.row, i + 1000)) % 1;
+    const py = y + T - phase * T;
+    r.setAlpha(0.16 + (1 - phase) * 0.3);
+    r.ellipse(x + lane, py, 1.1, 2.6, alpha(m.light, 0.9));
+  }
+  r.pop();
+
+  // Le due frecce: incise sui montanti, immobili, rivolte in su. Non lampeggiano
+  // e non si muovono — un cartello che si anima diventa una decorazione.
+  r.push();
+  r.setAlpha(0.5);
+  for (const side of [x + 6.5, x + T - 6.5]) {
+    r.polygon([side, y + T * 0.36, side + 3, y + T * 0.5, side - 3, y + T * 0.5], alpha(m.spec, 0.8));
+  }
+  r.pop();
+}
+
 function drawWind(r: Renderer, x: number, y: number, ctx: TileDrawContext, direction: number): void {
   const phase = ctx.tick * 0.05 + ctx.col * 0.7 + ctx.row * 1.3;
 

@@ -1,6 +1,6 @@
 import type { Input } from '@core/input';
 import { clamp } from '@core/math';
-import { applyGravity, groundTiles, moveX, moveY, updateGrounded } from '@engine/physics';
+import { applyGravity, groundTiles, moveX, moveY, updateGrounded, type Down } from '@engine/physics';
 import type { Renderer } from '@engine/render/renderer';
 import type { Body } from '@engine/types';
 import { PHYSICS, SURFACE } from '../config';
@@ -53,6 +53,18 @@ export class Player implements Body {
   /** Il manto scelto nel menu: cambia solo l'aspetto, mai la fisica. */
   skin: CatSkin = catById(undefined);
 
+  /**
+   * Da che parte è il basso: +1 giù (sempre, fino al mondo 3), -1 su.
+   *
+   * È la regola del quarto mondo e l'unica cosa del gioco che cambia il segno
+   * della gravità. Non tocca i comandi — destra resta destra, il salto resta
+   * il salto e risponde con gli stessi coyote time e jump buffer di sempre —
+   * cambia solo dove si atterra. Lo decide il mondo (`World.gravityAt`), che è
+   * l'unico a sapere quali celle sono campi rovesci e se la stanza intera è
+   * capovolta.
+   */
+  gravity: Down = 1;
+
   /** Superfici sotto e attorno al gatto, campionate una volta per tick. */
   private onIce = false;
   private belt = 0;
@@ -96,6 +108,18 @@ export class Player implements Body {
     this.wind = 0;
     this.inDowndraft = false;
     this.inSand = false;
+    this.gravity = 1;
+  }
+
+  /**
+   * La quota dei piedi, che a testa in giù è il bordo di sopra.
+   *
+   * Serve a polvere, passi e atterraggi: sono le uniche cose che devono
+   * sapere dove il gatto tocca il mondo, e sbagliarle vuol dire uno sbuffo di
+   * polvere che esce dalla testa.
+   */
+  get feetY(): number {
+    return this.gravity > 0 ? this.y + this.h : this.y;
   }
 
   get centerX(): number {
@@ -137,21 +161,32 @@ export class Player implements Body {
     this.handleJump(world, input);
     // Il getto agisce dopo il taglio del salto e prima della gravità: se
     // agisse prima, rilasciare il tasto azzererebbe anche la spinta del vapore.
+    // Getto, risucchio e sabbia restano **assoluti** anche a testa in giù: il
+    // vapore sale sempre, la sabbia affonda sempre. Non è una dimenticanza —
+    // il campo rovescio capovolge il peso del gatto, non il resto del mondo.
     this.applyVent();
     this.applyDowndraft();
-    applyGravity(this, PHYSICS.gravity, PHYSICS.terminalVelocity);
+    applyGravity(this, PHYSICS.gravity, PHYSICS.terminalVelocity, this.gravity);
     // La sabbia invece agisce **dopo** la gravità, e deve: è un limite di
     // velocità, non una spinta. Applicato prima, la gravità del tick lo
     // scavalcherebbe e si affonderebbe come nel vuoto.
     this.applySand();
-    moveY(this, world.map, isSolid, {
-      onCeiling: (c, r, tile) => world.onPlayerHeadbutt(c, r, tile),
-    });
+    // "Sbattere la testa" è la collisione dalla parte opposta al peso, quindi
+    // a testa in giù è quella verso il basso: il blocco premio si prende
+    // sempre di testa, anche quando la testa punta al pavimento.
+    const headbutt = (c: number, r: number, tile: string): void =>
+      world.onPlayerHeadbutt(c, r, tile);
+    moveY(
+      this,
+      world.map,
+      isSolid,
+      this.gravity > 0 ? { onCeiling: headbutt } : { onLand: headbutt },
+    );
 
     // Lo stato "a terra" si sonda, non si deduce dalla collisione: vedi
     // engine/physics.ts. Da questa riga dipendono attrito, salto, animazione,
     // suono dei passi e polvere, quindi va aggiornato prima di tutto il resto.
-    updateGrounded(this, world.map, isSolid);
+    updateGrounded(this, world.map, isSolid, this.gravity);
 
     this.updateTimers();
     this.updateRunCycle(world);
@@ -167,10 +202,15 @@ export class Player implements Body {
    * interrogare la mappa e la fisica resta leggibile.
    */
   private sampleSurface(world: World): void {
+    // Prima di tutto: da che parte è il basso. Ogni riga qui sotto — quali
+    // celle sono "sotto i piedi", dove si atterra, in che verso si salta —
+    // dipende da questa, quindi va letta per prima.
+    this.gravity = world.gravityAt(this);
+
     this.onIce = false;
     this.belt = 0;
     if (this.onGround) {
-      for (const { tile } of groundTiles(this, world.map)) {
+      for (const { tile } of groundTiles(this, world.map, this.gravity)) {
         if (isIcy(tile)) this.onIce = true;
         const direction = beltDirection(tile);
         if (direction !== 0) this.belt = direction;
@@ -296,18 +336,19 @@ export class Player implements Body {
     // il ritmo, non la forza.
     const canJump = this.onGround || this.coyote > 0 || this.inSand;
     if (this.jumpBuffer > 0 && canJump) {
-      this.vy = -(this.inSand ? SURFACE.sandStroke : PHYSICS.jumpImpulse);
+      // Il salto va sempre **via dal pavimento**, qualunque pavimento sia.
+      this.vy = -this.gravity * (this.inSand ? SURFACE.sandStroke : PHYSICS.jumpImpulse);
       this.onGround = false;
       this.coyote = 0;
       this.jumpBuffer = 0;
       this.squashX = 0.76;
       this.squashY = 1.3;
       world.audio.play('jump');
-      world.effects.footstepDust(this.centerX, this.y + this.h, PALETTE.dust, this.facing);
+      world.effects.footstepDust(this.centerX, this.feetY, PALETTE.dust, this.facing);
     }
 
     // Salto ad altezza variabile: rilasciare taglia la salita.
-    if (!input.isDown('jump') && this.vy < 0) this.vy *= PHYSICS.jumpCut;
+    if (!input.isDown('jump') && this.vy * this.gravity < 0) this.vy *= PHYSICS.jumpCut;
   }
 
   private updateTimers(): void {
@@ -333,7 +374,7 @@ export class Player implements Body {
     world.audio.play(this.stepParity ? 'step' : 'stepAlt');
     world.effects.footstepDust(
       this.centerX - this.facing * 6,
-      this.y + this.h,
+      this.feetY,
       PALETTE.dust,
       this.facing,
     );
@@ -345,7 +386,7 @@ export class Player implements Body {
       const impact = clamp(Math.abs(this.vy) + 6, 6, 16) / 16;
       this.squashX = 1 + 0.34 * impact;
       this.squashY = 1 - 0.3 * impact;
-      world.effects.landingDust(this.centerX, this.y + this.h, PALETTE.dust, impact);
+      world.effects.landingDust(this.centerX, this.feetY, PALETTE.dust, impact);
       world.audio.play('land');
     }
     this.wasOnGround = this.onGround;
@@ -355,8 +396,10 @@ export class Player implements Body {
     this.squashY += (1 - this.squashY) * 0.22;
 
     // Stretch in caduta libera: allunga il gatto, si legge meglio in aria.
+    // Si misura rispetto al proprio peso, non rispetto allo schermo: chi sta
+    // "cadendo" a testa in giù sale, e deve allungarsi lo stesso.
     if (!this.onGround) {
-      const airStretch = clamp(this.vy / 22, -0.18, 0.2);
+      const airStretch = clamp((this.vy * this.gravity) / 22, -0.18, 0.2);
       this.squashY += airStretch * 0.35;
       this.squashX -= airStretch * 0.25;
     }
@@ -373,6 +416,24 @@ export class Player implements Body {
    * stacca il gatto da qualunque fondale si trovi dietro.
    */
   draw(r: Renderer, tick: number): void {
+    // A testa in giù non si ridisegna niente: si ribalta tutto attorno al
+    // centro del corpo e si lascia lavorare il codice di sempre. Ogni strato
+    // — ombra di contatto, coda, zampe, marcature, scie — resta scritto una
+    // volta sola, ed è l'unico modo per cui il gatto capovolto è *lo stesso*
+    // gatto e non un secondo disegno che prima o poi diverge.
+    if (this.gravity < 0) {
+      r.push();
+      r.translate(this.centerX, this.centerY);
+      r.scale(1, -1);
+      r.translate(-this.centerX, -this.centerY);
+      this.drawUpright(r, tick);
+      r.pop();
+      return;
+    }
+    this.drawUpright(r, tick);
+  }
+
+  private drawUpright(r: Renderer, tick: number): void {
     const cx = Math.round(this.centerX);
     const feet = Math.round(this.y + this.h);
     const running = this.isRunning;

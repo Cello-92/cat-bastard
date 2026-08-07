@@ -171,6 +171,16 @@ export const RULES = {
    */
   deadWindBlameTicks: 44,
   /**
+   * Per quanti tick dopo un campo rovescio spento una caduta è ancora colpa
+   * sua — e vale in tutte e due le direzioni, perché è l'unica trappola del
+   * gioco che può uccidere sia verso il basso sia verso l'alto.
+   *
+   * È più lungo degli altri di proposito: nel quarto mondo ci si butta dentro
+   * un campo *dall'alto di una torre*, e la caduta che ne segue è la più
+   * lunga che il gioco abbia.
+   */
+  deadFieldBlameTicks: 58,
+  /**
    * Quante colonne avanti e indietro sente una piastra a pressione.
    *
    * È larga poco più di uno schermo apposta: quello che viene giù dev'essere
@@ -467,6 +477,66 @@ export const SPHINX = {
   hurtTicks: 54,
   /** Cambio di fase: esce tutta, urla, e si riprende la stanza. */
   rageTicks: 72,
+} as const;
+
+/**
+ * Il Rovescio, il boss di 4-11.
+ *
+ * Gli altri tre si combattono contro qualcosa che sta nella stanza: il
+ * soffitto del Padrone, i ceri di Lucio, la sabbia che fabbrica la Sfinge. Lui
+ * si combatte contro **la stanza**, e l'arma la spara da solo: ogni volta che
+ * ribalta, tutte le zavorre cadono dall'altra parte, tutte insieme, comprese
+ * quelle che gli stanno sopra la testa.
+ *
+ * Quindi non c'è niente da portargli addosso e niente su cui attirarlo. Il
+ * problema è l'opposto: lui **si toglie** dai posti pericolosi prima di
+ * ribaltare (`shuffle`), e il gatto deve piazzarsi dove non ha più posti dove
+ * togliersi. È l'unico dei quattro in cui si vince chiudendogli le uscite
+ * invece che aprendogli una trappola.
+ *
+ * Vale il numero non negoziabile di tutti e quattro: cammina più lento del
+ * gatto. Se un giorno superasse `PHYSICS.maxSpeed` smetterebbe di farsi
+ * guidare e comincerebbe a inseguire, che è il combattimento di qualcun altro.
+ */
+export const ROVESCIO = {
+  width: 60,
+  height: 50,
+  /** Colpi da incassare in ciascuna delle due fasi. */
+  hitsPerPhase: 2,
+  /** Passeggiata verso il gatto, sulla superficie che in questo momento è il basso. */
+  stalkSpeed: 2.1,
+  stalkSpeedFurious: 2.7,
+  /** Tick di cammino tra un ribaltamento e l'altro: la valvola di sicurezza. */
+  stalkTicks: 130,
+  stalkTicksFurious: 95,
+  /** Quanto vicino alla colonna del gatto deve arrivare per fermarsi. */
+  alignRange: 20,
+  /**
+   * Lo scarto prima di ribaltare.
+   *
+   * Guarda cosa gli sta per cadere addosso e si sposta, come il Padrone —
+   * solo che qui non schiva un masso alla volta, sceglie **la colonna** in cui
+   * piantarsi. È il suo unico modo di barare, ed è anche tutto il gioco: il
+   * gatto vince quando gli toglie le colonne libere.
+   */
+  shuffleSpeed: 3.6,
+  shuffleTicks: 34,
+  /** Quanto larga considera "sopra di me" una zavorra. */
+  dangerRange: 40,
+  /**
+   * Il rimbombo prima del ribaltamento: l'unico preavviso, e da lì in poi il
+   * punto è congelato. Vale la regola del ruggito del Padrone e della mira di
+   * Lucio — un preavviso che continua a inseguirti non è un preavviso.
+   */
+  windTicks: 34,
+  windTicksFurious: 24,
+  /** Tick in cui resta scoperto dopo aver ribaltato: cade anche lui. */
+  recoverTicks: 66,
+  recoverTicksFurious: 48,
+  /** Rinculo dopo un colpo incassato: fermo, e quindi ancora colpibile. */
+  hurtTicks: 50,
+  /** Cambio di fase: ribalta due volte di fila e riparte. */
+  rageTicks: 74,
 } as const;
 
 export const FEEL = {

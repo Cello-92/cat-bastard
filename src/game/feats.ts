@@ -32,6 +32,8 @@ export const FEAT = {
   gothic: 'requiem',
   /** Seppellire la Sfinge nella sabbia che ha fatto lei. */
   sphinx: 'sabbia-sua',
+  /** Schiacciare il Rovescio con le zavorre che ha fatto cadere lui. */
+  rovescio: 'contrappeso',
   /**
    * Restare in aria quattro secondi filati, portati dalle correnti del terzo
    * mondo. È l'unica impresa che si scopre giocando bene invece che facendo

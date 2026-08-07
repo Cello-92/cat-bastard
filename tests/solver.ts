@@ -2,7 +2,7 @@ import { PHYSICS, RULES, SURFACE, TILE_SIZE } from '@game/config';
 import { LEVELS, type LevelDef } from '@game/levels';
 import { TILE, beltDirection, isIcy, isSolid, windDirection } from '@game/tiles';
 import { TileMap } from '@engine/tilemap';
-import { applyGravity, groundTiles, moveX, moveY, updateGrounded } from '@engine/physics';
+import { applyGravity, groundTiles, moveX, moveY, updateGrounded, type Down } from '@engine/physics';
 import type { Body } from '@engine/types';
 
 /**
@@ -127,10 +127,15 @@ function step(state: SearchState, map: TileMap, action: { dir: number; jump: boo
   const inDowndraft = overlapsTile(body.x, body.y, map, TILE.DOWNDRAFT);
   const inSand = overlapsTile(body.x, body.y, map, TILE.QUICKSAND);
   const wind = windAt(body.x, body.y, map);
+  // Mondo 4: il campo rovescio. È una funzione della posizione e basta —
+  // nessuno stato in più nella ricerca — ma decide tutto quello che viene
+  // dopo, quindi si legge per prima, come fa `Player.sampleSurface`. Il campo
+  // spento non compare, e non deve: nel gioco non capovolge niente.
+  const down: Down = overlapsTile(body.x, body.y, map, TILE.REVERSE) ? -1 : 1;
   let onIce = false;
   let belt = 0;
   if (body.onGround) {
-    for (const { tile } of groundTiles(body, map)) {
+    for (const { tile } of groundTiles(body, map, down)) {
       if (isIcy(tile)) onIce = true;
       const direction = beltDirection(tile);
       if (direction !== 0) belt = direction;
@@ -183,12 +188,12 @@ function step(state: SearchState, map: TileMap, action: { dir: number; jump: boo
   const justPressed = action.jump && !state.jumpHeld;
   if (justPressed) buffer = PHYSICS.jumpBufferTicks;
   if (buffer > 0 && (body.onGround || coyote > 0 || inSand)) {
-    body.vy = -(inSand ? SURFACE.sandStroke : PHYSICS.jumpImpulse);
+    body.vy = -down * (inSand ? SURFACE.sandStroke : PHYSICS.jumpImpulse);
     body.onGround = false;
     coyote = 0;
     buffer = 0;
   }
-  if (!action.jump && body.vy < 0) body.vy *= PHYSICS.jumpCut;
+  if (!action.jump && body.vy * down < 0) body.vy *= PHYSICS.jumpCut;
 
   // 2b. getto di vapore: solleva dopo il taglio del salto, come nel gioco.
   if (inVent) {
@@ -201,18 +206,18 @@ function step(state: SearchState, map: TileMap, action: { dir: number; jump: boo
   }
 
   // 3. gravità e moto verticale
-  applyGravity(body, PHYSICS.gravity, PHYSICS.terminalVelocity);
+  applyGravity(body, PHYSICS.gravity, PHYSICS.terminalVelocity, down);
   // 3b. la sabbia limita la velocità DOPO la gravità: è densità, non spinta.
   if (inSand) {
     body.vy = Math.max(-SURFACE.sandRise, Math.min(SURFACE.sandSink, body.vy));
   }
   moveY(body, map, isStableSolid);
-  updateGrounded(body, map, isStableSolid);
+  updateGrounded(body, map, isStableSolid, down);
 
   // 4. la molla non è opzionale: se la tocchi ti lancia, punto. Ignorarla qui
   // farebbe trovare al risolutore percorsi che un giocatore non può seguire.
-  if (body.vy >= 0 && overlapsTile(body.x, body.y, map, TILE.SPRING)) {
-    body.vy = -PHYSICS.springImpulse;
+  if (body.vy * down >= 0 && overlapsTile(body.x, body.y, map, TILE.SPRING)) {
+    body.vy = -down * PHYSICS.springImpulse;
     body.onGround = false;
   }
 
@@ -272,6 +277,9 @@ function windAt(x: number, y: number, map: TileMap): number {
 /** Il gatto è morto? Caduta fuori mappa o contatto con qualcosa di letale. */
 function isDead(state: SearchState, map: TileMap): boolean {
   if (state.y > map.heightPx + RULES.fallDeathMargin) return true;
+  // Dal quarto mondo si cade anche **in su**, e il risolutore deve saperlo o
+  // considererebbe percorribile una traiettoria che finisce fuori dal mondo.
+  if (state.y + PLAYER_H < -RULES.fallDeathMargin) return true;
 
   const c0 = Math.floor(state.x / TILE_SIZE);
   const c1 = Math.floor((state.x + PLAYER_W - 1) / TILE_SIZE);

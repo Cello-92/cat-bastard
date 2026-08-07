@@ -69,11 +69,24 @@ export function moveY(body: Body, map: TileMap, isSolid: SolidTest, hooks?: Coll
 }
 
 /**
- * Riga di griglia immediatamente sotto i piedi del corpo.
+ * Verso del "basso" per un corpo: +1 giù (tutto il gioco), -1 su.
+ *
+ * Esiste per il quarto mondo, dove la gravità può cambiare segno. Non è una
+ * proprietà del corpo ma un parametro delle funzioni, e deliberatamente: chi
+ * non lo passa continua a cadere in giù, cioè tutte le entità che avevano già
+ * il loro peso e non devono saperne niente.
+ */
+export type Down = 1 | -1;
+
+/**
+ * Riga di griglia immediatamente oltre i piedi del corpo, nel verso del peso.
  * `cellsOf` usa `y + h - 1` per l'overlap, quindi un corpo appoggiato non
  * tocca mai la riga del pavimento: va sondata a parte.
  */
-const footRow = (body: Body, map: TileMap): number => Math.floor((body.y + body.h) / map.tileSize);
+const footRow = (body: Body, map: TileMap, down: Down): number =>
+  down > 0
+    ? Math.floor((body.y + body.h) / map.tileSize)
+    : Math.floor((body.y - 1) / map.tileSize);
 
 /**
  * Il corpo poggia su qualcosa di solido?
@@ -84,8 +97,8 @@ const footRow = (body: Body, map: TileMap): number => Math.floor((body.y + body.
  * (suoni ripetuti, polvere continua, animazioni che si spengono a frame alterni,
  * attrito che alterna tra suolo e aria).
  */
-export function isGrounded(body: Body, map: TileMap, isSolid: SolidTest): boolean {
-  const r = footRow(body, map);
+export function isGrounded(body: Body, map: TileMap, isSolid: SolidTest, down: Down = 1): boolean {
+  const r = footRow(body, map, down);
   const c0 = Math.floor(body.x / map.tileSize);
   const c1 = Math.floor((body.x + body.w - 1) / map.tileSize);
   for (let c = c0; c <= c1; c++) {
@@ -95,16 +108,22 @@ export function isGrounded(body: Body, map: TileMap, isSolid: SolidTest): boolea
 }
 
 /** Da chiamare dopo `moveY`, una volta per tick, per ogni corpo che cammina. */
-export function updateGrounded(body: Body, map: TileMap, isSolid: SolidTest): void {
-  body.onGround = isGrounded(body, map, isSolid);
+export function updateGrounded(
+  body: Body,
+  map: TileMap,
+  isSolid: SolidTest,
+  down: Down = 1,
+): void {
+  body.onGround = isGrounded(body, map, isSolid, down);
 }
 
 /** I tile su cui il corpo sta poggiando in questo momento. */
 export function* groundTiles(
   body: Body,
   map: TileMap,
+  down: Down = 1,
 ): Generator<{ c: number; r: number; tile: string }> {
-  const r = footRow(body, map);
+  const r = footRow(body, map, down);
   const c0 = Math.floor(body.x / map.tileSize);
   const c1 = Math.floor((body.x + body.w - 1) / map.tileSize);
   for (let c = c0; c <= c1; c++) {
@@ -119,10 +138,20 @@ export function* groundTiles(
  * questo il corpo sprofonderebbe di mezzo pixel a ogni tick per poi essere
  * ributtato su dalla collisione, tremando in verticale per sempre.
  */
-export function applyGravity(body: Body, gravity: number, terminal: number): void {
-  if (body.onGround && body.vy >= 0) {
+export function applyGravity(
+  body: Body,
+  gravity: number,
+  terminal: number,
+  down: Down = 1,
+): void {
+  // "Sta poggiando e non si sta staccando" è la stessa identica condizione a
+  // testa in giù: cambia solo il verso rispetto a cui la si misura.
+  if (body.onGround && body.vy * down >= 0) {
     body.vy = 0;
     return;
   }
-  body.vy = Math.min(body.vy + gravity, terminal);
+  body.vy =
+    down > 0
+      ? Math.min(body.vy + gravity, terminal)
+      : Math.max(body.vy - gravity, -terminal);
 }

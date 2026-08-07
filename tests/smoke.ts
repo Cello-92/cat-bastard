@@ -46,6 +46,22 @@ const FULL_GROUND = '#'.repeat(SEGMENT_COLS);
  */
 const KNOWN_TILES = new Set<string>(Object.values(TILE));
 
+/**
+ * C'è un campo rovescio nella colonna, all'altezza di questa cella?
+ *
+ * Serve all'igiene delle mappe del quarto mondo: una zavorra dentro un campo
+ * cade **in su**, quindi l'appoggio glielo si deve mettere sopra, e cercarlo
+ * dalla parte sbagliata darebbe un errore dove non c'è. Si guarda solo la
+ * cella stessa e le due vicine in verticale, che è quanto basta a un peso
+ * appoggiato dentro una colonna d'aria capovolta.
+ */
+function columnHasField(rows: readonly string[], c: number, r: number): boolean {
+  for (let rr = r - 1; rr <= r + 1; rr++) {
+    if (rows[rr]?.[c] === TILE.REVERSE) return true;
+  }
+  return false;
+}
+
 let failures = 0;
 
 function check(condition: boolean, message: string): void {
@@ -200,6 +216,58 @@ for (const level of LEVELS) {
         flag(c, r, 'sabbie mobili murate: nuotare in su non porta da nessuna parte');
       if ((tile === TILE.COIN || tile === TILE.LURE_COIN) && isSolid(at(c, r - 1)) && isSolid(below))
         flag(c, r, 'moneta sepolta nel terreno');
+
+      // --- Mondo 4. Le tre bestie nuove hanno tutte bisogno di qualcosa a cui
+      //     stare attaccate, e sbagliare quel qualcosa non rompe niente: il
+      //     ragno oscilla per aria, la zavorra esce dal mondo al primo tick e
+      //     il pendolo pende dal vuoto. Tre errori invisibili, tre trappole che
+      //     credevi di aver messo e che non ci sono.
+      const above = at(c, r - 1);
+      const field = tile === TILE.REVERSE;
+      if (tile === TILE.SPIDER && !isSolid(above) && !isSolid(below))
+        flag(c, r, 'ragno senza una superficie a cui attaccarsi');
+      if (tile === TILE.BALLAST) {
+        // Dentro un campo cade in su, quindi l'appoggio lo deve avere sopra.
+        const inField = at(c, r) === TILE.BALLAST && columnHasField(rows, c, r);
+        let lands = false;
+        for (let rr = inField ? r - 1 : r + 1; rr >= 0 && rr < LEVEL_ROWS; rr += inField ? -1 : 1) {
+          if (isSolid(at(c, rr))) {
+            lands = true;
+            break;
+          }
+        }
+        if (!lands) flag(c, r, 'zavorra senza niente su cui fermarsi: esce dal mondo');
+      }
+      if (tile === TILE.PENDULUM && !isSolid(above) && !isSolid(below))
+        flag(c, r, 'pendolo appeso al nulla: il perno non è fissato a niente');
+      if (field && isSolid(above) && isSolid(below) && isSolid(at(c - 1, r)) && isSolid(at(c + 1, r)))
+        flag(c, r, 'campo rovescio murato: non ci entra nessuno');
+    }
+  }
+
+  // Campi rovesci che non arrivano al soffitto.
+  //
+  // Costa una riga scriverlo e costa un livello non scriverlo. Il gatto è alto
+  // 28 pixel su celle da 32: appoggiato a una superficie occupa **una riga
+  // sola**, quella subito attaccata. Se la colonna di campo si ferma una cella
+  // prima del soffitto, il gatto sale, esce dal campo proprio nell'istante in
+  // cui ci arriva, ricade, rientra nel campo, risale — e resta lì a rimbalzare
+  // per sempre in mezzo all'aria. Non è una trappola e non è un livello
+  // difficile: è un livello rotto, e non lo vede nessun altro controllo perché
+  // la geometria è ineccepibile e il risolutore trova comunque un'altra strada.
+  //
+  // Una colonna aperta sul cielo invece va benissimo: quella è una trappola
+  // vera (si cade in su e si muore), ed è dichiarata.
+  for (let c = 0; c < cols; c++) {
+    for (let r = 0; r < LEVEL_ROWS; r++) {
+      if (at(c, r) !== TILE.REVERSE) continue;
+      if (at(c, r - 1) === TILE.REVERSE) continue;
+
+      let above = r - 1;
+      while (above >= 0 && at(c, above) === TILE.EMPTY) above--;
+      if (above >= 0 && isSolid(at(c, above))) {
+        flag(c, r, 'campo rovescio che non arriva al soffitto: il gatto ci rimbalza dentro');
+      }
     }
   }
 
@@ -844,6 +912,198 @@ console.log('\nCorrenti e congegni del mondo 3');
     grounded.player.y = 12 * TILE_SIZE;
     for (let tick = 0; tick < RULES.aloftTicks + 60; tick++) grounded.update(idle);
     check(!none.includes(FEAT.aloft), 'e stare fermi a terra per lo stesso tempo non vale niente');
+  }
+}
+
+// ------------------------------------------------- il campo rovescio (mondo 4)
+//
+// Il mondo 2 ha cambiato il pavimento, il mondo 3 ha cambiato l'aria, il mondo
+// 4 cambia **il basso**. È la modifica più radicale che la fisica del gioco
+// abbia mai subito, quindi ha il contratto più stretto di tutti: che dentro un
+// campo si cada in su, che il campo spento sia identico e non faccia niente,
+// che i comandi restino esattamente gli stessi (destra è destra anche a testa
+// in giù, e il salto va sempre via dal pavimento), che due inversioni si
+// annullino, che si possa morire anche verso l'alto, che il checkpoint si
+// ricordi come eri messo, e che la zavorra dica la verità — perché se smette
+// di dirla, il mondo diventa illeggibile senza che si rompa niente.
+console.log('\nIl campo rovescio (mondo 4)');
+{
+  const fieldAudio = new Audio();
+  const CEILING = '#'.repeat(SEGMENT_COLS);
+
+  const withField = (rows: Record<number, string>, spawn = { c: 5, r: 12 }) => {
+    const level = defineLevel({
+      id: 'field-test',
+      name: 'TEST',
+      title: 'campo rovescio',
+      sky: 'spire',
+      spawn,
+      segments: [segment({ rows })],
+    });
+    return new World(level, fieldAudio, { onTaunt: () => {}, onWin: () => {} });
+  };
+
+  const idle = {
+    isDown: () => false,
+    justPressed: () => false,
+    endTick: () => {},
+  } as unknown as Input;
+  const goRight = {
+    isDown: (a: string) => a === 'right',
+    justPressed: () => false,
+    endTick: () => {},
+  } as unknown as Input;
+  const jump = {
+    isDown: (a: string) => a === 'jump',
+    justPressed: (a: string) => a === 'jump',
+    endTick: () => {},
+  } as unknown as Input;
+
+  /** Una colonna alta quattro celle del tile dato, fra soffitto e pavimento. */
+  const shaft = (tile: string): Record<number, string> => {
+    const column = ' '.repeat(5) + tile;
+    return {
+      8: CEILING,
+      9: column,
+      10: column,
+      11: column,
+      12: column,
+      13: FULL_GROUND,
+      14: FULL_GROUND,
+    };
+  };
+
+  // Il fatto fondamentale, e il gemello spento che lo rende una trappola.
+  {
+    const rise = (tile: string): number => {
+      const world = withField(shaft(tile));
+      world.player.x = 5 * TILE_SIZE + 5;
+      world.player.y = 12 * TILE_SIZE;
+      const start = world.player.y;
+      for (let tick = 0; tick < 40; tick++) world.update(idle);
+      return start - world.player.y;
+    };
+
+    check(rise(TILE.REVERSE) > TILE_SIZE * 2, 'dentro un campo rovescio si cade verso il soffitto');
+    check(rise(TILE.DEAD_REVERSE) <= 0, 'il campo spento, identico a vedersi, non capovolge niente');
+  }
+
+  // I comandi non tradiscono mai: è il punto 5 del patto, ed è la cosa che
+  // rende questa regola accettabile invece che sleale.
+  {
+    const world = withField(shaft(TILE.REVERSE));
+    world.player.x = 5 * TILE_SIZE + 5;
+    world.player.y = 12 * TILE_SIZE;
+    for (let tick = 0; tick < 30; tick++) world.update(idle);
+    check(world.player.gravity === -1, 'appeso al soffitto, il basso del gatto è in su');
+
+    const before = world.player.x;
+    for (let tick = 0; tick < 20; tick++) world.update(goRight);
+    check(world.player.x > before + 10, 'a testa in giù, destra è ancora destra');
+
+    world.update(jump);
+    check(world.player.vy > 0, 'a testa in giù il salto va via dal pavimento, cioè verso il basso');
+  }
+
+  // Due inversioni si annullano: è quello che rende componibile la mossa del
+  // Rovescio senza dover spiegare in che ordine si applicano le cose.
+  {
+    const world = withField(shaft(TILE.REVERSE));
+    world.player.x = 5 * TILE_SIZE + 5;
+    world.player.y = 12 * TILE_SIZE;
+    check(world.gravityAt(world.player) === -1, 'stanza diritta + campo rovescio = capovolto');
+    world.gravityFlipped = true;
+    check(world.gravityAt(world.player) === 1, 'stanza capovolta + campo rovescio = diritto');
+    world.player.x = 1 * TILE_SIZE;
+    check(world.gravityAt(world.player) === -1, 'stanza capovolta fuori dal campo = capovolto');
+  }
+
+  // Si muore anche in su. Senza, il quarto mondo avrebbe un bordo invisibile
+  // oltre il quale il gatto se ne va per sempre e il livello non finisce più.
+  {
+    const world = withField(shaft(TILE.REVERSE));
+    world.player.y = -400;
+    world.update(idle);
+    check(world.state === 'dying', 'sopra il bordo del mondo si muore, come sotto');
+  }
+
+  // Il checkpoint si ricorda da che parte era il basso: rinascere diritti su
+  // una lanterna attaccata al soffitto vorrebbe dire cadere ogni volta.
+  {
+    const world = withField({
+      8: CEILING,
+      10: '      S',
+      11: '      u',
+      12: '      u',
+      13: FULL_GROUND,
+      14: FULL_GROUND,
+    });
+    world.player.x = 6 * TILE_SIZE + 2;
+    world.player.y = 10 * TILE_SIZE + 20;
+    world.update(idle);
+    check(world.player.gravity === -1, 'il gatto sulla lanterna è dentro il campo');
+
+    world.kill();
+    for (let tick = 0; tick < RULES.deathFreezeTicks + 2; tick++) {
+      world.update(idle);
+      if (world.state === 'playing') break;
+    }
+    check(world.player.gravity === -1, 'si rinasce al checkpoint con lo stesso peso di quando lo si è preso');
+  }
+
+  // La zavorra: il campo reso visibile. Se smette di obbedire non si rompe
+  // niente — semplicemente il mondo comincia a mentire su dove si cade.
+  {
+    const restY = (tile: string): number => {
+      // Colonna larga due: il campo sta a sinistra, la zavorra a destra. Il
+      // marcatore viene tolto dalla griglia, quindi la cella della zavorra è
+      // vuota per costruzione — ed è esattamente il caso che la sagoma
+      // allargata di `Ballast.update` esiste per non sbagliare.
+      const pair = ' '.repeat(5) + tile + tile;
+      const world = withField({
+        8: CEILING,
+        9: pair,
+        10: pair,
+        11: ' '.repeat(5) + tile + 'z',
+        12: pair,
+        13: FULL_GROUND,
+        14: FULL_GROUND,
+      });
+      for (let tick = 0; tick < 90; tick++) world.update(idle);
+      const ballast = world.creatures.find((e) => e.constructor.name === 'Ballast');
+      return ballast ? ballast.y : NaN;
+    };
+
+    const inField = restY(TILE.REVERSE);
+    const inDead = restY(TILE.DEAD_REVERSE);
+    check(
+      inField < 10 * TILE_SIZE,
+      `dentro un campo vero la zavorra si appoggia al soffitto (y=${Math.round(inField)})`,
+    );
+    check(
+      inDead > 10 * TILE_SIZE,
+      `sotto un campo spento la zavorra resta a terra, e lo dice (y=${Math.round(inDead)})`,
+    );
+  }
+
+  // Schiacciare a testa in giù: la regola dello stomp è sempre la stessa, ed è
+  // misurata rispetto al proprio peso. Il ragno sul soffitto è il posto in cui
+  // questo si vede, ed è anche l'unico modo di toglierselo dai piedi.
+  {
+    // Stanza tutta capovolta invece di una colonna, e non è una scorciatoia:
+    // il ragno sta attaccato al soffitto, quindi occuperebbe proprio la cella
+    // in cui dovrebbe esserci il campo. Ribaltare la stanza è il modo di
+    // provare la regola dello stomp senza provare anche altro.
+    const world = withField({ 8: CEILING, 9: '     a', 13: FULL_GROUND, 14: FULL_GROUND });
+    world.gravityFlipped = true;
+    world.player.x = 5 * TILE_SIZE + 5;
+    world.player.y = 12 * TILE_SIZE;
+    for (let tick = 0; tick < 40; tick++) world.update(idle);
+    const spiders = world.creatures.filter((e) => e.constructor.name === 'Spider').length;
+    check(
+      spiders === 0 && world.state === 'playing',
+      'salendo verso il soffitto il ragno si schiaccia invece di uccidere',
+    );
   }
 }
 

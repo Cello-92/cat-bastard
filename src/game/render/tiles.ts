@@ -1695,12 +1695,17 @@ function drawReverseField(r: Renderer, x: number, y: number, ctx: TileDrawContex
   r.rect(x + T - 2.6, y, 1.6, T, alpha(m.dark, 0.7));
   r.pop();
 
-  // Polvere che sale: quattro grani per cella, a velocità diverse, che escono
-  // dal basso e vengono risucchiati in alto. È l'informazione, il resto è
-  // contorno — chi guarda questa cella deve capire da che parte si cadrà.
+  // Polvere che sale: tre grani per cella, a velocità diverse, che escono dal
+  // basso e vengono risucchiati in alto. È l'informazione, il resto è contorno
+  // — chi guarda questa cella deve capire da che parte si cadrà.
+  //
+  // Tre e non quattro perché un campo riempie stanze intere, non celle sparse:
+  // con venti colonne per otto righe inquadrate si parla di centosessanta
+  // celle, e il conto delle chiamate di disegno di un frame è quello scritto
+  // in CLAUDE.md. Un grano in meno per cella sono centosessanta chiamate.
   r.push();
   r.setBlend('add');
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 3; i++) {
     const lane = 5 + i * 7 + cellNoise(ctx.col, ctx.row, i + 980) * 3;
     const speed = 26 + cellNoise(ctx.col, ctx.row, i + 990) * 22;
     const phase = (ctx.tick / speed + cellNoise(ctx.col, ctx.row, i + 1000)) % 1;
@@ -1710,14 +1715,26 @@ function drawReverseField(r: Renderer, x: number, y: number, ctx: TileDrawContex
   }
   r.pop();
 
-  // Le due frecce: incise sui montanti, immobili, rivolte in su. Non lampeggiano
-  // e non si muovono — un cartello che si anima diventa una decorazione.
-  r.push();
-  r.setAlpha(0.5);
-  for (const side of [x + 6.5, x + T - 6.5]) {
-    r.polygon([side, y + T * 0.36, side + 3, y + T * 0.5, side - 3, y + T * 0.5], alpha(m.spec, 0.8));
+  // Le due frecce: incise sui montanti, immobili, rivolte in su. Non
+  // lampeggiano e non si muovono — un cartello che si anima diventa una
+  // decorazione.
+  //
+  // Stanno **solo sulla cella attaccata al solido**, cioè in cima alla colonna
+  // (`open.up` è falso solo lì). Non è un risparmio di disegno: è il posto
+  // giusto. Quella riga è dove il campo ti deposita, ed è l'unica informazione
+  // che serve prima di entrare — le altre trentadue frecce identiche più in
+  // basso direbbero la stessa cosa trentadue volte.
+  if (!ctx.open.up) {
+    r.push();
+    r.setAlpha(0.5);
+    for (const side of [x + 6.5, x + T - 6.5]) {
+      r.polygon(
+        [side, y + T * 0.36, side + 3, y + T * 0.5, side - 3, y + T * 0.5],
+        alpha(m.spec, 0.8),
+      );
+    }
+    r.pop();
   }
-  r.pop();
 }
 
 function drawWind(r: Renderer, x: number, y: number, ctx: TileDrawContext, direction: number): void {

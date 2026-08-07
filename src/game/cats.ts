@@ -328,6 +328,18 @@ export const CATS: readonly CatSkin[] = [
     pattern: 'patched',
   },
 
+  {
+    id: 'basalto',
+    name: 'BASALTO',
+    blurb: 'Pietra nera con le vetrificazioni dentro. Il manto di quello che c\'è sotto la torre, cioè altra torre',
+    yarn: 20,
+    fur: MATERIAL.basalt,
+    marks: MATERIAL.brass,
+    eye: MATERIAL.ember,
+    nose: MATERIAL.sable,
+    pattern: 'spotted',
+  },
+
   // ------------------------------------------------------------- le imprese
   // Da qui in giù i gomitoli non c'entrano niente: sono i gatti che si prendono
   // facendo qualcosa che nessuno ha chiesto. Restano estetici come gli altri —

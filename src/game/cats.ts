@@ -316,6 +316,18 @@ export const CATS: readonly CatSkin[] = [
     pattern: 'tabby',
   },
 
+  {
+    id: 'piombo',
+    name: 'PIOMBO',
+    blurb: 'Pesante da guardare. Cade sempre dalla parte giusta, che qui non vuol dire in giù',
+    yarn: 19,
+    fur: MATERIAL.lead,
+    marks: MATERIAL.iron,
+    eye: MATERIAL.ember,
+    nose: MATERIAL.iron,
+    pattern: 'patched',
+  },
+
   // ------------------------------------------------------------- le imprese
   // Da qui in giù i gomitoli non c'entrano niente: sono i gatti che si prendono
   // facendo qualcosa che nessuno ha chiesto. Restano estetici come gli altri —

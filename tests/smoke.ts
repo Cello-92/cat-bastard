@@ -265,7 +265,11 @@ for (const level of LEVELS) {
 
       let above = r - 1;
       while (above >= 0 && at(c, above) === TILE.EMPTY) above--;
-      if (above >= 0 && isSolid(at(c, above))) {
+      // `above < r - 1` vuol dire che in mezzo c'era del vuoto: il campo si
+      // ferma prima del soffitto. Un campo attaccato al soffitto (il caso
+      // normale, e l'unico giusto) non entra qui, e nemmeno una colonna aperta
+      // sul cielo, che è una trappola dichiarata e non un errore.
+      if (above < r - 1 && above >= 0 && isSolid(at(c, above))) {
         flag(c, r, 'campo rovescio che non arriva al soffitto: il gatto ci rimbalza dentro');
       }
     }

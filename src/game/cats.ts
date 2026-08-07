@@ -292,6 +292,18 @@ export const CATS: readonly CatSkin[] = [
     pattern: 'tabby',
   },
 
+  {
+    id: 'vetro',
+    name: 'VETRO',
+    blurb: 'Si vede attraverso, come il pavimento della torre. Sotto c\'è sempre qualcosa, ed è sempre molto lontano',
+    yarn: 17,
+    fur: MATERIAL.glass,
+    marks: MATERIAL.ice,
+    eye: MATERIAL.sapphire,
+    nose: MATERIAL.skin,
+    pattern: 'plain',
+  },
+
   // ------------------------------------------------------------- le imprese
   // Da qui in giù i gomitoli non c'entrano niente: sono i gatti che si prendono
   // facendo qualcosa che nessuno ha chiesto. Restano estetici come gli altri —

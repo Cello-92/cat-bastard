@@ -340,6 +340,18 @@ export const CATS: readonly CatSkin[] = [
     pattern: 'spotted',
   },
 
+  {
+    id: 'etere',
+    name: 'ETERE',
+    blurb: 'Il viola dei campi rovesci addosso a un gatto. Non capovolge niente: è solo il colore di una regola',
+    yarn: 21,
+    fur: MATERIAL.ether,
+    marks: MATERIAL.spectre,
+    eye: MATERIAL.violet,
+    nose: MATERIAL.skin,
+    pattern: 'points',
+  },
+
   // ------------------------------------------------------------- le imprese
   // Da qui in giù i gomitoli non c'entrano niente: sono i gatti che si prendono
   // facendo qualcosa che nessuno ha chiesto. Restano estetici come gli altri —

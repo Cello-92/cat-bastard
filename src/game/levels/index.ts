@@ -39,6 +39,7 @@ import { WORLD_4_4 } from './world-4-4';
 import { WORLD_4_5 } from './world-4-5';
 import { WORLD_4_6 } from './world-4-6';
 import { WORLD_4_7 } from './world-4-7';
+import { WORLD_4_8 } from './world-4-8';
 
 /**
  * Registro dei livelli, in ordine di gioco.
@@ -85,6 +86,7 @@ export const LEVELS: readonly LevelDef[] = [
   WORLD_4_5,
   WORLD_4_6,
   WORLD_4_7,
+  WORLD_4_8,
 ];
 
 /**

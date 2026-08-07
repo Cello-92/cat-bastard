@@ -365,8 +365,16 @@ export interface SolveResult {
  * costa poco davvero: un livello risolvibile smette di cercare appena trova, e
  * il budget pieno lo paga solo un livello rotto, che è esattamente il caso in
  * cui si vuole essere sicuri prima di gridare.
+ *
+ * Il mondo 4 l'ha alzata di nuovo, e per una ragione strutturale: dentro un
+ * campo rovescio il gatto è in aria per interi segmenti, e uno stato in aria si
+ * dirama sei volte a ogni tick mentre uno stato a terra ne butta via quasi
+ * tutti. 4-9, che ha due piani percorribili e chiede di scegliere fra loro,
+ * chiede 2.457.000 stati — cioè era sotto il vecchio tetto di quarantamila,
+ * che è come dire per caso. Quattro milioni non sono generosità: sono la
+ * distanza minima da un referto sbagliato.
  */
-export function solve(level: LevelDef, budget = 2_500_000): SolveResult {
+export function solve(level: LevelDef, budget = 4_000_000): SolveResult {
   const map = new TileMap(level.rows, TILE_SIZE);
   const start: SearchState = {
     x: level.spawn.c * TILE_SIZE + 5,

@@ -352,6 +352,19 @@ export const CATS: readonly CatSkin[] = [
     pattern: 'points',
   },
 
+  {
+    id: 'capovolto',
+    name: 'CAPOVOLTO',
+    blurb: 'Ventidue gomitoli e tutti i livelli. Metà li hai presi camminando sul soffitto, e adesso non sai più qual era il verso giusto',
+    yarn: 22,
+    needsEveryLevel: true,
+    fur: MATERIAL.spectre,
+    marks: MATERIAL.shadow,
+    eye: MATERIAL.violet,
+    nose: MATERIAL.skin,
+    pattern: 'tux',
+  },
+
   // ------------------------------------------------------------- le imprese
   // Da qui in giù i gomitoli non c'entrano niente: sono i gatti che si prendono
   // facendo qualcosa che nessuno ha chiesto. Restano estetici come gli altri —
